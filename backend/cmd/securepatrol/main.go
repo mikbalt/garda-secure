@@ -12,6 +12,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/fiber/v2/middleware/requestid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -24,7 +25,7 @@ import (
 )
 
 func main() {
-	// ── Config ──────────────────────────────────────────────────────────────
+	// ── Config ───────────────────────────────────────────────────────────────
 	cfg, err := config.Load()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "config: %v\n", err)
@@ -38,32 +39,26 @@ func main() {
 		With().Timestamp().Str("service", "securepatrol").Logger()
 	log.Logger = logger
 
-	// ── Postgres ─────────────────────────────────────────────────────────────
-	var pool interface{ Ping(context.Context) error }
 	ctx := context.Background()
 
-	var pgPool interface {
-		Ping(context.Context) error
-		Close()
-	}
-
+	// ── Postgres (5-retry exponential backoff) ───────────────────────────────
+	var pool *pgxpool.Pool
 	for attempt := 0; attempt < 5; attempt++ {
 		wait := time.Duration(1<<attempt) * time.Second
-		p, err := db.New(ctx, cfg.DatabaseURL)
-		if err != nil {
-			logger.Warn().Err(err).Int("attempt", attempt+1).
+		p, connErr := db.New(ctx, cfg.DatabaseURL)
+		if connErr != nil {
+			logger.Warn().Err(connErr).Int("attempt", attempt+1).
 				Dur("retry_in", wait).Msg("postgres unavailable, retrying")
 			time.Sleep(wait)
 			continue
 		}
-		pgPool = p
 		pool = p
 		break
 	}
 	if pool == nil {
 		logger.Fatal().Msg("could not connect to postgres after 5 attempts")
 	}
-	defer pgPool.Close()
+	defer pool.Close()
 
 	// ── Migrations ───────────────────────────────────────────────────────────
 	if err := db.RunMigrations(cfg.DatabaseURL, "/migrations"); err != nil {
@@ -126,14 +121,13 @@ func main() {
 	}))
 
 	// Public routes
-	app.Get("/health", handler.Health(pgPool.(*interface{ Ping(context.Context) error }), rdb))
+	app.Get("/health", handler.Health(pool, rdb))
 
 	// Protected API group
-	_ = jwtMiddleware // used via closure below
 	api := app.Group("/api/v1", jwtMiddleware)
-	api.Mount("/attendance", handler.AttendanceRouter())
-	api.Mount("/patrol", handler.PatrolRouter())
-	api.Mount("/incidents", handler.IncidentRouter())
+	handler.RegisterAttendance(api.Group("/attendance"))
+	handler.RegisterPatrol(api.Group("/patrol"))
+	handler.RegisterIncidents(api.Group("/incidents"))
 
 	// ── Graceful shutdown ────────────────────────────────────────────────────
 	quit := make(chan os.Signal, 1)
