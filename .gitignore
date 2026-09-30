@@ -1,0 +1,43 @@
+# Secrets — never commit these
+.env
+*.env.local
+*.pem
+*.key
+*.crt
+infra/nginx/certs/
+
+# Go
+backend/vendor/
+backend/tmp/
+backend/*.test
+backend/coverage.out
+
+# Node / React
+web/node_modules/
+web/dist/
+web/.vite/
+
+# Flutter
+mobile/.dart_tool/
+mobile/build/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/pubspec.lock
+
+# Docker
+**/*.tar
+**/docker-compose.override.yml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Build artifacts
+*.o
+*.a
+*.so
+dist/
+build/

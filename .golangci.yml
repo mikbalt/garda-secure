@@ -1,0 +1,24 @@
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - staticcheck
+    - unused
+    - gosec
+    - gofmt
+    - goimports
+
+linters-settings:
+  gosec:
+    excludes:
+      - G107  # URL provided to HTTP request as taint input (acceptable for JWKS fetch)
+
+issues:
+  exclude-rules:
+    - path: "_test\\.go"
+      linters:
+        - gosec

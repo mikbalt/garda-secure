@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS sos_alerts;
+DROP TABLE IF EXISTS visitor_logs;
+DROP TABLE IF EXISTS defect_reports;
+DROP TABLE IF EXISTS incidents;
+DROP TABLE IF EXISTS checkpoint_scans;
+DROP TABLE IF EXISTS routes;
+DROP TABLE IF EXISTS attendance_records;
+DROP TABLE IF EXISTS shifts;
+DROP TABLE IF EXISTS sites;
+DROP TABLE IF EXISTS guards;

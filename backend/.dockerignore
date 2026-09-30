@@ -1,0 +1,8 @@
+.git
+*_test.go
+*.md
+tmp/
+.env
+.env.*
+vendor/
+coverage.out
