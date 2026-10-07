@@ -1,148 +1,242 @@
 package handler
 
 import (
-	"encoding/json"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
+
+	"github.com/securepatrol/backend/internal/middleware"
 	"github.com/securepatrol/backend/internal/model"
 	"github.com/securepatrol/backend/internal/repository"
+	"github.com/securepatrol/backend/internal/service"
 )
 
-func marshalCheckpoints(cps []model.Checkpoint) (json.RawMessage, error) {
-	if cps == nil {
-		return json.RawMessage("[]"), nil
-	}
-	b, err := json.Marshal(cps)
-	if err != nil {
-		return nil, err
-	}
-	return json.RawMessage(b), nil
+// ── Routes (route editor) ────────────────────────────────────────────────────
+
+type routeBody struct {
+	SiteID      string             `json:"site_id"`
+	Name        string             `json:"name"`
+	Checkpoints []model.Checkpoint `json:"checkpoints"`
+	Active      *bool              `json:"active"`
 }
 
-// RegisterPatrol registers patrol route management endpoints.
-func RegisterPatrol(r fiber.Router) {
-	r.Get("/routes", listRoutes)
-	r.Post("/routes", createRoute)
-	r.Get("/routes/:id", getRoute)
-	r.Post("/routes/:id/scan", recordScan)
-	r.Get("/routes/:id/report", getRouteReport)
-}
-
-func listRoutes(c *fiber.Ctx) error {
-	pool := poolRequired(c)
-	if pool == nil {
-		return nil
-	}
-	routes, err := repository.ListRoutes(c.Context(), pool, c.Query("site_id"))
+func (h *Handler) listRoutes(c *fiber.Ctx) error {
+	site, err := h.siteFor(c, c.Query("site_id"))
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return h.fail(c, err)
 	}
-	if routes == nil {
-		routes = []model.Route{}
+	routes, err := repository.ListRoutes(c.Context(), h.DB, site.ID, c.Query("active") == "true")
+	if err != nil {
+		return h.fail(c, err)
 	}
 	return c.JSON(routes)
 }
 
-func getRoute(c *fiber.Ctx) error {
-	pool := poolRequired(c)
-	if pool == nil {
-		return nil
-	}
-	route, err := repository.GetRoute(c.Context(), pool, c.Params("id"))
+func (h *Handler) routeFor(c *fiber.Ctx) (*model.Route, error) {
+	r, err := repository.GetRoute(c.Context(), h.DB, c.Params("id"))
 	if err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "route not found"})
+		return nil, err
 	}
-	return c.JSON(route)
+	if _, err := h.siteFor(c, r.SiteID); err != nil {
+		return nil, err
+	}
+	return r, nil
 }
 
-func createRoute(c *fiber.Ctx) error {
-	pool := poolRequired(c)
-	if pool == nil {
-		return nil
-	}
-
-	var body struct {
-		SiteID      string             `json:"site_id"`
-		Name        string             `json:"name"`
-		Checkpoints []model.Checkpoint `json:"checkpoints"`
-		Active      bool               `json:"active"`
-	}
-	if err := c.BodyParser(&body); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
-	}
-	if body.SiteID == "" || body.Name == "" {
-		return c.Status(400).JSON(fiber.Map{"error": "site_id and name are required"})
-	}
-
-	// Serialize checkpoints to JSONB.
-	checkpointsJSON, err := marshalCheckpoints(body.Checkpoints)
+func (h *Handler) getRoute(c *fiber.Ctx) error {
+	r, err := h.routeFor(c)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid checkpoints"})
+		return h.fail(c, err)
 	}
+	return c.JSON(r)
+}
 
-	route, err := repository.CreateRoute(c.Context(), pool, model.Route{
-		SiteID:      body.SiteID,
-		Name:        body.Name,
-		Checkpoints: checkpointsJSON,
-		Active:      body.Active,
+func (h *Handler) createRoute(c *fiber.Ctx) error {
+	var b routeBody
+	if err := parse(c, &b); err != nil {
+		return h.fail(c, err)
+	}
+	site, err := h.siteFor(c, b.SiteID)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	r := model.Route{SiteID: site.ID, Name: b.Name, Checkpoints: b.Checkpoints, Active: b.Active == nil || *b.Active}
+	if err := service.NormalizeRoute(&r); err != nil {
+		return h.fail(c, err)
+	}
+	out, err := repository.CreateRoute(c.Context(), h.DB, r)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	return c.Status(fiber.StatusCreated).JSON(out)
+}
+
+func (h *Handler) updateRoute(c *fiber.Ctx) error {
+	r, err := h.routeFor(c)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	var b routeBody
+	if err := parse(c, &b); err != nil {
+		return h.fail(c, err)
+	}
+	r.Name, r.Checkpoints = b.Name, b.Checkpoints
+	if b.Active != nil {
+		r.Active = *b.Active
+	}
+	if err := service.NormalizeRoute(r); err != nil {
+		return h.fail(c, err)
+	}
+	out, err := repository.UpdateRoute(c.Context(), h.DB, *r)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	return c.JSON(out)
+}
+
+// ── Sessions (web) ───────────────────────────────────────────────────────────
+
+// GET /patrol/live?site_id= — progress of every running patrol (FR-PAT-05).
+func (h *Handler) livePatrols(c *fiber.Ctx) error {
+	site, err := h.siteFor(c, c.Query("site_id"))
+	if err != nil {
+		return h.fail(c, err)
+	}
+	sessions, err := repository.ListActiveSessions(c.Context(), h.DB, site.ID)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	out := make([]fiber.Map, 0, len(sessions))
+	for _, s := range sessions {
+		p, err := service.LoadProgress(c.Context(), h.DB, s)
+		if err != nil {
+			return h.fail(c, err)
+		}
+		guardName := ""
+		if g, err := repository.GetGuard(c.Context(), h.DB, s.GuardID); err == nil {
+			guardName = g.Name
+		}
+		out = append(out, fiber.Map{"progress": p, "guard_name": guardName})
+	}
+	return c.JSON(out)
+}
+
+// GET /patrol/sessions?site_id=&from=&to=
+func (h *Handler) listSessions(c *fiber.Ctx) error {
+	site, err := h.siteFor(c, c.Query("site_id"))
+	if err != nil {
+		return h.fail(c, err)
+	}
+	from, to, err := service.DateRange(c.Query("from"), c.Query("to"), site.Location(), 62)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	rows, err := repository.SessionSummaries(c.Context(), h.DB, site.ID, from, to)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	return c.JSON(rows)
+}
+
+// GET /patrol/sessions/:id — checkpoint timeline (web report or tablet).
+func (h *Handler) getSession(c *fiber.Ctx) error {
+	s, err := repository.GetSession(c.Context(), h.DB, c.Params("id"))
+	if err != nil {
+		return h.fail(c, err)
+	}
+	if _, err := h.siteFor(c, s.SiteID); err != nil {
+		return h.fail(c, err)
+	}
+	p, err := service.LoadProgress(c.Context(), h.DB, *s)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	return c.JSON(p)
+}
+
+// ── Sessions (tablet) ────────────────────────────────────────────────────────
+
+// POST /patrol/sessions {id?, route_id, started_at?}
+func (h *Handler) startSession(c *fiber.Ctx) error {
+	var b struct {
+		ID        *string    `json:"id"`
+		RouteID   string     `json:"route_id"`
+		StartedAt *time.Time `json:"started_at"`
+	}
+	if err := parse(c, &b); err != nil {
+		return h.fail(c, err)
+	}
+	if err := optionalUUID(b.ID); err != nil {
+		return h.fail(c, err)
+	}
+	site, err := h.deviceSite(c)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	s, isNew, err := service.StartSession(c.Context(), h.DB, service.StartSessionInput{
+		ID: nilIfEmpty(b.ID), RouteID: b.RouteID, At: b.StartedAt,
+		Guard: middleware.GetGuard(c), Site: site, DeviceID: deviceID(c),
 	})
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return h.fail(c, err)
 	}
-	return c.Status(201).JSON(route)
+	return created(c, isNew, s)
 }
 
-func recordScan(c *fiber.Ctx) error {
-	pool := poolRequired(c)
-	if pool == nil {
-		return nil
+// POST /patrol/sessions/:id/scans {id?, checkpoint_id | qr_code, method, photo_object_key?, scanned_at?, gps_lat?, gps_lng?}
+func (h *Handler) recordScan(c *fiber.Ctx) error {
+	var b struct {
+		ID             *string    `json:"id"`
+		CheckpointID   string     `json:"checkpoint_id"`
+		QRCode         string     `json:"qr_code"`
+		Method         string     `json:"method"`
+		PhotoObjectKey *string    `json:"photo_object_key"`
+		ScannedAt      *time.Time `json:"scanned_at"`
+		GPSLat         *float64   `json:"gps_lat"`
+		GPSLng         *float64   `json:"gps_lng"`
 	}
-
-	var body struct {
-		CheckpointID   string   `json:"checkpoint_id"`
-		GuardID        string   `json:"guard_id"`
-		Method         string   `json:"method"`
-		GPSLat         *float64 `json:"gps_lat"`
-		GPSLng         *float64 `json:"gps_lng"`
-		PhotoObjectKey *string  `json:"photo_object_key"`
+	if err := parse(c, &b); err != nil {
+		return h.fail(c, err)
 	}
-	if err := c.BodyParser(&body); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
+	if err := optionalUUID(b.ID); err != nil {
+		return h.fail(c, err)
 	}
-	if body.CheckpointID == "" || body.GuardID == "" {
-		return c.Status(400).JSON(fiber.Map{"error": "checkpoint_id and guard_id are required"})
+	if b.CheckpointID == "" && b.QRCode == "" {
+		return h.fail(c, service.BadRequest("checkpoint_required", "checkpoint_id or qr_code is required"))
 	}
-	if body.Method == "" {
-		body.Method = "qr"
+	site, err := h.deviceSite(c)
+	if err != nil {
+		return h.fail(c, err)
 	}
-
-	scan, err := repository.RecordScan(c.Context(), pool, model.CheckpointScan{
-		RouteID:        c.Params("id"),
-		CheckpointID:   body.CheckpointID,
-		GuardID:        body.GuardID,
-		Method:         body.Method,
-		GPSLat:         body.GPSLat,
-		GPSLng:         body.GPSLng,
-		PhotoObjectKey: body.PhotoObjectKey,
+	scan, isNew, err := service.RecordScan(c.Context(), h.DB, service.ScanInput{
+		ID: nilIfEmpty(b.ID), SessionID: c.Params("id"), CheckpointID: b.CheckpointID, QRCode: b.QRCode,
+		Method: b.Method, PhotoObjectKey: nilIfEmpty(b.PhotoObjectKey), At: b.ScannedAt,
+		GPSLat: b.GPSLat, GPSLng: b.GPSLng, Guard: middleware.GetGuard(c), Site: site, DeviceID: deviceID(c),
 	})
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return h.fail(c, err)
 	}
-	return c.Status(201).JSON(scan)
+	return created(c, isNew, scan)
 }
 
-func getRouteReport(c *fiber.Ctx) error {
-	pool := poolRequired(c)
-	if pool == nil {
-		return nil
+// POST /patrol/sessions/:id/end {ended_at?, abandoned?}
+func (h *Handler) endSession(c *fiber.Ctx) error {
+	var b struct {
+		EndedAt   *time.Time `json:"ended_at"`
+		Abandoned bool       `json:"abandoned"`
 	}
-	date := c.Query("date")
-	if date == "" {
-		date = "today"
+	if len(c.Body()) > 0 {
+		if err := parse(c, &b); err != nil {
+			return h.fail(c, err)
+		}
 	}
-	report, err := repository.GetRouteReport(c.Context(), pool, c.Params("id"), date)
+	site, err := h.deviceSite(c)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return h.fail(c, err)
 	}
-	return c.JSON(report)
+	s, err := service.EndSession(c.Context(), h.DB, c.Params("id"), site, b.EndedAt, b.Abandoned)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	return c.JSON(s)
 }

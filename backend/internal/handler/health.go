@@ -17,14 +17,15 @@ func Health(pool *pgxpool.Pool, rdb *redis.Client) fiber.Handler {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 
+		// Health is public: report status only, never error details.
 		dbStatus := "ok"
 		if err := pool.Ping(ctx); err != nil {
-			dbStatus = "error: " + err.Error()
+			dbStatus = "error"
 		}
 
 		redisStatus := "ok"
 		if err := rdb.Ping(ctx).Err(); err != nil {
-			redisStatus = "error: " + err.Error()
+			redisStatus = "error"
 		}
 
 		overall := "ok"

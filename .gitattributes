@@ -1,0 +1,11 @@
+# Normalise line endings in the repo; files that run inside Linux containers
+# must keep LF even on Windows checkouts (core.autocrlf=true).
+* text=auto
+*.sh        text eol=lf
+Makefile    text eol=lf
+Dockerfile  text eol=lf
+*.conf      text eol=lf
+*.sql       text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.go        text eol=lf

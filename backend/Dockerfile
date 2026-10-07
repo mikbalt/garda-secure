@@ -17,14 +17,20 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     ./cmd/securepatrol
 
 # ── Stage 2: Run ─────────────────────────────────────────────────────────────
-FROM gcr.io/distroless/static-debian12
+# Alpine (not distroless) because the worker runs pg_dump for backups (D-015);
+# pg_dump must match the server's major version (PostgreSQL 16).
+FROM alpine:3.20
 
-# Copy binary and migration files
-COPY --from=builder /app/securepatrol  /securepatrol
-COPY --from=builder /app/migrations    /migrations
+RUN apk add --no-cache ca-certificates tzdata postgresql16-client \
+    && addgroup -S app && adduser -S -G app -H -h /app app
 
-USER nonroot:nonroot
+WORKDIR /app
+COPY --from=builder /app/securepatrol /app/securepatrol
+COPY --from=builder /app/migrations   /migrations
+
+USER app
 
 EXPOSE 8080
 
-ENTRYPOINT ["/securepatrol"]
+# `securepatrol` runs the API; `securepatrol worker` runs notifications + jobs.
+ENTRYPOINT ["/app/securepatrol"]

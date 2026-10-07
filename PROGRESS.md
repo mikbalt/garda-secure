@@ -9,9 +9,7 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
-| Backend v1 core rework (auth, schema 003, all domain endpoints, worker, scheduler) | `muhamhad-pc1/claude` | 2026-10-07 | Uncommitted on that PC until it builds + tests pass. Please don't edit `backend/` until pushed. |
-| Infra fixes (nginx, keycloak realms, compose, env, Dockerfile) | `muhamhad-pc1/claude` | 2026-10-07 | Queued after backend. |
-| Web: align with new API + missing pages | `muhamhad-pc1/claude` | 2026-10-07 | Queued after backend API is stable. |
+| Web: align with new API (docs/api.md) + complete v1 pages, runtime config, multi-realm login, i18n | `muhamhad-pc1/claude` | 2026-10-07 | Please don't edit `web/` until pushed. |
 
 ## Migration numbers
 
@@ -19,49 +17,53 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 |---|---|---|---|
 | 001 | init_schema | — | pushed |
 | 002 | audit_log | — | pushed |
-| 003 | v1_core (devices, shift templates, patrol sessions, amendments, notifications, settings, backups) | `muhamhad-pc1/claude` | in progress |
+| 003 | v1_core (devices, shift templates, patrol sessions, amendments, notifications, settings, backups) | `muhamhad-pc1/claude` | pushed |
 | 004 | *(next free)* | | |
 
 ## Milestones (PRD §11)
 
 | Milestone | Status |
 |---|---|
-| M1 Infra & Auth | 🟡 compose/keycloak exist; multi-realm, device auth, nginx fixes in progress |
-| M2 Core Attendance | 🟡 being rebuilt on shift templates (D-003/D-004) |
-| M3 Patrol | 🟡 sessions + SLA in progress |
-| M4 Incident & Field Reports | 🟡 backend in progress; mobile deferred |
-| M5 Web Dashboard & Reports | 🟡 partial pages exist; needs alignment |
-| M6 Notifications & Email | 🟡 worker exists; rules/log/retry/scheduler in progress |
+| M1 Infra & Auth | 🟢 backend + config done; ⚠️ full Docker stack not yet smoke-tested (no Docker on the dev PC) |
+| M2 Core Attendance | 🟢 backend done (templates, clock-in/out, absent flag, review queue, override); web in progress |
+| M3 Patrol | 🟢 backend done (route editor API, sessions, QR/manual scans, SLA job, reports); web in progress |
+| M4 Incident & Field Reports | 🟢 backend done; ⚪ mobile deferred |
+| M5 Web Dashboard & Reports | 🟡 in progress |
+| M6 Notifications & Email | 🟢 backend done (rules, log, retry, SMTP/WhatsApp, monthly recap); needs real SMTP/WA test |
 | M7 Hardening & Go-Live | ⚪ not started |
 
 ## Backlog (unclaimed)
 
+Verification
+- [ ] Smoke-test the full Docker stack (`make up`): Keycloak `start` under `/auth`, realm import, login, MinIO via :9443, backup job (`pg_dump` in image)
+- [ ] Real SMTP + WhatsApp template delivery test
+
 Backend
 - [ ] WebSocket live patrol updates (D-014 follow-up)
-- [ ] Prometheus `/metrics` endpoint for the API
-- [ ] PDF export for incident log (CSV first)
+- [ ] Prometheus `/metrics` endpoint for the API (+ postgres/redis exporters)
+- [ ] PDF export for incident log (web print view first)
 - [ ] Excel (.xlsx) export (CSV with BOM for now)
 - [ ] Rate limiting on tablet endpoints (Redis)
-
-Web
-- [ ] i18n (English + Bahasa Indonesia) across all pages
-- [ ] Live patrol map (needs checkpoint lat/lng)
-- [ ] WCAG 2.1 AA pass on forms/tables/alerts (NFR-08)
+- [ ] Retention/cleanup for old backups in MinIO (lifecycle rule)
+- [ ] gosec job in CI uses `@latest` with Go 1.22 — pin a compatible gosec version
 
 Infra / Ops
-- [ ] Second client realm for testing isolation (`securepatrol-client2`)
-- [ ] Backup/restore runbook (`docs/runbook.md`)
+- [ ] `cd-deploy.yml` targets branch `main` and runs compose from repo root — align with `init` branch and `infra/` overlay
 - [ ] Let's Encrypt / production TLS notes
 - [ ] Load test 2 sites / 10 guards (M7)
 
 Mobile (deferred — D-017)
-- [ ] Device registration + offline PIN unlock (D-001)
-- [ ] Switch to new endpoints, `X-Guard-ID`, client UUIDs
+- [ ] Device registration + offline PIN unlock (D-001), roster sync
+- [ ] Switch to new endpoints (docs/api.md), `X-Guard-ID`, client UUIDs, JPEG photo keys
 - [ ] Fix `connectivity_plus` v6 `List<ConnectivityResult>` check
+- [ ] SOS retry every 10 s with the same `id`
 
 ## Done
 
 | Task | Agent | Date | Ref |
 |---|---|---|---|
 | Initial scaffold, infra compose split, backend handlers (first pass) | — | 2026-10-07 | 60b3c05…d189988 |
-| PRD v3 decisions OQ-7/8/9, CLAUDE.md / PROGRESS.md / DECISIONS.md | `muhamhad-pc1/claude` | 2026-10-07 | uncommitted |
+| PRD v3 decisions OQ-7/8/9, CLAUDE.md / PROGRESS.md / DECISIONS.md | `muhamhad-pc1/claude` | 2026-10-07 | 928fb4a |
+| Backend v1 core: multi-realm JWT + RBAC, device/guard auth, migration 003, shift templates + generator, attendance rules, patrol sessions + SLA, incidents/amendments, SOS, defects, visitors, media upload, reports + CSV, dashboard, notifications (rules/log/retry, SMTP/WhatsApp), encrypted channel settings, backups, scheduler; unit + integration tests (embedded Postgres) | `muhamhad-pc1/claude` | 2026-10-07 | this push |
+| Infra: Alpine API image with pg_dump, compose fixes (worker command, Keycloak DB/path/proxy, healthchecks), nginx fixes (/api prefix, web:80, /auth, MinIO :9443, 12 MB uploads), two realm files + generator, env examples, Makefile, CI (integration tests, nginx/realm validation) | `muhamhad-pc1/claude` | 2026-10-07 | this push |
+| Docs: `docs/api.md` (API contract), `docs/runbook.md` (install, users, tablets, backups/restore) | `muhamhad-pc1/claude` | 2026-10-07 | this push |

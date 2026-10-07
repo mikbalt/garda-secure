@@ -19,16 +19,36 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate compose syntax
-        run: docker compose config
+      - name: Validate compose files
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.app.yml config --quiet
+
+  validate-keycloak-realms:
+    name: Validate Keycloak realm files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse realm JSON
+        run: for f in keycloak/realm-template.json keycloak/realms/*.json; do jq empty "$f"; done
 
   validate-nginx:
     name: Validate Nginx Config
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check nginx config
+      - name: Check nginx configs
         run: |
+          mkdir -p /tmp/certs
+          openssl req -x509 -nodes -days 1 -newkey rsa:2048 -subj "/CN=ci" \
+            -keyout /tmp/certs/key.pem -out /tmp/certs/cert.pem
+          # Upstream hosts only exist inside the compose network.
+          hosts="--add-host api:127.0.0.1 --add-host web:127.0.0.1 --add-host keycloak:127.0.0.1 --add-host minio:127.0.0.1"
+          docker run --rm $hosts \
+            -v "$PWD/nginx/nginx.conf:/etc/nginx/nginx.conf:ro" \
+            -v /tmp/certs:/etc/nginx/certs:ro \
+            nginx:1.27-alpine nginx -t
           docker run --rm \
-            -v ${{ github.workspace }}/infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro \
-            nginx:alpine nginx -t
+            -v "$PWD/nginx/nginx-infra-only.conf:/etc/nginx/nginx.conf:ro" \
+            nginx:1.27-alpine nginx -t

@@ -2,165 +2,222 @@ package repository
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
+	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5"
 	"github.com/securepatrol/backend/internal/model"
 )
 
-// RouteReport holds patrol completion stats for a route on a given date.
-type RouteReport struct {
-	RouteID            string               `json:"route_id"`
-	Date               string               `json:"date"`
-	TotalCheckpoints   int                  `json:"total_checkpoints"`
-	ScannedCheckpoints int                  `json:"scanned_checkpoints"`
-	CompletionPct      float64              `json:"completion_pct"`
-	MissedCheckpoints  []model.Checkpoint   `json:"missed_checkpoints"`
-	Scans              []model.CheckpointScan `json:"scans"`
+// ── Routes ───────────────────────────────────────────────────────────────────
+
+const routeColumns = `id, site_id, name, checkpoints, active, created_at`
+
+func scanRoute(row pgx.Row) (model.Route, error) {
+	var r model.Route
+	err := row.Scan(&r.ID, &r.SiteID, &r.Name, &r.Checkpoints, &r.Active, &r.CreatedAt)
+	if r.Checkpoints == nil {
+		r.Checkpoints = []model.Checkpoint{}
+	}
+	return r, err
 }
 
-// ListRoutes returns all routes for a site.
-func ListRoutes(ctx context.Context, pool *pgxpool.Pool, siteID string) ([]model.Route, error) {
-	query := `SELECT id, site_id, name, checkpoints, active, created_at FROM routes WHERE 1=1`
-	args := []any{}
-	if siteID != "" {
-		args = append(args, siteID)
-		query += fmt.Sprintf(" AND site_id = $%d", len(args))
-	}
-	query += " ORDER BY name"
+func scanRouteRows(rows pgx.Rows) (model.Route, error) { return scanRoute(rows) }
 
-	rows, err := pool.Query(ctx, query, args...)
+// ListRoutes returns the routes of a site, optionally only active ones.
+func ListRoutes(ctx context.Context, db DBTX, siteID string, activeOnly bool) ([]model.Route, error) {
+	rows, err := db.Query(ctx, `
+		SELECT `+routeColumns+` FROM routes
+		WHERE site_id = $1 AND (NOT $2 OR active)
+		ORDER BY name`, siteID, activeOnly)
 	if err != nil {
 		return nil, fmt.Errorf("ListRoutes: %w", err)
 	}
-	defer rows.Close()
-
-	var routes []model.Route
-	for rows.Next() {
-		var r model.Route
-		if err := rows.Scan(&r.ID, &r.SiteID, &r.Name, &r.Checkpoints, &r.Active, &r.CreatedAt); err != nil {
-			return nil, fmt.Errorf("ListRoutes scan: %w", err)
-		}
-		routes = append(routes, r)
-	}
-	return routes, rows.Err()
+	return collect(rows, scanRouteRows)
 }
 
-// GetRoute retrieves a single route by ID.
-func GetRoute(ctx context.Context, pool *pgxpool.Pool, id string) (*model.Route, error) {
-	var r model.Route
-	err := pool.QueryRow(ctx,
-		`SELECT id, site_id, name, checkpoints, active, created_at FROM routes WHERE id = $1`,
-		id,
-	).Scan(&r.ID, &r.SiteID, &r.Name, &r.Checkpoints, &r.Active, &r.CreatedAt)
+// GetRoute retrieves a route by ID.
+func GetRoute(ctx context.Context, db DBTX, id string) (*model.Route, error) {
+	r, err := scanRoute(db.QueryRow(ctx, `SELECT `+routeColumns+` FROM routes WHERE id = $1`, id))
 	if err != nil {
-		return nil, fmt.Errorf("GetRoute: %w", err)
+		return nil, mapNoRows(err)
 	}
 	return &r, nil
 }
 
-// CreateRoute inserts a new patrol route.
-func CreateRoute(ctx context.Context, pool *pgxpool.Pool, r model.Route) (*model.Route, error) {
-	err := pool.QueryRow(ctx,
-		`INSERT INTO routes (site_id, name, checkpoints, active)
-		 VALUES ($1, $2, $3, $4)
-		 RETURNING id, site_id, name, checkpoints, active, created_at`,
-		r.SiteID, r.Name, r.Checkpoints, r.Active,
-	).Scan(&r.ID, &r.SiteID, &r.Name, &r.Checkpoints, &r.Active, &r.CreatedAt)
+// CreateRoute inserts a patrol route.
+func CreateRoute(ctx context.Context, db DBTX, r model.Route) (*model.Route, error) {
+	out, err := scanRoute(db.QueryRow(ctx, `
+		INSERT INTO routes (site_id, name, checkpoints, active)
+		VALUES ($1, $2, $3, $4)
+		RETURNING `+routeColumns, r.SiteID, r.Name, r.Checkpoints, r.Active))
 	if err != nil {
 		return nil, fmt.Errorf("CreateRoute: %w", err)
 	}
-	return &r, nil
+	return &out, nil
 }
 
-// RecordScan inserts a checkpoint scan record.
-func RecordScan(ctx context.Context, pool *pgxpool.Pool, scan model.CheckpointScan) (*model.CheckpointScan, error) {
-	err := pool.QueryRow(ctx,
-		`INSERT INTO checkpoint_scans (route_id, checkpoint_id, guard_id, scanned_at, method, photo_object_key, gps_lat, gps_lng)
-		 VALUES ($1, $2, $3, now(), $4, $5, $6, $7)
-		 RETURNING id, route_id, checkpoint_id, guard_id, scanned_at, method, photo_object_key, gps_lat, gps_lng`,
-		scan.RouteID, scan.CheckpointID, scan.GuardID, scan.Method,
-		scan.PhotoObjectKey, scan.GPSLat, scan.GPSLng,
-	).Scan(&scan.ID, &scan.RouteID, &scan.CheckpointID, &scan.GuardID,
-		&scan.ScannedAt, &scan.Method, &scan.PhotoObjectKey, &scan.GPSLat, &scan.GPSLng)
+// UpdateRoute replaces name, checkpoints and active flag of a route.
+func UpdateRoute(ctx context.Context, db DBTX, r model.Route) (*model.Route, error) {
+	out, err := scanRoute(db.QueryRow(ctx, `
+		UPDATE routes SET name = $2, checkpoints = $3, active = $4
+		WHERE id = $1
+		RETURNING `+routeColumns, r.ID, r.Name, r.Checkpoints, r.Active))
 	if err != nil {
-		return nil, fmt.Errorf("RecordScan: %w", err)
+		return nil, mapNoRows(err)
 	}
-	return &scan, nil
+	return &out, nil
 }
 
-// ListScans returns scans for a route on a given date.
-func ListScans(ctx context.Context, pool *pgxpool.Pool, routeID, date string) ([]model.CheckpointScan, error) {
-	rows, err := pool.Query(ctx,
-		`SELECT id, route_id, checkpoint_id, guard_id, scanned_at, method, photo_object_key, gps_lat, gps_lng
-		 FROM checkpoint_scans
-		 WHERE route_id = $1 AND scanned_at::date = $2::date
-		 ORDER BY scanned_at`,
-		routeID, date,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("ListScans: %w", err)
-	}
-	defer rows.Close()
+// ── Sessions ─────────────────────────────────────────────────────────────────
 
-	var scans []model.CheckpointScan
-	for rows.Next() {
-		var s model.CheckpointScan
-		if err := rows.Scan(&s.ID, &s.RouteID, &s.CheckpointID, &s.GuardID,
-			&s.ScannedAt, &s.Method, &s.PhotoObjectKey, &s.GPSLat, &s.GPSLng); err != nil {
-			return nil, fmt.Errorf("ListScans scan: %w", err)
-		}
-		scans = append(scans, s)
-	}
-	return scans, rows.Err()
+const sessionColumns = `id, route_id, site_id, guard_id, device_id, started_at, ended_at, status, created_at`
+
+func scanSession(row pgx.Row) (model.PatrolSession, error) {
+	var s model.PatrolSession
+	err := row.Scan(&s.ID, &s.RouteID, &s.SiteID, &s.GuardID, &s.DeviceID,
+		&s.StartedAt, &s.EndedAt, &s.Status, &s.CreatedAt)
+	return s, err
 }
 
-// GetRouteReport returns completion stats for a route on a date.
-func GetRouteReport(ctx context.Context, pool *pgxpool.Pool, routeID, date string) (*RouteReport, error) {
-	route, err := GetRoute(ctx, pool, routeID)
+func scanSessionRows(rows pgx.Rows) (model.PatrolSession, error) { return scanSession(rows) }
+
+// CreateSession starts a patrol session. With a client-supplied ID the call is
+// idempotent: a retry returns the existing session and created=false.
+func CreateSession(ctx context.Context, db DBTX, s model.PatrolSession, clientID *string) (*model.PatrolSession, bool, error) {
+	out, err := scanSession(db.QueryRow(ctx, `
+		INSERT INTO patrol_sessions (id, route_id, site_id, guard_id, device_id, started_at)
+		VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6)
+		ON CONFLICT (id) DO NOTHING
+		RETURNING `+sessionColumns,
+		clientID, s.RouteID, s.SiteID, s.GuardID, s.DeviceID, s.StartedAt))
+	if err == nil {
+		return &out, true, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) || clientID == nil {
+		return nil, false, fmt.Errorf("CreateSession: %w", err)
+	}
+	existing, err := GetSession(ctx, db, *clientID)
+	return existing, false, err
+}
+
+// GetSession retrieves a session by ID.
+func GetSession(ctx context.Context, db DBTX, id string) (*model.PatrolSession, error) {
+	s, err := scanSession(db.QueryRow(ctx, `SELECT `+sessionColumns+` FROM patrol_sessions WHERE id = $1`, id))
 	if err != nil {
-		return nil, err
+		return nil, mapNoRows(err)
 	}
+	return &s, nil
+}
 
-	// Parse checkpoints from JSONB.
-	var checkpoints []model.Checkpoint
-	if err := json.Unmarshal(route.Checkpoints, &checkpoints); err != nil {
-		return nil, fmt.Errorf("parse checkpoints: %w", err)
-	}
-
-	scans, err := ListScans(ctx, pool, routeID, date)
+// EndSession closes a session that is still in progress.
+func EndSession(ctx context.Context, db DBTX, id string, at time.Time, status string) (*model.PatrolSession, error) {
+	s, err := scanSession(db.QueryRow(ctx, `
+		UPDATE patrol_sessions SET ended_at = $2, status = $3
+		WHERE id = $1 AND status = 'in_progress'
+		RETURNING `+sessionColumns, id, at, status))
 	if err != nil {
-		return nil, err
+		return nil, mapNoRows(err)
 	}
+	return &s, nil
+}
 
-	// Index scanned checkpoint IDs.
-	scanned := map[string]bool{}
-	for _, s := range scans {
-		scanned[s.CheckpointID] = true
+// ListSessions returns the sessions of a site started in [from, to).
+func ListSessions(ctx context.Context, db DBTX, siteID string, from, to time.Time) ([]model.PatrolSession, error) {
+	rows, err := db.Query(ctx, `
+		SELECT `+sessionColumns+` FROM patrol_sessions
+		WHERE site_id = $1 AND started_at >= $2 AND started_at < $3
+		ORDER BY started_at DESC`, siteID, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("ListSessions: %w", err)
 	}
+	return collect(rows, scanSessionRows)
+}
 
-	missed := []model.Checkpoint{}
-	for _, cp := range checkpoints {
-		if !scanned[cp.ID] {
-			missed = append(missed, cp)
-		}
+// ListActiveSessions returns the in-progress sessions of a site, or of every
+// site when siteID is empty.
+func ListActiveSessions(ctx context.Context, db DBTX, siteID string) ([]model.PatrolSession, error) {
+	rows, err := db.Query(ctx, `
+		SELECT `+sessionColumns+` FROM patrol_sessions
+		WHERE status = 'in_progress' AND ($1 = '' OR site_id::text = $1)
+		ORDER BY started_at`, siteID)
+	if err != nil {
+		return nil, fmt.Errorf("ListActiveSessions: %w", err)
 	}
+	return collect(rows, scanSessionRows)
+}
 
-	total := len(checkpoints)
-	done := len(checkpoints) - len(missed)
-	var pct float64
-	if total > 0 {
-		pct = float64(done) / float64(total) * 100
+// AbandonStaleSessions closes sessions left open longer than maxAge.
+func AbandonStaleSessions(ctx context.Context, db DBTX, maxAge time.Duration) (int64, error) {
+	tag, err := db.Exec(ctx, `
+		UPDATE patrol_sessions SET status = 'abandoned', ended_at = now()
+		WHERE status = 'in_progress' AND started_at < now() - $1::interval`, maxAge)
+	if err != nil {
+		return 0, fmt.Errorf("AbandonStaleSessions: %w", err)
 	}
+	return tag.RowsAffected(), nil
+}
 
-	return &RouteReport{
-		RouteID:            routeID,
-		Date:               date,
-		TotalCheckpoints:   total,
-		ScannedCheckpoints: done,
-		CompletionPct:      pct,
-		MissedCheckpoints:  missed,
-		Scans:              scans,
-	}, nil
+// ── Scans ────────────────────────────────────────────────────────────────────
+
+const scanColumns = `id, session_id, route_id, checkpoint_id, guard_id, device_id, scanned_at,
+	received_at, method, photo_object_key, gps_lat, gps_lng`
+
+func scanScan(row pgx.Row) (model.CheckpointScan, error) {
+	var s model.CheckpointScan
+	err := row.Scan(&s.ID, &s.SessionID, &s.RouteID, &s.CheckpointID, &s.GuardID, &s.DeviceID,
+		&s.ScannedAt, &s.ReceivedAt, &s.Method, &s.PhotoObjectKey, &s.GPSLat, &s.GPSLng)
+	return s, err
+}
+
+func scanScanRows(rows pgx.Rows) (model.CheckpointScan, error) { return scanScan(rows) }
+
+// InsertScan records a checkpoint scan; idempotent on a client-supplied ID.
+func InsertScan(ctx context.Context, db DBTX, s model.CheckpointScan, clientID *string) (*model.CheckpointScan, bool, error) {
+	out, err := scanScan(db.QueryRow(ctx, `
+		INSERT INTO checkpoint_scans
+		  (id, session_id, route_id, checkpoint_id, guard_id, device_id, scanned_at, method,
+		   photo_object_key, gps_lat, gps_lng)
+		VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		ON CONFLICT (id) DO NOTHING
+		RETURNING `+scanColumns,
+		clientID, s.SessionID, s.RouteID, s.CheckpointID, s.GuardID, s.DeviceID, s.ScannedAt,
+		s.Method, s.PhotoObjectKey, s.GPSLat, s.GPSLng))
+	if err == nil {
+		return &out, true, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) || clientID == nil {
+		return nil, false, fmt.Errorf("InsertScan: %w", err)
+	}
+	existing, err := scanScan(db.QueryRow(ctx, `SELECT `+scanColumns+` FROM checkpoint_scans WHERE id = $1`, *clientID))
+	if err != nil {
+		return nil, false, mapNoRows(err)
+	}
+	return &existing, false, nil
+}
+
+// ListSessionScans returns the scans of a session in time order.
+func ListSessionScans(ctx context.Context, db DBTX, sessionID string) ([]model.CheckpointScan, error) {
+	rows, err := db.Query(ctx,
+		`SELECT `+scanColumns+` FROM checkpoint_scans WHERE session_id = $1 ORDER BY scanned_at`, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("ListSessionScans: %w", err)
+	}
+	return collect(rows, scanScanRows)
+}
+
+// ── SLA breaches ─────────────────────────────────────────────────────────────
+
+// InsertSLABreach records a breach once per (session, checkpoint); returns
+// true only the first time so callers notify exactly once.
+func InsertSLABreach(ctx context.Context, db DBTX, sessionID, checkpointID string, dueAt time.Time) (bool, error) {
+	tag, err := db.Exec(ctx, `
+		INSERT INTO sla_breaches (session_id, checkpoint_id, due_at)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (session_id, checkpoint_id) DO NOTHING`, sessionID, checkpointID, dueAt)
+	if err != nil {
+		return false, fmt.Errorf("InsertSLABreach: %w", err)
+	}
+	return tag.RowsAffected() > 0, nil
 }

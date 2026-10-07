@@ -1,196 +1,161 @@
 package handler
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/securepatrol/backend/internal/middleware"
+	"github.com/securepatrol/backend/internal/notification"
 	"github.com/securepatrol/backend/internal/repository"
 	"github.com/securepatrol/backend/internal/service"
 )
 
-// RegisterAttendance registers attendance routes on the given router group.
-func RegisterAttendance(r fiber.Router) {
-	r.Get("/", listAttendance)
-	r.Post("/clock-in", clockIn)
-	r.Post("/clock-out", clockOut)
-	r.Get("/daily-summary", dailySummary)
-	r.Get("/monthly-recap", monthlyRecap)
-}
-
-func getPool(c *fiber.Ctx) *pgxpool.Pool {
-	v := c.Locals("db")
-	if v == nil {
-		return nil
-	}
-	p, _ := v.(*pgxpool.Pool)
-	return p
-}
-
-// poolRequired returns the pool or sends a 503 and returns nil.
-// Callers must check: if pool == nil { return nil }
-func poolRequired(c *fiber.Ctx) *pgxpool.Pool {
-	p := getPool(c)
-	if p == nil {
-		_ = c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "database not available"})
-	}
-	return p
-}
-
-// GET /attendance?site_id=&date=&status=
-func listAttendance(c *fiber.Ctx) error {
-	siteID := c.Query("site_id")
-	if siteID == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "site_id is required"})
-	}
-	date := c.Query("date")
-	if date == "" {
-		date = time.Now().UTC().Format("2006-01-02")
-	}
-	status := c.Query("status")
-
-	pool := poolRequired(c)
-	if pool == nil {
-		return nil
-	}
-	var records interface{}
-	var err error
-	if status != "" {
-		records, err = repository.ListByDateStatus(c.Context(), pool, siteID, date, status)
-	} else {
-		records, err = repository.ListByDate(c.Context(), pool, siteID, date)
-	}
+// GET /attendance/daily?site_id=&date=YYYY-MM-DD — every scheduled shift of the
+// site-local day with its attendance outcome (FR-REP-01 data).
+func (h *Handler) dailyAttendance(c *fiber.Ctx) error {
+	site, err := h.siteFor(c, c.Query("site_id"))
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		return h.fail(c, err)
 	}
-	return c.JSON(records)
+	from, to, err := service.DayRange(c.Query("date"), site.Location())
+	if err != nil {
+		return h.fail(c, err)
+	}
+	rows, err := repository.DailyAttendance(c.Context(), h.DB, site.ID, from, to)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	return c.JSON(fiber.Map{"site_id": site.ID, "date": from.In(site.Location()).Format("2006-01-02"), "rows": rows})
 }
 
-// POST /attendance/clock-in
-func clockIn(c *fiber.Ctx) error {
-	pool := poolRequired(c)
-	if pool == nil {
-		return nil
-	}
-
-	var body struct {
-		GuardID         string   `json:"guard_id"`
-		SiteID          string   `json:"site_id"`
-		GPSLat          *float64 `json:"gps_lat"`
-		GPSLng          *float64 `json:"gps_lng"`
-		SelfieObjectKey *string  `json:"selfie_object_key"`
-	}
-	if err := c.BodyParser(&body); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid JSON body"})
-	}
-	if body.GuardID == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "guard_id is required"})
-	}
-	if body.SiteID == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "site_id is required"})
-	}
-
-	rec, err := service.ClockIn(c.Context(), pool, service.ClockInRequest{
-		GuardID:         body.GuardID,
-		SiteID:          body.SiteID,
-		GPSLat:          body.GPSLat,
-		GPSLng:          body.GPSLng,
-		SelfieObjectKey: body.SelfieObjectKey,
-	})
+// GET /attendance/review?site_id= — records awaiting supervisor review (FR-OFF-02).
+func (h *Handler) reviewQueue(c *fiber.Ctx) error {
+	site, err := h.siteFor(c, c.Query("site_id"))
 	if err != nil {
-		msg := err.Error()
-		switch msg {
-		case "guard not found: " + body.GuardID:
-			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": msg})
-		case "guard already clocked in today":
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": msg})
-		default:
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": msg})
+		return h.fail(c, err)
+	}
+	rows, err := repository.ListReviewQueue(c.Context(), h.DB, site.ID)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	return c.JSON(rows)
+}
+
+// POST /attendance/:id/review {note}
+func (h *Handler) markReviewed(c *fiber.Ctx) error {
+	rec, err := repository.GetAttendance(c.Context(), h.DB, c.Params("id"))
+	if err != nil {
+		return h.fail(c, err)
+	}
+	if _, err := h.siteFor(c, rec.SiteID); err != nil {
+		return h.fail(c, err)
+	}
+	var b struct {
+		Note *string `json:"note"`
+	}
+	if len(c.Body()) > 0 {
+		if err := parse(c, &b); err != nil {
+			return h.fail(c, err)
 		}
 	}
-	return c.Status(fiber.StatusCreated).JSON(rec)
+	out, err := repository.MarkAttendanceReviewed(c.Context(), h.DB, rec.ID, actor(c), nilIfEmpty(b.Note))
+	if err != nil {
+		return h.fail(c, err)
+	}
+	return c.JSON(out)
 }
 
-// POST /attendance/clock-out
-func clockOut(c *fiber.Ctx) error {
-	pool := poolRequired(c)
-	if pool == nil {
-		return nil
+// PUT /attendance/shifts/:shiftId/override {status, reason, clock_in_at?, clock_out_at?}
+func (h *Handler) overrideAttendance(c *fiber.Ctx) error {
+	shift, err := h.shiftFor(c, c.Params("shiftId"))
+	if err != nil {
+		return h.fail(c, err)
 	}
-
-	var body struct {
-		AttendanceID string   `json:"attendance_id"`
-		GPSLat       *float64 `json:"gps_lat"`
-		GPSLng       *float64 `json:"gps_lng"`
+	var b struct {
+		Status     string     `json:"status"`
+		Reason     string     `json:"reason"`
+		ClockInAt  *time.Time `json:"clock_in_at"`
+		ClockOutAt *time.Time `json:"clock_out_at"`
 	}
-	if err := c.BodyParser(&body); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid JSON body"})
+	if err := parse(c, &b); err != nil {
+		return h.fail(c, err)
 	}
-	if body.AttendanceID == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "attendance_id is required"})
-	}
-
-	rec, err := service.ClockOut(c.Context(), pool, service.ClockOutRequest{
-		AttendanceID: body.AttendanceID,
-		GPSLat:       body.GPSLat,
-		GPSLng:       body.GPSLng,
+	out, err := service.OverrideAttendance(c.Context(), h.DB, shift, service.OverrideInput{
+		ShiftID: shift.ID, Status: b.Status, Reason: b.Reason,
+		ClockInAt: b.ClockInAt, ClockOutAt: b.ClockOutAt, Actor: actor(c),
 	})
 	if err != nil {
-		msg := err.Error()
-		switch msg {
-		case "attendance record not found: " + body.AttendanceID:
-			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": msg})
-		case "guard has not clocked in yet", "guard already clocked out":
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": msg})
-		default:
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": msg})
-		}
+		return h.fail(c, err)
+	}
+	return c.JSON(out)
+}
+
+// POST /attendance/clock-in {id?, clock_in_at?, selfie_object_key?, gps_lat?, gps_lng?}
+func (h *Handler) clockIn(c *fiber.Ctx) error {
+	var b struct {
+		ID              *string    `json:"id"`
+		ClockInAt       *time.Time `json:"clock_in_at"`
+		SelfieObjectKey *string    `json:"selfie_object_key"`
+		GPSLat          *float64   `json:"gps_lat"`
+		GPSLng          *float64   `json:"gps_lng"`
+	}
+	if err := parse(c, &b); err != nil {
+		return h.fail(c, err)
+	}
+	if err := optionalUUID(b.ID); err != nil {
+		return h.fail(c, err)
+	}
+	site, err := h.deviceSite(c)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	guard := middleware.GetGuard(c)
+	res, err := service.ClockIn(c.Context(), h.DB, service.ClockInInput{
+		ID: nilIfEmpty(b.ID), At: b.ClockInAt, Guard: guard, Site: site, DeviceID: deviceID(c),
+		SelfieObjectKey: nilIfEmpty(b.SelfieObjectKey), GPSLat: b.GPSLat, GPSLng: b.GPSLng,
+	})
+	if err != nil {
+		return h.fail(c, err)
+	}
+	if res.Created && res.Record.Status == "late" && res.Shift != nil {
+		h.publish(c.Context(), notification.Event{
+			Type: notification.EventLateClockIn, Site: site, DedupeKey: "late:" + res.Record.ID,
+			Params: map[string]string{
+				"guard":   guard.Name,
+				"minutes": strconv.Itoa(res.Record.LateMinutes),
+				"shift":   res.Shift.StartTime.In(site.Location()).Format("02 Jan 15:04"),
+			},
+		})
+	}
+	return created(c, res.Created, res.Record)
+}
+
+// POST /attendance/clock-out {attendance_id?, clock_out_at?, gps_lat?, gps_lng?}
+func (h *Handler) clockOut(c *fiber.Ctx) error {
+	var b struct {
+		AttendanceID *string    `json:"attendance_id"`
+		ClockOutAt   *time.Time `json:"clock_out_at"`
+		GPSLat       *float64   `json:"gps_lat"`
+		GPSLng       *float64   `json:"gps_lng"`
+	}
+	if err := parse(c, &b); err != nil {
+		return h.fail(c, err)
+	}
+	if err := optionalUUID(b.AttendanceID); err != nil {
+		return h.fail(c, err)
+	}
+	site, err := h.deviceSite(c)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	rec, _, err := service.ClockOut(c.Context(), h.DB, service.ClockOutInput{
+		AttendanceID: nilIfEmpty(b.AttendanceID), At: b.ClockOutAt, Guard: middleware.GetGuard(c),
+		Site: site, GPSLat: b.GPSLat, GPSLng: b.GPSLng,
+	})
+	if err != nil {
+		return h.fail(c, err)
 	}
 	return c.JSON(rec)
-}
-
-// GET /attendance/daily-summary?site_id=&date=
-func dailySummary(c *fiber.Ctx) error {
-	pool := poolRequired(c)
-	if pool == nil {
-		return nil
-	}
-
-	siteID := c.Query("site_id")
-	if siteID == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "site_id is required"})
-	}
-	date := c.Query("date")
-	if date == "" {
-		date = time.Now().UTC().Format("2006-01-02")
-	}
-
-	summary, err := repository.DailySummary(c.Context(), pool, siteID, date)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
-	}
-	return c.JSON(summary)
-}
-
-// GET /attendance/monthly-recap?site_id=&month=
-func monthlyRecap(c *fiber.Ctx) error {
-	pool := poolRequired(c)
-	if pool == nil {
-		return nil
-	}
-
-	siteID := c.Query("site_id")
-	if siteID == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "site_id is required"})
-	}
-	month := c.Query("month")
-	if month == "" {
-		month = time.Now().UTC().Format("2006-01")
-	}
-
-	recap, err := repository.MonthlyRecap(c.Context(), pool, siteID, month)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
-	}
-	return c.JSON(recap)
 }

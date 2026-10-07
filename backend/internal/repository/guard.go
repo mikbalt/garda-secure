@@ -1,109 +1,113 @@
-// Package repository provides data-access functions for guard records.
 package repository
 
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/securepatrol/backend/internal/model"
 )
 
-// ListGuards returns all guards, optionally filtered by site assignment.
-func ListGuards(ctx context.Context, pool *pgxpool.Pool, siteID string) ([]model.Guard, error) {
-	query := `SELECT id, keycloak_user_id, name, employee_id, role, status, created_at, updated_at FROM guards WHERE 1=1`
-	args := []any{}
-	if siteID != "" {
-		query += fmt.Sprintf(" AND id IN (SELECT DISTINCT guard_id FROM shifts WHERE site_id = $%d)", len(args)+1)
-		args = append(args, siteID)
-	}
-	query += " ORDER BY name"
+const guardColumns = `id, keycloak_user_id, name, employee_id, site_id, role, pin_hash, status, created_at, updated_at`
 
-	rows, err := pool.Query(ctx, query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("ListGuards query: %w", err)
-	}
-	defer rows.Close()
-
-	var guards []model.Guard
-	for rows.Next() {
-		var g model.Guard
-		if err := rows.Scan(&g.ID, &g.KeycloakUserID, &g.Name, &g.EmployeeID, &g.Role, &g.Status, &g.CreatedAt, &g.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("ListGuards scan: %w", err)
-		}
-		guards = append(guards, g)
-	}
-	return guards, rows.Err()
+func scanGuard(row pgx.Row) (model.Guard, error) {
+	var g model.Guard
+	err := row.Scan(&g.ID, &g.KeycloakUserID, &g.Name, &g.EmployeeID, &g.SiteID,
+		&g.Role, &g.PinHash, &g.Status, &g.CreatedAt, &g.UpdatedAt)
+	g.HasPin = g.PinHash != nil && *g.PinHash != ""
+	return g, err
 }
 
-// GetGuardByID retrieves a single guard by ID.
-func GetGuardByID(ctx context.Context, pool *pgxpool.Pool, id string) (*model.Guard, error) {
-	var g model.Guard
-	err := pool.QueryRow(ctx,
-		`SELECT id, keycloak_user_id, name, employee_id, role, status, created_at, updated_at FROM guards WHERE id = $1`,
-		id,
-	).Scan(&g.ID, &g.KeycloakUserID, &g.Name, &g.EmployeeID, &g.Role, &g.Status, &g.CreatedAt, &g.UpdatedAt)
+func scanGuardRows(rows pgx.Rows) (model.Guard, error) { return scanGuard(rows) }
+
+// ListGuardsBySite returns the guards assigned to a site.
+func ListGuardsBySite(ctx context.Context, db DBTX, siteID string) ([]model.Guard, error) {
+	rows, err := db.Query(ctx,
+		`SELECT `+guardColumns+` FROM guards WHERE site_id = $1 ORDER BY name`, siteID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("GetGuardByID: %w", err)
+		return nil, fmt.Errorf("ListGuardsBySite: %w", err)
+	}
+	return collect(rows, scanGuardRows)
+}
+
+// ListGuardsByRealm returns all guards assigned to sites of a realm.
+func ListGuardsByRealm(ctx context.Context, db DBTX, realm string) ([]model.Guard, error) {
+	rows, err := db.Query(ctx, `
+		SELECT `+prefixed("g", guardColumns)+`
+		FROM guards g
+		JOIN sites s ON s.id = g.site_id
+		WHERE s.keycloak_realm = $1
+		ORDER BY g.name`, realm)
+	if err != nil {
+		return nil, fmt.Errorf("ListGuardsByRealm: %w", err)
+	}
+	return collect(rows, scanGuardRows)
+}
+
+// GetGuard retrieves a guard by ID.
+func GetGuard(ctx context.Context, db DBTX, id string) (*model.Guard, error) {
+	g, err := scanGuard(db.QueryRow(ctx, `SELECT `+guardColumns+` FROM guards WHERE id = $1`, id))
+	if err != nil {
+		return nil, mapNoRows(err)
 	}
 	return &g, nil
 }
 
-// CreateGuard inserts a new guard record.
-func CreateGuard(ctx context.Context, pool *pgxpool.Pool, g model.Guard) (*model.Guard, error) {
-	err := pool.QueryRow(ctx,
-		`INSERT INTO guards (keycloak_user_id, name, employee_id, role, status)
-		 VALUES ($1, $2, $3, $4, $5)
-		 RETURNING id, keycloak_user_id, name, employee_id, role, status, created_at, updated_at`,
-		g.KeycloakUserID, g.Name, g.EmployeeID, g.Role, g.Status,
-	).Scan(&g.ID, &g.KeycloakUserID, &g.Name, &g.EmployeeID, &g.Role, &g.Status, &g.CreatedAt, &g.UpdatedAt)
+// CreateGuard inserts a new guard.
+func CreateGuard(ctx context.Context, db DBTX, g model.Guard) (*model.Guard, error) {
+	out, err := scanGuard(db.QueryRow(ctx, `
+		INSERT INTO guards (keycloak_user_id, name, employee_id, site_id, role, status)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING `+guardColumns,
+		g.KeycloakUserID, g.Name, g.EmployeeID, g.SiteID, g.Role, g.Status))
 	if err != nil {
 		return nil, fmt.Errorf("CreateGuard: %w", err)
 	}
-	return &g, nil
+	return &out, nil
 }
 
-// UpdateGuard updates the specified fields of a guard.
-// Allowed keys in fields: "name", "role", "status", "employee_id", "keycloak_user_id".
-func UpdateGuard(ctx context.Context, pool *pgxpool.Pool, id string, fields map[string]any) (*model.Guard, error) {
-	allowed := map[string]bool{
-		"name": true, "role": true, "status": true,
-		"employee_id": true, "keycloak_user_id": true,
-	}
-
-	setClauses := []string{}
-	args := []any{}
-	for k, v := range fields {
-		if !allowed[k] {
-			continue
-		}
-		args = append(args, v)
-		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", k, len(args)))
-	}
-	if len(setClauses) == 0 {
-		return GetGuardByID(ctx, pool, id)
-	}
-
-	args = append(args, id)
-	query := fmt.Sprintf(
-		`UPDATE guards SET %s, updated_at = now() WHERE id = $%d
-		 RETURNING id, keycloak_user_id, name, employee_id, role, status, created_at, updated_at`,
-		strings.Join(setClauses, ", "), len(args),
-	)
-
-	var g model.Guard
-	err := pool.QueryRow(ctx, query, args...).
-		Scan(&g.ID, &g.KeycloakUserID, &g.Name, &g.EmployeeID, &g.Role, &g.Status, &g.CreatedAt, &g.UpdatedAt)
+// UpdateGuard replaces the editable fields of a guard.
+func UpdateGuard(ctx context.Context, db DBTX, g model.Guard) (*model.Guard, error) {
+	out, err := scanGuard(db.QueryRow(ctx, `
+		UPDATE guards
+		SET name = $2, employee_id = $3, site_id = $4, role = $5, status = $6,
+		    keycloak_user_id = $7, updated_at = now()
+		WHERE id = $1
+		RETURNING `+guardColumns,
+		g.ID, g.Name, g.EmployeeID, g.SiteID, g.Role, g.Status, g.KeycloakUserID))
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("UpdateGuard: %w", err)
+		return nil, mapNoRows(err)
 	}
-	return &g, nil
+	return &out, nil
+}
+
+// SetGuardPinHash stores a new bcrypt PIN hash for a guard.
+func SetGuardPinHash(ctx context.Context, db DBTX, id, hash string) error {
+	tag, err := db.Exec(ctx,
+		`UPDATE guards SET pin_hash = $2, updated_at = now() WHERE id = $1`, id, hash)
+	if err != nil {
+		return fmt.Errorf("SetGuardPinHash: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ListRoster returns the active guards of a site with their PIN hashes, for
+// offline PIN verification on the site's tablets.
+func ListRoster(ctx context.Context, db DBTX, siteID string) ([]model.RosterGuard, error) {
+	rows, err := db.Query(ctx, `
+		SELECT id, name, employee_id, role, pin_hash
+		FROM guards
+		WHERE site_id = $1 AND status = 'active'
+		ORDER BY name`, siteID)
+	if err != nil {
+		return nil, fmt.Errorf("ListRoster: %w", err)
+	}
+	return collect(rows, func(r pgx.Rows) (model.RosterGuard, error) {
+		var g model.RosterGuard
+		err := r.Scan(&g.ID, &g.Name, &g.EmployeeID, &g.Role, &g.PinHash)
+		return g, err
+	})
 }

@@ -133,3 +133,22 @@ in PRD §9 (OQ-x). New entries go at the bottom with the next free number.
 - **Date:** 2026-10-07 · **Status:** Accepted
 - Focus on backend, web and infra for v1. The Flutter app will be updated later to
   the device-token/PIN flow (D-001) and the new endpoints.
+
+### D-018 — Guards always belong to a site
+- **Date:** 2026-10-07 · **Status:** Accepted
+- `site_id` is mandatory when creating/updating a guard. The guards table has no
+  realm column; the site is what scopes a guard to a client realm, so unassigned
+  guards would leak across realms.
+
+### D-019 — Deployment topology details
+- **Date:** 2026-10-07 · **Status:** Accepted
+- Keycloak uses its own database (`keycloak`) in the same Postgres server, created
+  by `infra/postgres/init`. Keycloak runs in production mode (`start`) under
+  `/auth` behind nginx; `KEYCLOAK_PUBLIC_URL` is both Keycloak's hostname URL and
+  the token issuer prefix the API trusts.
+- Browsers fetch photos through nginx on port **9443** (TLS) which proxies to MinIO
+  preserving the Host header, so pre-signed URLs stay valid
+  (`MINIO_PUBLIC_ENDPOINT=<host>:9443`). MinIO's own ports are bound to localhost.
+- Web container gets runtime config (`/config.js`) from env vars; images are
+  environment-independent.
+- The API runs DB migrations on start; the worker waits for a healthy API.

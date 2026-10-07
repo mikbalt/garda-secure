@@ -1,201 +1,189 @@
-// Package notification implements a Redis-queue-backed notification worker
-// that dispatches SMTP emails and WhatsApp messages.
 package notification
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"fmt"
+	"errors"
 	"net/http"
-	"net/smtp"
+	"strconv"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 
-	"github.com/securepatrol/backend/internal/config"
+	"github.com/securepatrol/backend/internal/repository"
+	"github.com/securepatrol/backend/internal/settings"
 )
 
 const (
-	queueKey       = "notifications:queue"
-	deadLetterKey  = "notifications:dead"
-	maxRetries     = 3
-	visibilityTime = 30 * time.Second
-	pollInterval   = 2 * time.Second
+	maxAttempts = 3
+	sendTimeout = 30 * time.Second
+	lockTTL     = 2 * time.Minute
 )
 
-// Kind identifies the notification channel.
-type Kind string
+// retryDelays is the wait before attempt n+1 (index = attempts already made).
+var retryDelays = []time.Duration{10 * time.Second, time.Minute}
 
-const (
-	KindEmail    Kind = "email"
-	KindWhatsApp Kind = "whatsapp"
-)
-
-// Message is a notification job stored in Redis.
-type Message struct {
-	ID        string          `json:"id"`
-	Kind      Kind            `json:"kind"`
-	To        string          `json:"to"`
-	Subject   string          `json:"subject,omitempty"`
-	Body      string          `json:"body"`
-	Retries   int             `json:"retries"`
-	CreatedAt time.Time       `json:"created_at"`
-	Meta      json.RawMessage `json:"meta,omitempty"`
-}
-
-// Worker polls the Redis queue and dispatches notifications.
+// Worker sends queued deliveries.
 type Worker struct {
-	rdb    *redis.Client
-	cfg    *config.Config
-	log    zerolog.Logger
-	done   chan struct{}
+	db       repository.DBTX
+	rdb      *redis.Client
+	settings *settings.Store
+	channels map[string]Channel
+	log      zerolog.Logger
 }
 
-// NewWorker creates a new notification worker.
-func NewWorker(rdb *redis.Client, cfg *config.Config, log zerolog.Logger) *Worker {
+// NewWorker creates a dispatcher with the v1 channels (e-mail, WhatsApp).
+func NewWorker(db repository.DBTX, rdb *redis.Client, st *settings.Store, log zerolog.Logger) *Worker {
 	return &Worker{
-		rdb:  rdb,
-		cfg:  cfg,
-		log:  log.With().Str("component", "notification-worker").Logger(),
-		done: make(chan struct{}),
+		db:       db,
+		rdb:      rdb,
+		settings: st,
+		channels: defaultChannels(),
+		log:      log.With().Str("component", "notification-worker").Logger(),
 	}
 }
 
-// Enqueue pushes a notification message onto the Redis queue.
-func Enqueue(ctx context.Context, rdb *redis.Client, msg Message) error {
-	msg.CreatedAt = time.Now().UTC()
-	b, err := json.Marshal(msg)
+func defaultChannels() map[string]Channel {
+	return map[string]Channel{
+		"email":    emailChannel{},
+		"whatsapp": whatsAppChannel{client: &http.Client{Timeout: sendTimeout}},
+	}
+}
+
+// SendTest delivers a test message immediately, bypassing the queue, so an
+// admin can verify channel settings from the web UI.
+func SendTest(ctx context.Context, st *settings.Store, channel, recipient string) error {
+	ch, ok := defaultChannels()[channel]
+	if !ok {
+		return errors.New("unsupported channel " + channel)
+	}
+	cfg, err := st.Channels(ctx)
 	if err != nil {
-		return fmt.Errorf("marshal: %w", err)
+		return err
 	}
-	return rdb.LPush(ctx, queueKey, b).Err()
+	sctx, cancel := context.WithTimeout(ctx, sendTimeout)
+	defer cancel()
+	return ch.Send(sctx, cfg, recipient, "SecurePatrol test", "Test notification from SecurePatrol / Notifikasi uji dari SecurePatrol.")
 }
 
-// Start begins the worker loop in a goroutine.
-func (w *Worker) Start(ctx context.Context) {
-	go w.loop(ctx)
+// Run dispatches until ctx is cancelled.
+func (w *Worker) Run(ctx context.Context) {
+	go w.every(ctx, time.Second, w.promoteDelayed)
+	go w.every(ctx, time.Minute, w.sweep)
+	for ctx.Err() == nil {
+		res, err := w.rdb.BRPop(ctx, 2*time.Second, queueKey).Result()
+		if err != nil {
+			if !errors.Is(err, redis.Nil) && ctx.Err() == nil {
+				w.log.Warn().Err(err).Msg("brpop failed")
+				time.Sleep(time.Second)
+			}
+			continue
+		}
+		if len(res) == 2 {
+			w.process(ctx, res[1])
+		}
+	}
 }
 
-// Stop signals the worker to stop.
-func (w *Worker) Stop() {
-	close(w.done)
-}
-
-func (w *Worker) loop(ctx context.Context) {
-	ticker := time.NewTicker(pollInterval)
-	defer ticker.Stop()
-
+func (w *Worker) every(ctx context.Context, d time.Duration, fn func(context.Context)) {
+	t := time.NewTicker(d)
+	defer t.Stop()
 	for {
 		select {
-		case <-w.done:
-			return
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			w.processOne(ctx)
+		case <-t.C:
+			fn(ctx)
 		}
 	}
 }
 
-func (w *Worker) processOne(ctx context.Context) {
-	// BRPOP blocks up to 1s — low-latency without busy-polling.
-	result, err := w.rdb.BRPop(ctx, 1*time.Second, queueKey).Result()
-	if err == redis.Nil {
+// process sends one delivery. A short Redis lock prevents two copies of the
+// same ID (e.g. sweeper + retry) from being sent concurrently.
+func (w *Worker) process(ctx context.Context, id string) {
+	lock := "notifications:lock:" + id
+	ok, err := w.rdb.SetNX(ctx, lock, "1", lockTTL).Result()
+	if err != nil || !ok {
 		return
 	}
+	defer w.rdb.Del(context.Background(), lock)
+
+	l, err := repository.GetNotificationLog(ctx, w.db, id)
 	if err != nil {
-		w.log.Warn().Err(err).Msg("brpop error")
-		return
-	}
-	if len(result) < 2 {
-		return
-	}
-
-	var msg Message
-	if err := json.Unmarshal([]byte(result[1]), &msg); err != nil {
-		w.log.Error().Err(err).Msg("unmarshal notification message")
-		return
-	}
-
-	var dispatchErr error
-	switch msg.Kind {
-	case KindEmail:
-		dispatchErr = w.sendEmail(msg)
-	case KindWhatsApp:
-		dispatchErr = w.sendWhatsApp(ctx, msg)
-	default:
-		w.log.Warn().Str("kind", string(msg.Kind)).Msg("unknown notification kind, dropping")
-		return
-	}
-
-	if dispatchErr != nil {
-		w.log.Error().Err(dispatchErr).Str("id", msg.ID).Str("kind", string(msg.Kind)).
-			Int("retries", msg.Retries).Msg("dispatch failed")
-
-		msg.Retries++
-		if msg.Retries >= maxRetries {
-			w.log.Error().Str("id", msg.ID).Msg("max retries reached, moving to dead letter")
-			b, _ := json.Marshal(msg)
-			_ = w.rdb.LPush(ctx, deadLetterKey, b).Err()
-		} else {
-			// Re-queue with exponential backoff via a delayed key
-			delay := time.Duration(1<<msg.Retries) * time.Second
-			time.Sleep(delay)
-			_ = Enqueue(ctx, w.rdb, msg)
+		if !errors.Is(err, repository.ErrNotFound) {
+			w.log.Error().Err(err).Str("id", id).Msg("load delivery failed")
 		}
-	} else {
-		w.log.Info().Str("id", msg.ID).Str("kind", string(msg.Kind)).
-			Str("to", msg.To).Msg("notification dispatched")
+		return
+	}
+	if l.Status != "queued" {
+		return
+	}
+
+	sendErr := w.send(ctx, l.Channel, l.Recipient, l.Subject, l.Body)
+	if sendErr == nil {
+		if err := repository.MarkNotificationAttempt(ctx, w.db, id, "sent", nil); err != nil {
+			w.log.Error().Err(err).Str("id", id).Msg("mark sent failed")
+		}
+		w.log.Info().Str("id", id).Str("event", l.EventType).Str("channel", l.Channel).Msg("notification sent")
+		return
+	}
+
+	msg := sendErr.Error()
+	attempts := l.Attempts + 1
+	status := "queued"
+	if attempts >= maxAttempts {
+		status = "failed"
+	}
+	if err := repository.MarkNotificationAttempt(ctx, w.db, id, status, &msg); err != nil {
+		w.log.Error().Err(err).Str("id", id).Msg("mark attempt failed")
+	}
+	w.log.Warn().Str("id", id).Str("channel", l.Channel).Int("attempts", attempts).Str("error", msg).Msg("delivery failed")
+	if status == "queued" {
+		delay := retryDelays[min(attempts-1, len(retryDelays)-1)]
+		w.rdb.ZAdd(ctx, delayedKey, redis.Z{Score: float64(time.Now().Add(delay).Unix()), Member: id})
 	}
 }
 
-func (w *Worker) sendEmail(msg Message) error {
-	if w.cfg.SMTPHost == "" {
-		return fmt.Errorf("SMTP not configured")
+func (w *Worker) send(ctx context.Context, channel, recipient, subject, body string) error {
+	ch, ok := w.channels[channel]
+	if !ok {
+		return errors.New("unsupported channel " + channel)
 	}
-
-	addr := fmt.Sprintf("%s:%s", w.cfg.SMTPHost, w.cfg.SMTPPort)
-	auth := smtp.PlainAuth("", w.cfg.SMTPUser, w.cfg.SMTPPassword, w.cfg.SMTPHost)
-
-	body := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n%s",
-		w.cfg.SMTPUser, msg.To, msg.Subject, msg.Body)
-
-	return smtp.SendMail(addr, auth, w.cfg.SMTPUser, []string{msg.To}, []byte(body))
+	cfg, err := w.settings.Channels(ctx)
+	if err != nil {
+		return err
+	}
+	sctx, cancel := context.WithTimeout(ctx, sendTimeout)
+	defer cancel()
+	return ch.Send(sctx, cfg, recipient, subject, body)
 }
 
-func (w *Worker) sendWhatsApp(ctx context.Context, msg Message) error {
-	if w.cfg.WhatsAppAPIURL == "" {
-		return fmt.Errorf("WhatsApp API not configured")
-	}
-
-	payload := map[string]any{
-		"messaging_product": "whatsapp",
-		"to":                msg.To,
-		"type":              "text",
-		"text":              map[string]string{"body": msg.Body},
-	}
-	b, err := json.Marshal(payload)
+// promoteDelayed moves retries whose time has come back onto the queue.
+func (w *Worker) promoteDelayed(ctx context.Context) {
+	now := strconv.FormatInt(time.Now().Unix(), 10)
+	ids, err := w.rdb.ZRangeByScore(ctx, delayedKey, &redis.ZRangeBy{Min: "-inf", Max: now, Count: 100}).Result()
 	if err != nil {
-		return err
+		return
 	}
+	for _, id := range ids {
+		if n, _ := w.rdb.ZRem(ctx, delayedKey, id).Result(); n == 1 {
+			_ = Enqueue(ctx, w.rdb, id)
+		}
+	}
+}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, w.cfg.WhatsAppAPIURL, bytes.NewReader(b))
+// sweep re-enqueues deliveries stuck in "queued" (e.g. Redis was down when
+// they were published), skipping those waiting for a scheduled retry.
+func (w *Worker) sweep(ctx context.Context) {
+	ids, err := repository.ListQueuedNotificationIDs(ctx, w.db, 120)
 	if err != nil {
-		return err
+		w.log.Warn().Err(err).Msg("sweep failed")
+		return
 	}
-	req.Header.Set("Authorization", "Bearer "+w.cfg.WhatsAppAPIToken)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
+	for _, id := range ids {
+		if _, err := w.rdb.ZScore(ctx, delayedKey, id).Result(); err == nil {
+			continue
+		}
+		_ = Enqueue(ctx, w.rdb, id)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("whatsapp API returned status %d", resp.StatusCode)
-	}
-	return nil
 }

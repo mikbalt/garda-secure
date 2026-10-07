@@ -68,7 +68,8 @@ Infra (from `infra/`): `cp .env.example .env`, then
   device's site. **Never take guard_id / actor identity from the request body.**
 - **Tenancy:** one Keycloak realm per client. A site belongs to one realm
   (`sites.keycloak_realm`); every site-scoped request must check the caller's realm
-  owns the site (helper `h.siteForRead/siteForWrite`).
+  owns the site (helper `h.siteFor`; tablets: `h.deviceSite`). Guards are
+  scoped through their mandatory `site_id`.
 - **Time:** store UTC (`timestamptz`). "Day"/"month" boundaries are computed in the
   **site's time zone** in Go and passed to SQL as timestamp ranges. Never use
   `::date` on a timestamptz in queries.
@@ -79,6 +80,10 @@ Infra (from `infra/`): `cp .env.example .env`, then
   raw DB errors for 5xx.
 - **Notifications:** publish domain events via the notifier; never call SMTP/WhatsApp
   from a request handler.
+- **Fiber gotcha:** group middleware matches by plain string prefix (`/device` also
+  matches `/devices`) — attach middleware per route when prefixes overlap.
+- **Migrations:** ASCII only (embedded/Windows Postgres may not be UTF-8).
+- **API contract:** keep [docs/api.md](docs/api.md) in sync with every handler change.
 
 ## Web conventions
 

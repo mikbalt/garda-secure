@@ -2,162 +2,278 @@ package repository
 
 import (
 	"context"
+	"fmt"
+	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5"
 )
 
-// AttendanceSummaryRow is one row in the daily attendance summary report.
-type AttendanceSummaryRow struct {
-	GuardID    string `json:"guard_id"`
-	GuardName  string `json:"guard_name"`
-	SiteID     string `json:"site_id"`
-	Date       string `json:"date"`
-	Status     string `json:"status"`
-	ClockInAt  any    `json:"clock_in_at"`
-	ClockOutAt any    `json:"clock_out_at"`
+// SessionSummaryRow is one patrol session with completion counts.
+type SessionSummaryRow struct {
+	SessionID        string     `json:"session_id"`
+	RouteID          string     `json:"route_id"`
+	RouteName        string     `json:"route_name"`
+	GuardID          string     `json:"guard_id"`
+	GuardName        string     `json:"guard_name"`
+	StartedAt        time.Time  `json:"started_at"`
+	EndedAt          *time.Time `json:"ended_at,omitempty"`
+	Status           string     `json:"status"`
+	TotalCheckpoints int        `json:"total_checkpoints"`
+	ScannedCount     int        `json:"scanned_count"`
+	SLABreaches      int        `json:"sla_breaches"`
+	CompletionPct    float64    `json:"completion_pct"`
 }
 
-// DailyAttendanceSummary returns attendance for all guards at a site on a date.
-func DailyAttendanceSummary(ctx context.Context, pool *pgxpool.Pool, siteID, date string) ([]AttendanceSummaryRow, error) {
-	rows, err := pool.Query(ctx,
-		`SELECT ar.guard_id, g.name, ar.site_id,
-		        to_char(ar.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') as date,
-		        ar.status, ar.clock_in_at, ar.clock_out_at
-		 FROM attendance_records ar
-		 JOIN guards g ON g.id = ar.guard_id
-		 WHERE ar.site_id = $1
-		   AND DATE(ar.created_at AT TIME ZONE 'UTC') = $2
-		 ORDER BY g.name ASC`, siteID, date)
+// SessionSummaries returns the patrol sessions of a site started in [from, to).
+// Only scans of checkpoints that belong to the route count towards completion.
+func SessionSummaries(ctx context.Context, db DBTX, siteID string, from, to time.Time) ([]SessionSummaryRow, error) {
+	rows, err := db.Query(ctx, `
+		SELECT ps.id, r.id, r.name, g.id, g.name, ps.started_at, ps.ended_at, ps.status,
+		       jsonb_array_length(r.checkpoints) AS total,
+		       (SELECT COUNT(DISTINCT cs.checkpoint_id) FROM checkpoint_scans cs
+		         WHERE cs.session_id = ps.id
+		           AND cs.checkpoint_id IN (SELECT cp->>'id' FROM jsonb_array_elements(r.checkpoints) cp)) AS scanned,
+		       (SELECT COUNT(*) FROM sla_breaches b WHERE b.session_id = ps.id) AS breaches
+		FROM patrol_sessions ps
+		JOIN routes r ON r.id = ps.route_id
+		JOIN guards g ON g.id = ps.guard_id
+		WHERE ps.site_id = $1 AND ps.started_at >= $2 AND ps.started_at < $3
+		ORDER BY ps.started_at DESC`, siteID, from, to)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("SessionSummaries: %w", err)
 	}
-	defer rows.Close()
-
-	var out []AttendanceSummaryRow
-	for rows.Next() {
-		var r AttendanceSummaryRow
-		if err := rows.Scan(&r.GuardID, &r.GuardName, &r.SiteID, &r.Date, &r.Status, &r.ClockInAt, &r.ClockOutAt); err != nil {
-			return nil, err
+	return collect(rows, func(r pgx.Rows) (SessionSummaryRow, error) {
+		var s SessionSummaryRow
+		err := r.Scan(&s.SessionID, &s.RouteID, &s.RouteName, &s.GuardID, &s.GuardName, &s.StartedAt,
+			&s.EndedAt, &s.Status, &s.TotalCheckpoints, &s.ScannedCount, &s.SLABreaches)
+		if s.TotalCheckpoints > 0 {
+			s.CompletionPct = round1(float64(s.ScannedCount) / float64(s.TotalCheckpoints) * 100)
 		}
-		out = append(out, r)
-	}
-	return out, rows.Err()
+		return s, err
+	})
 }
 
-// PatrolCompletionRow is one row in the patrol completion report.
-type PatrolCompletionRow struct {
-	RouteID          string  `json:"route_id"`
-	RouteName        string  `json:"route_name"`
-	GuardID          string  `json:"guard_id"`
-	GuardName        string  `json:"guard_name"`
-	Date             string  `json:"date"`
-	TotalCheckpoints int     `json:"total_checkpoints"`
-	ScannedCount     int     `json:"scanned_count"`
-	CompletionPct    float64 `json:"completion_pct"`
+// MonthlyRecapRow is the per-guard payroll reference for a period.
+type MonthlyRecapRow struct {
+	GuardID           string  `json:"guard_id"`
+	GuardName         string  `json:"guard_name"`
+	EmployeeID        *string `json:"employee_id,omitempty"`
+	ScheduledShifts   int     `json:"scheduled_shifts"`
+	Present           int     `json:"present"`
+	Late              int     `json:"late"`
+	Absent            int     `json:"absent"`
+	EarlyOut          int     `json:"early_out"`
+	Pending           int     `json:"pending"`
+	TotalHours        float64 `json:"total_hours"`
+	PatrolSessions    int     `json:"patrol_sessions"`
+	PatrolCompletePct float64 `json:"patrol_completion_pct"`
 }
 
-// PatrolCompletionSummary returns patrol completion per route per guard for a site on a date.
-func PatrolCompletionSummary(ctx context.Context, pool *pgxpool.Pool, siteID, date string) ([]PatrolCompletionRow, error) {
-	rows, err := pool.Query(ctx,
-		`SELECT r.id, r.name, cs.guard_id, g.name,
-		        to_char(cs.scanned_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') as date,
-		        jsonb_array_length(r.checkpoints) as total,
-		        COUNT(DISTINCT cs.checkpoint_id) as scanned,
-		        ROUND(COUNT(DISTINCT cs.checkpoint_id)::numeric /
-		              NULLIF(jsonb_array_length(r.checkpoints), 0) * 100, 1) as pct
-		 FROM checkpoint_scans cs
-		 JOIN routes r ON r.id = cs.route_id
-		 JOIN guards g ON g.id = cs.guard_id
-		 WHERE r.site_id = $1
-		   AND DATE(cs.scanned_at AT TIME ZONE 'UTC') = $2
-		 GROUP BY r.id, r.name, cs.guard_id, g.name, date
-		 ORDER BY date DESC, r.name ASC`, siteID, date)
+// MonthlyRecap aggregates attendance and patrol completion per guard for the
+// shifts of a site starting in [from, to).
+func MonthlyRecap(ctx context.Context, db DBTX, siteID string, from, to time.Time) ([]MonthlyRecapRow, error) {
+	rows, err := db.Query(ctx, `
+		WITH att AS (
+		  SELECT s.guard_id,
+		         COUNT(*)                                            AS scheduled,
+		         COUNT(*) FILTER (WHERE a.status = 'present')        AS present,
+		         COUNT(*) FILTER (WHERE a.status = 'late')           AS late,
+		         COUNT(*) FILTER (WHERE a.status = 'absent')         AS absent,
+		         COUNT(*) FILTER (WHERE a.early_out_minutes > 0)     AS early_out,
+		         COUNT(*) FILTER (WHERE a.id IS NULL)                AS pending,
+		         COALESCE(SUM(EXTRACT(EPOCH FROM (a.clock_out_at - a.clock_in_at))) / 3600, 0)::float8 AS hours
+		  FROM shifts s
+		  LEFT JOIN attendance_records a ON a.shift_id = s.id
+		  WHERE s.site_id = $1 AND s.start_time >= $2 AND s.start_time < $3
+		  GROUP BY s.guard_id
+		),
+		pat AS (
+		  SELECT ps.guard_id,
+		         COUNT(*) AS sessions,
+		         AVG(LEAST(1.0,
+		             (SELECT COUNT(DISTINCT cs.checkpoint_id) FROM checkpoint_scans cs WHERE cs.session_id = ps.id)::numeric
+		             / NULLIF(jsonb_array_length(r.checkpoints), 0))) * 100 AS pct
+		  FROM patrol_sessions ps
+		  JOIN routes r ON r.id = ps.route_id
+		  WHERE ps.site_id = $1 AND ps.started_at >= $2 AND ps.started_at < $3
+		  GROUP BY ps.guard_id
+		)
+		SELECT g.id, g.name, g.employee_id,
+		       COALESCE(att.scheduled, 0), COALESCE(att.present, 0), COALESCE(att.late, 0),
+		       COALESCE(att.absent, 0), COALESCE(att.early_out, 0), COALESCE(att.pending, 0),
+		       COALESCE(att.hours, 0), COALESCE(pat.sessions, 0), COALESCE(pat.pct, 0)::float8
+		FROM guards g
+		LEFT JOIN att ON att.guard_id = g.id
+		LEFT JOIN pat ON pat.guard_id = g.id
+		WHERE att.guard_id IS NOT NULL OR pat.guard_id IS NOT NULL
+		ORDER BY g.name`, siteID, from, to)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("MonthlyRecap: %w", err)
 	}
-	defer rows.Close()
-
-	var out []PatrolCompletionRow
-	for rows.Next() {
-		var r PatrolCompletionRow
-		if err := rows.Scan(&r.RouteID, &r.RouteName, &r.GuardID, &r.GuardName,
-			&r.Date, &r.TotalCheckpoints, &r.ScannedCount, &r.CompletionPct); err != nil {
-			return nil, err
-		}
-		out = append(out, r)
-	}
-	return out, rows.Err()
+	return collect(rows, func(r pgx.Rows) (MonthlyRecapRow, error) {
+		var m MonthlyRecapRow
+		err := r.Scan(&m.GuardID, &m.GuardName, &m.EmployeeID, &m.ScheduledShifts, &m.Present, &m.Late,
+			&m.Absent, &m.EarlyOut, &m.Pending, &m.TotalHours, &m.PatrolSessions, &m.PatrolCompletePct)
+		m.TotalHours = round1(m.TotalHours)
+		m.PatrolCompletePct = round1(m.PatrolCompletePct)
+		return m, err
+	})
 }
 
-// GuardKPIRow holds KPI metrics per guard.
+// GuardKPIRow holds performance metrics for one guard over a period.
 type GuardKPIRow struct {
 	GuardID           string  `json:"guard_id"`
 	GuardName         string  `json:"guard_name"`
-	Month             string  `json:"month"`
-	AttendancePct     float64 `json:"attendance_pct"`
-	PatrolCompletePct float64 `json:"patrol_complete_pct"`
-	IncidentsReported int     `json:"incidents_reported"`
-	LateCount         int     `json:"late_count"`
-	SosCount          int     `json:"sos_count"`
+	AttendanceRatePct float64 `json:"attendance_rate_pct"` // (present + late) / decided shifts
+	OnTimeRatePct     float64 `json:"on_time_rate_pct"`    // present / (present + late)
+	PatrolCompletePct float64 `json:"patrol_completion_pct"`
+	IncidentsFiled    int     `json:"incidents_filed"`
+	SLABreaches       int     `json:"sla_breaches"`
 }
 
-// GuardKPIReport returns KPI aggregates per guard for a site in a month.
-func GuardKPIReport(ctx context.Context, pool *pgxpool.Pool, siteID, month string) ([]GuardKPIRow, error) {
-	rows, err := pool.Query(ctx,
-		`WITH att AS (
-		   SELECT guard_id,
-		          ROUND(COUNT(*) FILTER (WHERE status IN ('present','late','early_out'))::numeric
-		                / NULLIF(COUNT(*),0) * 100, 1) as att_pct,
-		          COUNT(*) FILTER (WHERE status = 'late') as late_cnt
-		   FROM attendance_records
-		   WHERE site_id = $1 AND to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM') = $2
-		   GROUP BY guard_id
-		 ),
-		 pat AS (
-		   SELECT cs.guard_id,
-		          ROUND(COUNT(DISTINCT cs.checkpoint_id)::numeric /
-		                NULLIF(SUM(jsonb_array_length(r.checkpoints)),0) * 100, 1) as pat_pct
-		   FROM checkpoint_scans cs
-		   JOIN routes r ON r.id = cs.route_id
-		   WHERE r.site_id = $1 AND to_char(cs.scanned_at AT TIME ZONE 'UTC', 'YYYY-MM') = $2
-		   GROUP BY cs.guard_id
-		 ),
-		 inc AS (
-		   SELECT guard_id, COUNT(*) as inc_cnt
-		   FROM incidents
-		   WHERE site_id = $1 AND to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM') = $2
-		   GROUP BY guard_id
-		 ),
-		 sos AS (
-		   SELECT guard_id, COUNT(*) as sos_cnt
-		   FROM sos_alerts
-		   WHERE site_id = $1 AND to_char(fired_at AT TIME ZONE 'UTC', 'YYYY-MM') = $2
-		   GROUP BY guard_id
-		 )
-		 SELECT g.id, g.name, $2,
-		        COALESCE(att.att_pct, 0), COALESCE(pat.pat_pct, 0),
-		        COALESCE(inc.inc_cnt, 0), COALESCE(att.late_cnt, 0), COALESCE(sos.sos_cnt, 0)
-		 FROM guards g
-		 LEFT JOIN att ON att.guard_id = g.id
-		 LEFT JOIN pat ON pat.guard_id = g.id
-		 LEFT JOIN inc ON inc.guard_id = g.id
-		 LEFT JOIN sos ON sos.guard_id = g.id
-		 WHERE g.status = 'active'
-		 ORDER BY g.name ASC`, siteID, month)
+// GuardKPIs computes per-guard KPIs for a site over [from, to).
+func GuardKPIs(ctx context.Context, db DBTX, siteID string, from, to time.Time) ([]GuardKPIRow, error) {
+	recap, err := MonthlyRecap(ctx, db, siteID, from, to)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var out []GuardKPIRow
-	for rows.Next() {
-		var r GuardKPIRow
-		if err := rows.Scan(&r.GuardID, &r.GuardName, &r.Month,
-			&r.AttendancePct, &r.PatrolCompletePct,
-			&r.IncidentsReported, &r.LateCount, &r.SosCount); err != nil {
-			return nil, err
-		}
-		out = append(out, r)
+	rows, err := db.Query(ctx, `
+		SELECT g.id,
+		       (SELECT COUNT(*) FROM incidents i
+		         WHERE i.guard_id = g.id AND i.site_id = $1 AND i.occurred_at >= $2 AND i.occurred_at < $3),
+		       (SELECT COUNT(*) FROM sla_breaches b JOIN patrol_sessions ps ON ps.id = b.session_id
+		         WHERE ps.guard_id = g.id AND ps.site_id = $1 AND ps.started_at >= $2 AND ps.started_at < $3)
+		FROM guards g
+		WHERE g.id = ANY($4)`, siteID, from, to, guardIDs(recap))
+	if err != nil {
+		return nil, fmt.Errorf("GuardKPIs: %w", err)
 	}
-	return out, rows.Err()
+	type counts struct{ incidents, breaches int }
+	byGuard := map[string]counts{}
+	_, err = collect(rows, func(r pgx.Rows) (struct{}, error) {
+		var id string
+		var c counts
+		err := r.Scan(&id, &c.incidents, &c.breaches)
+		byGuard[id] = c
+		return struct{}{}, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("GuardKPIs scan: %w", err)
+	}
+
+	out := make([]GuardKPIRow, 0, len(recap))
+	for _, m := range recap {
+		k := GuardKPIRow{GuardID: m.GuardID, GuardName: m.GuardName, PatrolCompletePct: m.PatrolCompletePct}
+		if decided := m.Present + m.Late + m.Absent; decided > 0 {
+			k.AttendanceRatePct = round1(float64(m.Present+m.Late) / float64(decided) * 100)
+		}
+		if attended := m.Present + m.Late; attended > 0 {
+			k.OnTimeRatePct = round1(float64(m.Present) / float64(attended) * 100)
+		}
+		k.IncidentsFiled = byGuard[m.GuardID].incidents
+		k.SLABreaches = byGuard[m.GuardID].breaches
+		out = append(out, k)
+	}
+	return out, nil
+}
+
+// DashboardSummary is the headline data for the web dashboard.
+type DashboardSummary struct {
+	ShiftsToday         int            `json:"shifts_today"`
+	AttendedToday       int            `json:"attended_today"`
+	AbsentToday         int            `json:"absent_today"`
+	ActivePatrols       int            `json:"active_patrols"`
+	OpenIncidents       int            `json:"open_incidents"`
+	UnackedSOS          int            `json:"sos_alerts_unacknowledged"`
+	OpenDefects         int            `json:"open_defects"`
+	PendingReview       int            `json:"attendance_pending_review"`
+	WeeklyAttendance    []DailyCount   `json:"weekly_attendance"`
+	IncidentsBySeverity map[string]int `json:"incidents_by_severity"`
+}
+
+// DailyCount is attendance for one day (site-local date).
+type DailyCount struct {
+	Date    string `json:"date"`
+	Present int    `json:"present"`
+	Late    int    `json:"late"`
+	Absent  int    `json:"absent"`
+}
+
+// GetDashboardSummary computes the dashboard for a site. dayFrom/dayTo bound
+// today in site time; weekFrom is the start of the 7-day window; tz is the
+// site's IANA time zone used to bucket days.
+func GetDashboardSummary(ctx context.Context, db DBTX, siteID string, dayFrom, dayTo, weekFrom time.Time, tz string) (*DashboardSummary, error) {
+	d := &DashboardSummary{WeeklyAttendance: []DailyCount{}, IncidentsBySeverity: map[string]int{}}
+	err := db.QueryRow(ctx, `
+		SELECT
+		  (SELECT COUNT(*) FROM shifts s WHERE s.site_id = $1 AND s.start_time >= $2 AND s.start_time < $3),
+		  (SELECT COUNT(*) FROM shifts s JOIN attendance_records a ON a.shift_id = s.id
+		    WHERE s.site_id = $1 AND s.start_time >= $2 AND s.start_time < $3 AND a.status IN ('present', 'late')),
+		  (SELECT COUNT(*) FROM shifts s JOIN attendance_records a ON a.shift_id = s.id
+		    WHERE s.site_id = $1 AND s.start_time >= $2 AND s.start_time < $3 AND a.status = 'absent'),
+		  (SELECT COUNT(*) FROM patrol_sessions WHERE site_id = $1 AND status = 'in_progress'),
+		  (SELECT COUNT(*) FROM incidents WHERE site_id = $1 AND status <> 'resolved'),
+		  (SELECT COUNT(*) FROM sos_alerts WHERE site_id = $1 AND acknowledged_at IS NULL),
+		  (SELECT COUNT(*) FROM defect_reports WHERE site_id = $1 AND status <> 'resolved'),
+		  (SELECT COUNT(*) FROM attendance_records WHERE site_id = $1 AND needs_review)`,
+		siteID, dayFrom, dayTo,
+	).Scan(&d.ShiftsToday, &d.AttendedToday, &d.AbsentToday, &d.ActivePatrols, &d.OpenIncidents,
+		&d.UnackedSOS, &d.OpenDefects, &d.PendingReview)
+	if err != nil {
+		return nil, fmt.Errorf("GetDashboardSummary: %w", err)
+	}
+
+	rows, err := db.Query(ctx, `
+		SELECT to_char(s.start_time AT TIME ZONE $4, 'YYYY-MM-DD') AS day,
+		       COUNT(*) FILTER (WHERE a.status = 'present'),
+		       COUNT(*) FILTER (WHERE a.status = 'late'),
+		       COUNT(*) FILTER (WHERE a.status = 'absent')
+		FROM shifts s
+		LEFT JOIN attendance_records a ON a.shift_id = s.id
+		WHERE s.site_id = $1 AND s.start_time >= $2 AND s.start_time < $3
+		GROUP BY day ORDER BY day`, siteID, weekFrom, dayTo, tz)
+	if err != nil {
+		return nil, fmt.Errorf("GetDashboardSummary weekly: %w", err)
+	}
+	d.WeeklyAttendance, err = collect(rows, func(r pgx.Rows) (DailyCount, error) {
+		var c DailyCount
+		err := r.Scan(&c.Date, &c.Present, &c.Late, &c.Absent)
+		return c, err
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err = db.Query(ctx, `
+		SELECT severity, COUNT(*) FROM incidents
+		WHERE site_id = $1 AND status <> 'resolved' GROUP BY severity`, siteID)
+	if err != nil {
+		return nil, fmt.Errorf("GetDashboardSummary severity: %w", err)
+	}
+	_, err = collect(rows, func(r pgx.Rows) (struct{}, error) {
+		var sev string
+		var n int
+		err := r.Scan(&sev, &n)
+		d.IncidentsBySeverity[sev] = n
+		return struct{}{}, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return d, nil
+}
+
+func guardIDs(rows []MonthlyRecapRow) []string {
+	ids := make([]string, len(rows))
+	for i, r := range rows {
+		ids[i] = r.GuardID
+	}
+	return ids
+}
+
+func round1(v float64) float64 {
+	if v < 0 {
+		return -float64(int64(-v*10+0.5)) / 10
+	}
+	return float64(int64(v*10+0.5)) / 10
 }

@@ -12,50 +12,38 @@ securepatrol/
 └── infra/          # Docker Compose, Keycloak, Nginx, Prometheus
 ```
 
-## Quick Start (local dev)
+## Docs
 
-### Prerequisites
-- Docker 24+ and Docker Compose v2
-- Go 1.22+
-- Node.js 20+
-- Flutter 3.24+
+- Requirements: [SecurePatrol PRD-v3.md](SecurePatrol%20PRD-v3.md)
+- API contract: [docs/api.md](docs/api.md)
+- Operations (install, Keycloak users, tablets, backups/restore): [docs/runbook.md](docs/runbook.md)
+- Working in this repo (incl. multi-agent rules): [CLAUDE.md](CLAUDE.md), [PROGRESS.md](PROGRESS.md), [DECISIONS.md](DECISIONS.md)
 
-### 1. Infrastructure
+## Quick Start
+
+### Full stack (Docker)
 ```bash
 cd infra
-cp .env.example .env
-# Edit .env with your values
-# Generate a self-signed TLS cert for local dev:
-mkdir -p nginx/certs
-openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-  -keyout nginx/certs/key.pem \
-  -out nginx/certs/cert.pem \
-  -subj "/CN=localhost"
-make up
+cp .env.example .env   # edit every change_me value
+make certs             # self-signed TLS cert for dev/LAN
+make up                # https://localhost
 ```
+Then create users in Keycloak (`https://localhost/auth/admin/`) — see the runbook.
 
-### 2. Backend (local dev without Docker)
+### Local development
 ```bash
-cd backend
-cp ../.env.example .env  # adjust DATABASE_URL etc for local ports
-go run ./cmd/securepatrol
-```
+# 1. Infrastructure only (set KEYCLOAK_PUBLIC_URL=http://localhost:8081/auth in infra/.env)
+cd infra && make up-infra
 
-### 3. Web (local dev)
-```bash
-cd web
-npm install
-cp .env.example .env.local  # set VITE_API_URL, VITE_KEYCLOAK_URL etc
-npm run dev
-```
+# 2. Backend — env vars from backend/.env.example
+cd backend && go run ./cmd/securepatrol          # API on :8080
+cd backend && go run ./cmd/securepatrol worker   # notifications + scheduled jobs
+go test ./... && go test -tags integration ./internal/integration/   # embedded Postgres, no Docker
 
-### 4. Mobile (local dev)
-```bash
-cd mobile
-flutter pub get
-cp .env.example .env  # set API_URL, KEYCLOAK_URL etc
-flutter run
+# 3. Web — env vars from web/.env.example
+cd web && npm install && npm run dev
 ```
+The Flutter tablet app (`mobile/`) is deferred until backend/web v1 is done.
 
 ## Branch Strategy
 
@@ -92,6 +80,3 @@ On merge to `main`: SSH deploy to production server.
 | Monitoring | Grafana + Prometheus |
 | Orchestration | Docker Compose |
 
-## PRD
-
-See [SecurePatrol PRD](https://kirocrew.app/artifacts/securepatrol-prd) for full requirements.

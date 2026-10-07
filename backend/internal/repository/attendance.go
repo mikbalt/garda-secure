@@ -1,4 +1,3 @@
-// Package repository provides data-access functions for attendance records.
 package repository
 
 import (
@@ -7,341 +6,272 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/securepatrol/backend/internal/model"
 )
 
-// ClockInRequest holds validated input for the clock-in operation.
-type ClockInRequest struct {
+const attendanceColumns = `id, shift_id, guard_id, site_id, clock_in_at, clock_out_at, status,
+	late_minutes, early_out_minutes, selfie_object_key, gps_lat, gps_lng,
+	clock_out_gps_lat, clock_out_gps_lng, device_id, override_reason, overridden_by,
+	overridden_at, needs_review, review_note, reviewed_by, reviewed_at, created_at`
+
+func scanAttendance(row pgx.Row) (model.AttendanceRecord, error) {
+	var r model.AttendanceRecord
+	err := row.Scan(&r.ID, &r.ShiftID, &r.GuardID, &r.SiteID, &r.ClockInAt, &r.ClockOutAt, &r.Status,
+		&r.LateMinutes, &r.EarlyOutMinutes, &r.SelfieObjectKey, &r.GPSLat, &r.GPSLng,
+		&r.ClockOutGPSLat, &r.ClockOutGPSLng, &r.DeviceID, &r.OverrideReason, &r.OverriddenBy,
+		&r.OverriddenAt, &r.NeedsReview, &r.ReviewNote, &r.ReviewedBy, &r.ReviewedAt, &r.CreatedAt)
+	return r, err
+}
+
+func scanAttendanceRows(rows pgx.Rows) (model.AttendanceRecord, error) { return scanAttendance(rows) }
+
+// GetAttendance retrieves an attendance record by ID.
+func GetAttendance(ctx context.Context, db DBTX, id string) (*model.AttendanceRecord, error) {
+	r, err := scanAttendance(db.QueryRow(ctx, `SELECT `+attendanceColumns+` FROM attendance_records WHERE id = $1`, id))
+	if err != nil {
+		return nil, mapNoRows(err)
+	}
+	return &r, nil
+}
+
+// GetAttendanceByShift returns the record of a shift, locking it when called
+// inside a transaction.
+func GetAttendanceByShift(ctx context.Context, db DBTX, shiftID string) (*model.AttendanceRecord, error) {
+	r, err := scanAttendance(db.QueryRow(ctx,
+		`SELECT `+attendanceColumns+` FROM attendance_records WHERE shift_id = $1 FOR UPDATE`, shiftID))
+	if err != nil {
+		return nil, mapNoRows(err)
+	}
+	return &r, nil
+}
+
+// GetOpenAttendance returns the guard's most recent record at a site that is
+// clocked in but not yet clocked out.
+func GetOpenAttendance(ctx context.Context, db DBTX, guardID, siteID string) (*model.AttendanceRecord, error) {
+	r, err := scanAttendance(db.QueryRow(ctx, `
+		SELECT `+attendanceColumns+` FROM attendance_records
+		WHERE guard_id = $1 AND site_id = $2 AND clock_in_at IS NOT NULL AND clock_out_at IS NULL
+		ORDER BY clock_in_at DESC LIMIT 1 FOR UPDATE`, guardID, siteID))
+	if err != nil {
+		return nil, mapNoRows(err)
+	}
+	return &r, nil
+}
+
+// ClockInParams carries the values of a new clock-in.
+type ClockInParams struct {
+	ID              *string // client-generated ID for idempotent offline sync
+	ShiftID         string
 	GuardID         string
 	SiteID          string
-	ShiftID         *string
+	DeviceID        *string
+	ClockInAt       time.Time
+	Status          string
+	LateMinutes     int
+	SelfieObjectKey *string
 	GPSLat          *float64
 	GPSLng          *float64
-	SelfieObjectKey *string
-	Status          string // "present" or "late"
 }
 
-// ListByDate returns all attendance records for a site on a given calendar date.
-// date should be in "YYYY-MM-DD" format (UTC).
-func ListByDate(ctx context.Context, pool *pgxpool.Pool, siteID, date string) ([]model.AttendanceRecord, error) {
-	rows, err := pool.Query(ctx, `
-		SELECT id, shift_id, guard_id, site_id, clock_in_at, clock_out_at,
-		       status, selfie_object_key, gps_lat, gps_lng,
-		       override_reason, overridden_by, created_at
-		FROM attendance_records
-		WHERE site_id = $1
-		  AND created_at::date = $2::date
-		ORDER BY created_at`,
-		siteID, date,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("ListByDate query: %w", err)
-	}
-	defer rows.Close()
-
-	return scanAttendanceRows(rows)
-}
-
-// ListByDateStatus returns records for a site on a date filtered by status.
-func ListByDateStatus(ctx context.Context, pool *pgxpool.Pool, siteID, date, status string) ([]model.AttendanceRecord, error) {
-	rows, err := pool.Query(ctx, `
-		SELECT id, shift_id, guard_id, site_id, clock_in_at, clock_out_at,
-		       status, selfie_object_key, gps_lat, gps_lng,
-		       override_reason, overridden_by, created_at
-		FROM attendance_records
-		WHERE site_id = $1
-		  AND created_at::date = $2::date
-		  AND status = $3
-		ORDER BY created_at`,
-		siteID, date, status,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("ListByDateStatus query: %w", err)
-	}
-	defer rows.Close()
-
-	return scanAttendanceRows(rows)
-}
-
-// ClockIn inserts a new attendance record (clock-in event).
-func ClockIn(ctx context.Context, pool *pgxpool.Pool, req ClockInRequest) (*model.AttendanceRecord, error) {
-	now := time.Now().UTC()
-	var rec model.AttendanceRecord
-	err := pool.QueryRow(ctx, `
+// InsertClockIn creates the attendance record of a shift.
+func InsertClockIn(ctx context.Context, db DBTX, p ClockInParams) (*model.AttendanceRecord, error) {
+	r, err := scanAttendance(db.QueryRow(ctx, `
 		INSERT INTO attendance_records
-		  (shift_id, guard_id, site_id, clock_in_at, status, selfie_object_key, gps_lat, gps_lng)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		RETURNING id, shift_id, guard_id, site_id, clock_in_at, clock_out_at,
-		          status, selfie_object_key, gps_lat, gps_lng,
-		          override_reason, overridden_by, created_at`,
-		req.ShiftID, req.GuardID, req.SiteID, now, req.Status,
-		req.SelfieObjectKey, req.GPSLat, req.GPSLng,
-	).Scan(
-		&rec.ID, &rec.ShiftID, &rec.GuardID, &rec.SiteID,
-		&rec.ClockInAt, &rec.ClockOutAt,
-		&rec.Status, &rec.SelfieObjectKey,
-		&rec.GPSLat, &rec.GPSLng,
-		&rec.OverrideReason, &rec.OverriddenBy, &rec.CreatedAt,
-	)
+		  (id, shift_id, guard_id, site_id, device_id, clock_in_at, status, late_minutes,
+		   selfie_object_key, gps_lat, gps_lng)
+		VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		RETURNING `+attendanceColumns,
+		p.ID, p.ShiftID, p.GuardID, p.SiteID, p.DeviceID, p.ClockInAt, p.Status, p.LateMinutes,
+		p.SelfieObjectKey, p.GPSLat, p.GPSLng))
 	if err != nil {
-		return nil, fmt.Errorf("ClockIn insert: %w", err)
+		return nil, fmt.Errorf("InsertClockIn: %w", err)
 	}
-	return &rec, nil
+	return &r, nil
 }
 
-// ClockOut sets clock_out_at on an existing attendance record.
-func ClockOut(ctx context.Context, pool *pgxpool.Pool, id string, status string, gpsLat, gpsLng *float64) (*model.AttendanceRecord, error) {
-	now := time.Now().UTC()
-	var rec model.AttendanceRecord
-	err := pool.QueryRow(ctx, `
+// ApplyClockInToAbsent converts an auto-flagged absent record into a clock-in
+// that arrived late through offline sync, and queues it for supervisor review.
+func ApplyClockInToAbsent(ctx context.Context, db DBTX, recordID string, p ClockInParams, note string) (*model.AttendanceRecord, error) {
+	r, err := scanAttendance(db.QueryRow(ctx, `
 		UPDATE attendance_records
-		SET clock_out_at = $1, status = $2, gps_lat = COALESCE($3, gps_lat), gps_lng = COALESCE($4, gps_lng)
-		WHERE id = $5
-		RETURNING id, shift_id, guard_id, site_id, clock_in_at, clock_out_at,
-		          status, selfie_object_key, gps_lat, gps_lng,
-		          override_reason, overridden_by, created_at`,
-		now, status, gpsLat, gpsLng, id,
-	).Scan(
-		&rec.ID, &rec.ShiftID, &rec.GuardID, &rec.SiteID,
-		&rec.ClockInAt, &rec.ClockOutAt,
-		&rec.Status, &rec.SelfieObjectKey,
-		&rec.GPSLat, &rec.GPSLng,
-		&rec.OverrideReason, &rec.OverriddenBy, &rec.CreatedAt,
-	)
+		SET clock_in_at = $2, status = $3, late_minutes = $4, selfie_object_key = $5,
+		    gps_lat = $6, gps_lng = $7, device_id = $8,
+		    needs_review = true, review_note = $9
+		WHERE id = $1
+		RETURNING `+attendanceColumns,
+		recordID, p.ClockInAt, p.Status, p.LateMinutes, p.SelfieObjectKey,
+		p.GPSLat, p.GPSLng, p.DeviceID, note))
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, fmt.Errorf("attendance record not found: %s", id)
-		}
-		return nil, fmt.Errorf("ClockOut update: %w", err)
+		return nil, mapNoRows(err)
 	}
-	return &rec, nil
+	return &r, nil
 }
 
-// GetByID retrieves a single attendance record.
-func GetAttendanceByID(ctx context.Context, pool *pgxpool.Pool, id string) (*model.AttendanceRecord, error) {
-	var rec model.AttendanceRecord
-	err := pool.QueryRow(ctx, `
-		SELECT id, shift_id, guard_id, site_id, clock_in_at, clock_out_at,
-		       status, selfie_object_key, gps_lat, gps_lng,
-		       override_reason, overridden_by, created_at
-		FROM attendance_records WHERE id = $1`, id,
-	).Scan(
-		&rec.ID, &rec.ShiftID, &rec.GuardID, &rec.SiteID,
-		&rec.ClockInAt, &rec.ClockOutAt,
-		&rec.Status, &rec.SelfieObjectKey,
-		&rec.GPSLat, &rec.GPSLng,
-		&rec.OverrideReason, &rec.OverriddenBy, &rec.CreatedAt,
-	)
+// SetClockOut records the clock-out of an attendance record.
+func SetClockOut(ctx context.Context, db DBTX, id string, at time.Time, earlyOutMinutes int, lat, lng *float64) (*model.AttendanceRecord, error) {
+	r, err := scanAttendance(db.QueryRow(ctx, `
+		UPDATE attendance_records
+		SET clock_out_at = $2, early_out_minutes = $3, clock_out_gps_lat = $4, clock_out_gps_lng = $5
+		WHERE id = $1
+		RETURNING `+attendanceColumns, id, at, earlyOutMinutes, lat, lng))
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("GetAttendanceByID: %w", err)
+		return nil, mapNoRows(err)
 	}
-	return &rec, nil
+	return &r, nil
 }
 
-// GetTodayClockIn returns the existing clock-in record for a guard at a site today (nil if none).
-func GetTodayClockIn(ctx context.Context, pool *pgxpool.Pool, guardID, siteID, date string) (*model.AttendanceRecord, error) {
-	var rec model.AttendanceRecord
-	err := pool.QueryRow(ctx, `
-		SELECT id, shift_id, guard_id, site_id, clock_in_at, clock_out_at,
-		       status, selfie_object_key, gps_lat, gps_lng,
-		       override_reason, overridden_by, created_at
-		FROM attendance_records
-		WHERE guard_id = $1 AND site_id = $2 AND created_at::date = $3::date
-		LIMIT 1`,
-		guardID, siteID, date,
-	).Scan(
-		&rec.ID, &rec.ShiftID, &rec.GuardID, &rec.SiteID,
-		&rec.ClockInAt, &rec.ClockOutAt,
-		&rec.Status, &rec.SelfieObjectKey,
-		&rec.GPSLat, &rec.GPSLng,
-		&rec.OverrideReason, &rec.OverriddenBy, &rec.CreatedAt,
-	)
+// OverrideParams carries an admin attendance correction for a shift.
+type OverrideParams struct {
+	ShiftID    string
+	GuardID    string
+	SiteID     string
+	Status     string
+	ClockInAt  *time.Time
+	ClockOutAt *time.Time
+	Reason     string
+	Actor      string
+}
+
+// OverrideAttendance upserts the record of a shift with an admin-chosen status.
+// Supplied clock times replace the stored ones; omitted ones are kept.
+func OverrideAttendance(ctx context.Context, db DBTX, p OverrideParams) (*model.AttendanceRecord, error) {
+	r, err := scanAttendance(db.QueryRow(ctx, `
+		INSERT INTO attendance_records
+		  (shift_id, guard_id, site_id, status, clock_in_at, clock_out_at,
+		   override_reason, overridden_by, overridden_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+		ON CONFLICT (shift_id) WHERE shift_id IS NOT NULL DO UPDATE
+		SET status          = EXCLUDED.status,
+		    clock_in_at     = COALESCE(EXCLUDED.clock_in_at, attendance_records.clock_in_at),
+		    clock_out_at    = COALESCE(EXCLUDED.clock_out_at, attendance_records.clock_out_at),
+		    late_minutes    = CASE WHEN EXCLUDED.status = 'late' THEN attendance_records.late_minutes ELSE 0 END,
+		    override_reason = EXCLUDED.override_reason,
+		    overridden_by   = EXCLUDED.overridden_by,
+		    overridden_at   = now(),
+		    needs_review    = false,
+		    reviewed_by     = COALESCE(attendance_records.reviewed_by, EXCLUDED.overridden_by),
+		    reviewed_at     = COALESCE(attendance_records.reviewed_at, now())
+		RETURNING `+attendanceColumns,
+		p.ShiftID, p.GuardID, p.SiteID, p.Status, p.ClockInAt, p.ClockOutAt, p.Reason, p.Actor))
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("GetTodayClockIn: %w", err)
+		return nil, fmt.Errorf("OverrideAttendance: %w", err)
 	}
-	return &rec, nil
+	return &r, nil
 }
 
-// InsertAbsent creates an absent record for a guard that has no attendance on the given date.
-func InsertAbsent(ctx context.Context, pool *pgxpool.Pool, guardID, siteID, shiftID, date string) error {
-	_, err := pool.Exec(ctx, `
-		INSERT INTO attendance_records (shift_id, guard_id, site_id, status, created_at)
-		VALUES ($1, $2, $3, 'absent', $4::date)
-		ON CONFLICT DO NOTHING`,
-		shiftID, guardID, siteID, date,
-	)
+// MarkAttendanceReviewed clears the review flag of a record.
+func MarkAttendanceReviewed(ctx context.Context, db DBTX, id, actor string, note *string) (*model.AttendanceRecord, error) {
+	r, err := scanAttendance(db.QueryRow(ctx, `
+		UPDATE attendance_records
+		SET needs_review = false, reviewed_by = $2, reviewed_at = now(),
+		    review_note = COALESCE($3, review_note)
+		WHERE id = $1
+		RETURNING `+attendanceColumns, id, actor, note))
 	if err != nil {
-		return fmt.Errorf("InsertAbsent: %w", err)
+		return nil, mapNoRows(err)
 	}
-	return nil
+	return &r, nil
 }
 
-// DailySummaryResult holds counts by status for a given site/date.
-type DailySummaryResult struct {
-	Present  int `json:"present"`
-	Absent   int `json:"absent"`
-	Late     int `json:"late"`
-	EarlyOut int `json:"early_out"`
-	Pending  int `json:"pending"`
-}
-
-// DailySummary returns attendance counts grouped by status for a site on a date.
-func DailySummary(ctx context.Context, pool *pgxpool.Pool, siteID, date string) (*DailySummaryResult, error) {
-	rows, err := pool.Query(ctx, `
-		SELECT status, COUNT(*) AS cnt
-		FROM attendance_records
-		WHERE site_id = $1 AND created_at::date = $2::date
-		GROUP BY status`,
-		siteID, date,
-	)
+// ListReviewQueue returns the records of a site awaiting supervisor review.
+func ListReviewQueue(ctx context.Context, db DBTX, siteID string) ([]model.AttendanceRecord, error) {
+	rows, err := db.Query(ctx, `
+		SELECT `+attendanceColumns+` FROM attendance_records
+		WHERE site_id = $1 AND needs_review
+		ORDER BY created_at`, siteID)
 	if err != nil {
-		return nil, fmt.Errorf("DailySummary query: %w", err)
+		return nil, fmt.Errorf("ListReviewQueue: %w", err)
 	}
-	defer rows.Close()
-
-	result := &DailySummaryResult{}
-	for rows.Next() {
-		var status string
-		var cnt int
-		if err := rows.Scan(&status, &cnt); err != nil {
-			return nil, fmt.Errorf("DailySummary scan: %w", err)
-		}
-		switch status {
-		case "present":
-			result.Present = cnt
-		case "absent":
-			result.Absent = cnt
-		case "late":
-			result.Late = cnt
-		case "early_out":
-			result.EarlyOut = cnt
-		case "pending":
-			result.Pending = cnt
-		}
-	}
-	return result, rows.Err()
+	return collect(rows, scanAttendanceRows)
 }
 
-// MonthlyRecapRow holds per-guard summary for a month.
-type MonthlyRecapRow struct {
-	GuardID  string `json:"guard_id"`
-	Name     string `json:"name"`
-	Present  int    `json:"present"`
-	Absent   int    `json:"absent"`
-	Late     int    `json:"late"`
-	EarlyOut int    `json:"early_out"`
+// AbsentFlag identifies a record created by the absent auto-flag job.
+type AbsentFlag struct {
+	RecordID  string
+	ShiftID   string
+	GuardID   string
+	GuardName string
+	SiteID    string
+	StartTime time.Time
 }
 
-// MonthlyRecap returns a per-guard attendance summary for a month (YYYY-MM).
-func MonthlyRecap(ctx context.Context, pool *pgxpool.Pool, siteID, month string) ([]MonthlyRecapRow, error) {
-	rows, err := pool.Query(ctx, `
-		SELECT ar.guard_id, g.name,
-		       COUNT(*) FILTER (WHERE ar.status = 'present')   AS present,
-		       COUNT(*) FILTER (WHERE ar.status = 'absent')    AS absent,
-		       COUNT(*) FILTER (WHERE ar.status = 'late')      AS late,
-		       COUNT(*) FILTER (WHERE ar.status = 'early_out') AS early_out
-		FROM attendance_records ar
-		JOIN guards g ON g.id = ar.guard_id
-		WHERE ar.site_id = $1
-		  AND to_char(ar.created_at, 'YYYY-MM') = $2
-		GROUP BY ar.guard_id, g.name
-		ORDER BY g.name`,
-		siteID, month,
-	)
+// FlagAbsentees inserts an absent record for every shift of an active guard
+// that started at least the site's absent threshold ago (within the last day)
+// and has no attendance yet. Safe to run repeatedly.
+func FlagAbsentees(ctx context.Context, db DBTX, defaultAbsentAfterMinutes int) ([]AbsentFlag, error) {
+	rows, err := db.Query(ctx, `
+		WITH due AS (
+		  SELECT s.id, s.guard_id, s.site_id, s.start_time
+		  FROM shifts s
+		  JOIN sites st ON st.id = s.site_id
+		  JOIN guards g ON g.id = s.guard_id AND g.status = 'active'
+		  WHERE s.start_time > now() - interval '1 day'
+		    AND s.start_time + make_interval(mins =>
+		          COALESCE((st.config_json->>'absent_after_minutes')::int, $1)) <= now()
+		    AND NOT EXISTS (SELECT 1 FROM attendance_records a WHERE a.shift_id = s.id)
+		),
+		ins AS (
+		  INSERT INTO attendance_records (shift_id, guard_id, site_id, status)
+		  SELECT id, guard_id, site_id, 'absent' FROM due
+		  ON CONFLICT (shift_id) WHERE shift_id IS NOT NULL DO NOTHING
+		  RETURNING id, shift_id, guard_id, site_id
+		)
+		SELECT ins.id, ins.shift_id, ins.guard_id, g.name, ins.site_id, due.start_time
+		FROM ins
+		JOIN due ON due.id = ins.shift_id
+		JOIN guards g ON g.id = ins.guard_id`, defaultAbsentAfterMinutes)
 	if err != nil {
-		return nil, fmt.Errorf("MonthlyRecap query: %w", err)
+		return nil, fmt.Errorf("FlagAbsentees: %w", err)
 	}
-	defer rows.Close()
-
-	var recap []MonthlyRecapRow
-	for rows.Next() {
-		var r MonthlyRecapRow
-		if err := rows.Scan(&r.GuardID, &r.Name, &r.Present, &r.Absent, &r.Late, &r.EarlyOut); err != nil {
-			return nil, fmt.Errorf("MonthlyRecap scan: %w", err)
-		}
-		recap = append(recap, r)
-	}
-	return recap, rows.Err()
+	return collect(rows, func(r pgx.Rows) (AbsentFlag, error) {
+		var f AbsentFlag
+		err := r.Scan(&f.RecordID, &f.ShiftID, &f.GuardID, &f.GuardName, &f.SiteID, &f.StartTime)
+		return f, err
+	})
 }
 
-// GetShiftForGuardOnDate retrieves the shift (if any) for a guard at a site on a given date.
-func GetShiftForGuardOnDate(ctx context.Context, pool *pgxpool.Pool, guardID, siteID, date string) (*model.Shift, error) {
-	var s model.Shift
-	err := pool.QueryRow(ctx, `
-		SELECT id, guard_id, site_id, start_time, end_time, repeat_rule, created_at
-		FROM shifts
-		WHERE guard_id = $1 AND site_id = $2 AND start_time::date = $3::date
-		LIMIT 1`,
-		guardID, siteID, date,
-	).Scan(&s.ID, &s.GuardID, &s.SiteID, &s.StartTime, &s.EndTime, &s.RepeatRule, &s.CreatedAt)
+// DailyAttendanceRow is one scheduled shift with its attendance outcome.
+type DailyAttendanceRow struct {
+	ShiftID         string     `json:"shift_id"`
+	GuardID         string     `json:"guard_id"`
+	GuardName       string     `json:"guard_name"`
+	EmployeeID      *string    `json:"employee_id,omitempty"`
+	ShiftStart      time.Time  `json:"shift_start"`
+	ShiftEnd        time.Time  `json:"shift_end"`
+	AttendanceID    *string    `json:"attendance_id,omitempty"`
+	Status          string     `json:"status"` // present | late | absent | pending
+	ClockInAt       *time.Time `json:"clock_in_at,omitempty"`
+	ClockOutAt      *time.Time `json:"clock_out_at,omitempty"`
+	LateMinutes     int        `json:"late_minutes"`
+	EarlyOutMinutes int        `json:"early_out_minutes"`
+	HoursWorked     float64    `json:"hours_worked"`
+	NeedsReview     bool       `json:"needs_review"`
+	OverrideReason  *string    `json:"override_reason,omitempty"`
+	SelfieObjectKey *string    `json:"selfie_object_key,omitempty"`
+}
+
+// DailyAttendance lists every shift of a site starting in [from, to) with its
+// attendance; shifts without a record yet report status "pending".
+func DailyAttendance(ctx context.Context, db DBTX, siteID string, from, to time.Time) ([]DailyAttendanceRow, error) {
+	rows, err := db.Query(ctx, `
+		SELECT s.id, s.guard_id, g.name, g.employee_id, s.start_time, s.end_time,
+		       a.id, COALESCE(a.status, 'pending'), a.clock_in_at, a.clock_out_at,
+		       COALESCE(a.late_minutes, 0), COALESCE(a.early_out_minutes, 0),
+		       COALESCE(EXTRACT(EPOCH FROM (a.clock_out_at - a.clock_in_at)) / 3600, 0)::float8,
+		       COALESCE(a.needs_review, false), a.override_reason, a.selfie_object_key
+		FROM shifts s
+		JOIN guards g ON g.id = s.guard_id
+		LEFT JOIN attendance_records a ON a.shift_id = s.id
+		WHERE s.site_id = $1 AND s.start_time >= $2 AND s.start_time < $3
+		ORDER BY s.start_time, g.name`, siteID, from, to)
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("GetShiftForGuardOnDate: %w", err)
+		return nil, fmt.Errorf("DailyAttendance: %w", err)
 	}
-	return &s, nil
-}
-
-// GetShiftsForSiteOnDate returns all shifts for a site on a given date.
-func GetShiftsForSiteOnDate(ctx context.Context, pool *pgxpool.Pool, siteID, date string) ([]model.Shift, error) {
-	rows, err := pool.Query(ctx, `
-		SELECT id, guard_id, site_id, start_time, end_time, repeat_rule, created_at
-		FROM shifts
-		WHERE site_id = $1 AND start_time::date = $2::date`,
-		siteID, date,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("GetShiftsForSiteOnDate: %w", err)
-	}
-	defer rows.Close()
-
-	var shifts []model.Shift
-	for rows.Next() {
-		var s model.Shift
-		if err := rows.Scan(&s.ID, &s.GuardID, &s.SiteID, &s.StartTime, &s.EndTime, &s.RepeatRule, &s.CreatedAt); err != nil {
-			return nil, fmt.Errorf("GetShiftsForSiteOnDate scan: %w", err)
-		}
-		shifts = append(shifts, s)
-	}
-	return shifts, rows.Err()
-}
-
-// scanAttendanceRows is a shared scan helper.
-func scanAttendanceRows(rows pgx.Rows) ([]model.AttendanceRecord, error) {
-	var records []model.AttendanceRecord
-	for rows.Next() {
-		var r model.AttendanceRecord
-		if err := rows.Scan(
-			&r.ID, &r.ShiftID, &r.GuardID, &r.SiteID,
-			&r.ClockInAt, &r.ClockOutAt,
-			&r.Status, &r.SelfieObjectKey,
-			&r.GPSLat, &r.GPSLng,
-			&r.OverrideReason, &r.OverriddenBy, &r.CreatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan attendance row: %w", err)
-		}
-		records = append(records, r)
-	}
-	return records, rows.Err()
-}
-
-// GetShiftByID retrieves a shift by its ID.
-func GetShiftByID(ctx context.Context, pool *pgxpool.Pool, id string) (*model.Shift, error) {
-	var s model.Shift
-	err := pool.QueryRow(ctx,
-		`SELECT id, guard_id, site_id, start_time, end_time, repeat_rule, created_at FROM shifts WHERE id = $1`,
-		id,
-	).Scan(&s.ID, &s.GuardID, &s.SiteID, &s.StartTime, &s.EndTime, &s.RepeatRule, &s.CreatedAt)
-	if err != nil {
-		return nil, fmt.Errorf("GetShiftByID: %w", err)
-	}
-	return &s, nil
+	return collect(rows, func(r pgx.Rows) (DailyAttendanceRow, error) {
+		var d DailyAttendanceRow
+		err := r.Scan(&d.ShiftID, &d.GuardID, &d.GuardName, &d.EmployeeID, &d.ShiftStart, &d.ShiftEnd,
+			&d.AttendanceID, &d.Status, &d.ClockInAt, &d.ClockOutAt, &d.LateMinutes, &d.EarlyOutMinutes,
+			&d.HoursWorked, &d.NeedsReview, &d.OverrideReason, &d.SelfieObjectKey)
+		return d, err
+	})
 }

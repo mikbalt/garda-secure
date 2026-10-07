@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata" // site time zones must resolve in the minimal runtime image
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -20,8 +21,10 @@ import (
 	"github.com/securepatrol/backend/internal/config"
 	"github.com/securepatrol/backend/internal/db"
 	"github.com/securepatrol/backend/internal/handler"
+	"github.com/securepatrol/backend/internal/jobs"
 	"github.com/securepatrol/backend/internal/middleware"
 	"github.com/securepatrol/backend/internal/notification"
+	"github.com/securepatrol/backend/internal/settings"
 	"github.com/securepatrol/backend/internal/storage"
 )
 
@@ -35,12 +38,17 @@ func main() {
 
 	// ── Logger ───────────────────────────────────────────────────────────────
 	level, _ := zerolog.ParseLevel(cfg.LogLevel)
+	mode := "api"
+	if len(os.Args) > 1 && os.Args[1] == "worker" {
+		mode = "worker"
+	}
 	logger := zerolog.New(os.Stdout).
 		Level(level).
-		With().Timestamp().Str("service", "securepatrol").Logger()
+		With().Timestamp().Str("service", "securepatrol").Str("mode", mode).Logger()
 	log.Logger = logger
 
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
 
 	// ── Postgres (5-retry exponential backoff) ───────────────────────────────
 	var pool *pgxpool.Pool
@@ -61,11 +69,13 @@ func main() {
 	}
 	defer pool.Close()
 
-	// ── Migrations ───────────────────────────────────────────────────────────
-	if err := db.RunMigrations(cfg.DatabaseURL, "/migrations"); err != nil {
-		logger.Fatal().Err(err).Msg("migrations failed")
+	// ── Migrations (API only, so two processes never race on them) ─────────
+	if mode == "api" {
+		if err := db.RunMigrations(cfg.DatabaseURL, cfg.MigrationsPath); err != nil {
+			logger.Fatal().Err(err).Msg("migrations failed")
+		}
+		logger.Info().Msg("migrations applied")
 	}
-	logger.Info().Msg("migrations applied")
 
 	// ── Redis ────────────────────────────────────────────────────────────────
 	opt, err := redis.ParseURL(cfg.RedisURL)
@@ -79,73 +89,80 @@ func main() {
 	}
 
 	// ── MinIO ────────────────────────────────────────────────────────────────
-	stg, err := storage.New(cfg.MinioEndpoint, cfg.MinioAccessKey, cfg.MinioSecretKey, false)
+	stg, err := storage.New(storage.Options{
+		Endpoint: cfg.MinioEndpoint, PublicEndpoint: cfg.MinioPublicEndpoint,
+		AccessKey: cfg.MinioAccessKey, SecretKey: cfg.MinioSecretKey,
+		UseSSL: cfg.MinioUseSSL, PublicUseSSL: cfg.MinioPublicUseSSL,
+	})
 	if err != nil {
 		logger.Fatal().Err(err).Msg("minio init failed")
 	}
 	if err := stg.EnsureBuckets(ctx, []string{cfg.MinioBucketPhotos, cfg.MinioBucketBackups}); err != nil {
 		logger.Fatal().Err(err).Msg("minio bucket setup failed")
 	}
+	if err := stg.EnableVersioning(ctx, cfg.MinioBucketBackups); err != nil {
+		logger.Warn().Err(err).Msg("could not enable versioning on backups bucket")
+	}
 
-	// ── Worker mode ──────────────────────────────────────────────────────────
-	if len(os.Args) > 1 && os.Args[1] == "worker" {
-		logger.Info().Msg("starting notification worker")
-		w := notification.NewWorker(rdb, cfg, logger)
-		w.Start(ctx)
-		quit := make(chan os.Signal, 1)
-		signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
-		<-quit
-		w.Stop()
+	settingsStore, err := settings.NewStore(pool, cfg)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("settings store init failed")
+	}
+	notifier := notification.NewNotifier(pool, rdb, logger)
+
+	// ── Worker mode: notification dispatch + scheduled jobs ─────────────────
+	if mode == "worker" {
+		logger.Info().Msg("starting notification worker and scheduler")
+		go notification.NewWorker(pool, rdb, settingsStore, logger).Run(ctx)
+		go jobs.NewScheduler(pool, rdb, notifier, stg, cfg, logger).Run(ctx)
+		<-ctx.Done()
 		logger.Info().Msg("worker shutting down")
 		return
 	}
 
-	// ── JWT middleware ───────────────────────────────────────────────────────
-	jwtMiddleware, err := middleware.JWT(cfg.KeycloakJWKSURL, cfg.KeycloakIssuer)
-	if err != nil {
-		logger.Fatal().Err(err).Msg("JWT middleware init failed")
+	// ── JWT validation (one issuer per client realm) ─────────────────────────
+	realms := make([]middleware.RealmKeys, 0, len(cfg.KeycloakRealms))
+	for _, r := range cfg.KeycloakRealms {
+		realms = append(realms, middleware.RealmKeys{Realm: r, Issuer: cfg.IssuerFor(r), JWKSURL: cfg.JWKSURLFor(r)})
 	}
+	validator := middleware.NewValidator(realms, cfg.KeycloakAllowedClients, logger)
 
 	// ── Fiber app ────────────────────────────────────────────────────────────
 	app := fiber.New(fiber.Config{
 		AppName:      "SecurePatrol API v1",
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 60 * time.Second,
 		IdleTimeout:  120 * time.Second,
+		BodyLimit:    handler.MaxPhotoBytes + 1<<20, // photo + multipart overhead
+		// Behind nginx: trust X-Forwarded-For for audit IPs.
+		ProxyHeader: fiber.HeaderXForwardedFor,
 	})
 
 	app.Use(requestid.New())
 	app.Use(middleware.Logger(logger))
 	app.Use(recover.New())
-	app.Use(cors.New(cors.Config{
-		AllowOrigins: "*",
-		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
-		AllowMethods: "GET,POST,PUT,PATCH,DELETE,OPTIONS",
-	}))
+	if cfg.CORSAllowedOrigins != "" {
+		app.Use(cors.New(cors.Config{
+			AllowOrigins: cfg.CORSAllowedOrigins,
+			AllowHeaders: "Origin, Content-Type, Accept, Authorization, " + middleware.GuardHeader,
+			AllowMethods: "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+		}))
+	}
 
 	// Public routes
 	app.Get("/health", handler.Health(pool, rdb))
 
-	// Protected API group — inject pool + storage into every request context
+	h := &handler.Handler{
+		DB: pool, Redis: rdb, Storage: stg, Notifier: notifier, Settings: settingsStore, Cfg: cfg, Log: logger,
+	}
 	api := app.Group("/api/v1",
-		jwtMiddleware,
-		middleware.Inject(pool, stg),
+		middleware.JWT(validator),
+		middleware.LoadDevice(pool),
 		middleware.Audit(pool),
 	)
-
-	handler.RegisterAttendance(api.Group("/attendance"))
-	handler.RegisterPatrol(api.Group("/patrol"))
-	handler.RegisterIncidents(api.Group("/incidents"))
-	handler.RegisterGuards(api.Group("/guards"))
-	handler.RegisterSites(api.Group("/sites"))
-	handler.RegisterShifts(api.Group("/shifts"))
-	handler.RegisterReports(api.Group("/reports"))
-	handler.RegisterVisitors(api.Group("/visitors"))
+	h.Register(api)
 
 	// ── Graceful shutdown ────────────────────────────────────────────────────
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
-
 	go func() {
 		addr := ":" + cfg.Port
 		logger.Info().Str("addr", addr).Msg("server starting")
@@ -154,7 +171,7 @@ func main() {
 		}
 	}()
 
-	<-quit
+	<-ctx.Done()
 	logger.Info().Msg("shutting down server")
 	if err := app.ShutdownWithTimeout(10 * time.Second); err != nil {
 		logger.Error().Err(err).Msg("shutdown error")
