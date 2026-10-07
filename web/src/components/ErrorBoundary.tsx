@@ -1,4 +1,6 @@
-import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { Component, type ContextType, type ErrorInfo, type ReactNode } from 'react'
+import { AlertTriangle } from 'lucide-react'
+import { I18nContext } from '../i18n/context'
 
 interface Props {
   children: ReactNode
@@ -10,6 +12,8 @@ interface State {
 }
 
 export class ErrorBoundary extends Component<Props, State> {
+  static contextType = I18nContext
+  declare context: ContextType<typeof I18nContext>
   state: State = { hasError: false, message: '' }
 
   static getDerivedStateFromError(error: Error): State {
@@ -22,16 +26,18 @@ export class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
+      const { t } = this.context
       return (
-        <div className="flex flex-col items-center justify-center h-full py-24 text-center">
-          <div className="text-6xl mb-4">⚠️</div>
-          <h2 className="text-xl font-semibold text-gray-800 mb-2">Something went wrong</h2>
-          <p className="text-gray-500 text-sm max-w-md">{this.state.message}</p>
+        <div role="alert" className="flex h-full flex-col items-center justify-center py-24 text-center">
+          <AlertTriangle className="mb-4 h-12 w-12 text-yellow-600" aria-hidden="true" />
+          <h2 className="mb-2 text-xl font-semibold text-gray-900">{t('error.title')}</h2>
+          <p className="max-w-md text-sm text-gray-700">{this.state.message}</p>
           <button
-            className="mt-4 px-4 py-2 bg-primary-800 text-white rounded hover:bg-primary-700"
+            type="button"
+            className="mt-4 rounded bg-primary-800 px-4 py-2 text-white hover:bg-primary-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2"
             onClick={() => this.setState({ hasError: false, message: '' })}
           >
-            Try again
+            {t('app.retry')}
           </button>
         </div>
       )

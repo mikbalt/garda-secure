@@ -9,7 +9,7 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
-| Web: align with new API (docs/api.md) + complete v1 pages, runtime config, multi-realm login, i18n | `muhamhad-pc1/claude` | 2026-10-07 | Please don't edit `web/` until pushed. |
+| *(nothing claimed)* | | | |
 
 ## Migration numbers
 
@@ -25,10 +25,10 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 | Milestone | Status |
 |---|---|
 | M1 Infra & Auth | 🟢 backend + config done; ⚠️ full Docker stack not yet smoke-tested (no Docker on the dev PC) |
-| M2 Core Attendance | 🟢 backend done (templates, clock-in/out, absent flag, review queue, override); web in progress |
-| M3 Patrol | 🟢 backend done (route editor API, sessions, QR/manual scans, SLA job, reports); web in progress |
+| M2 Core Attendance | 🟢 backend + web done |
+| M3 Patrol | 🟢 backend + web done (live view by polling) |
 | M4 Incident & Field Reports | 🟢 backend done; ⚪ mobile deferred |
-| M5 Web Dashboard & Reports | 🟡 in progress |
+| M5 Web Dashboard & Reports | 🟢 all pages built (lint/typecheck/build green); ⚠️ not yet exercised against a running stack |
 | M6 Notifications & Email | 🟢 backend done (rules, log, retry, SMTP/WhatsApp, monthly recap); needs real SMTP/WA test |
 | M7 Hardening & Go-Live | ⚪ not started |
 
@@ -47,6 +47,12 @@ Backend
 - [ ] Retention/cleanup for old backups in MinIO (lifecycle rule)
 - [ ] gosec job in CI uses `@latest` with Go 1.22 — pin a compatible gosec version
 
+Web
+- [ ] Manual UI pass against a running stack (all roles, both languages)
+- [ ] Device dialog: "set back to pending" action
+- [ ] Web unit tests (no test runner yet — add Vitest)
+- [ ] Live patrol map (needs checkpoint lat/lng in routes)
+
 Infra / Ops
 - [ ] `cd-deploy.yml` targets branch `main` and runs compose from repo root — align with `init` branch and `infra/` overlay
 - [ ] Let's Encrypt / production TLS notes
@@ -64,6 +70,8 @@ Mobile (deferred — D-017)
 |---|---|---|---|
 | Initial scaffold, infra compose split, backend handlers (first pass) | — | 2026-10-07 | 60b3c05…d189988 |
 | PRD v3 decisions OQ-7/8/9, CLAUDE.md / PROGRESS.md / DECISIONS.md | `muhamhad-pc1/claude` | 2026-10-07 | 928fb4a |
-| Backend v1 core: multi-realm JWT + RBAC, device/guard auth, migration 003, shift templates + generator, attendance rules, patrol sessions + SLA, incidents/amendments, SOS, defects, visitors, media upload, reports + CSV, dashboard, notifications (rules/log/retry, SMTP/WhatsApp), encrypted channel settings, backups, scheduler; unit + integration tests (embedded Postgres) | `muhamhad-pc1/claude` | 2026-10-07 | this push |
-| Infra: Alpine API image with pg_dump, compose fixes (worker command, Keycloak DB/path/proxy, healthchecks), nginx fixes (/api prefix, web:80, /auth, MinIO :9443, 12 MB uploads), two realm files + generator, env examples, Makefile, CI (integration tests, nginx/realm validation) | `muhamhad-pc1/claude` | 2026-10-07 | this push |
-| Docs: `docs/api.md` (API contract), `docs/runbook.md` (install, users, tablets, backups/restore) | `muhamhad-pc1/claude` | 2026-10-07 | this push |
+| Backend v1 core: multi-realm JWT + RBAC, device/guard auth, migration 003, shift templates + generator, attendance rules, patrol sessions + SLA, incidents/amendments, SOS, defects, visitors, media upload, reports + CSV, dashboard, notifications (rules/log/retry, SMTP/WhatsApp), encrypted channel settings, backups, scheduler; unit + integration tests (embedded Postgres) | `muhamhad-pc1/claude` | 2026-10-07 | ace9df5 |
+| Infra: Alpine API image with pg_dump, compose fixes (worker command, Keycloak DB/path/proxy, healthchecks), nginx fixes (/api prefix, web:80, /auth, MinIO :9443, 12 MB uploads), two realm files + generator, env examples, Makefile, CI (integration tests, nginx/realm validation) | `muhamhad-pc1/claude` | 2026-10-07 | ace9df5 |
+| Web v1: runtime `/config.js`, multi-realm org picker, role-aware nav, site selector, EN/ID i18n, Dashboard + SOS banner, Attendance (+override, review queue), Schedules, Guards (+PIN), Patrol (route editor + QR print, live, sessions), Incidents/SOS/Defects/Visitors, 5 reports + CSV + print, Settings (sites, devices, rules, channels, log, backups) | `muhamhad-pc1/claude` | 2026-10-07 | this push |
+| Backend: `guard_name` on list rows, `GET /media/url` | `muhamhad-pc1/claude` | 2026-10-07 | 8cfc11a |
+| Docs: `docs/api.md` (API contract), `docs/runbook.md` (install, users, tablets, backups/restore) | `muhamhad-pc1/claude` | 2026-10-07 | ace9df5 |

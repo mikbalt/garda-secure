@@ -2,7 +2,62 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body, #root {
+html,
+body,
+#root {
   height: 100%;
   margin: 0;
+}
+
+/* Print: only the page content (reports, QR sheets) — no chrome. */
+.print-only {
+  display: none;
+}
+
+@media print {
+  @page {
+    margin: 12mm;
+  }
+  html,
+  body,
+  #root {
+    height: auto;
+    background: #fff;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  /* Let the main area grow instead of scrolling. */
+  #root .h-screen,
+  #root .overflow-hidden,
+  #root .overflow-auto,
+  #root .overflow-x-auto {
+    height: auto !important;
+    overflow: visible !important;
+  }
+  .print-plain {
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+  table {
+    font-size: 10pt;
+  }
+  tr {
+    break-inside: avoid;
+  }
+  /* A sheet opened in a modal (e.g. QR codes) replaces the whole page. */
+  body.printing-sheet #root {
+    display: none !important;
+  }
+  body.printing-sheet .print-sheet {
+    display: block !important;
+    position: static !important;
+  }
+}
+
+.print-sheet {
+  display: none;
 }

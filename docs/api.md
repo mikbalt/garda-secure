@@ -133,6 +133,12 @@ Denials: `403 {code: device_unregistered | device_pending | device_revoked | gua
 `sites/<site>/<kind>/<id>.jpg` in a record **before** uploading (offline) as long
 as it later uploads a JPEG with the same `id`. Readers show `uploaded: false` until then.
 
+`GET /media/url?key=` (web roles) → `{key, url?, uploaded}` — pre-signed URL (15 min)
+for any photo key of a site the caller can read (selfies, defects, visitors, scans).
+
+List rows of `/incidents`, `/sos`, `/defects`, `/visitors` and attendance records
+(`/attendance/review`, clock-in, override) include `guard_name`.
+
 ## Reports & dashboard
 
 | Method | Path | Roles |

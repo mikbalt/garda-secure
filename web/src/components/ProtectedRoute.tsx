@@ -1,29 +1,26 @@
-import { getUserRoles } from '../keycloak'
+import type { ReactNode } from 'react'
+import { ShieldOff } from 'lucide-react'
+import { useAuth } from '../hooks/useAuth'
+import { useT } from '../i18n/context'
+import type { Capability } from '../lib/roles'
 
 interface ProtectedRouteProps {
-  roles: string[]
-  children: React.ReactNode
+  cap: Capability
+  children: ReactNode
 }
 
-/**
- * Renders children only if the authenticated user has at least one of the required roles.
- * Shows a 403 message otherwise.
- */
-export function ProtectedRoute({ roles, children }: ProtectedRouteProps) {
-  const userRoles = getUserRoles()
-  const hasAccess = roles.some((r) => userRoles.includes(r))
-
-  if (!hasAccess) {
+/** Renders children only when the user's roles grant the capability. */
+export function ProtectedRoute({ cap, children }: ProtectedRouteProps) {
+  const { can } = useAuth()
+  const t = useT()
+  if (!can(cap)) {
     return (
-      <div className="flex flex-col items-center justify-center h-full py-24 text-center">
-        <div className="text-6xl mb-4">🚫</div>
-        <h2 className="text-2xl font-semibold text-gray-800 mb-2">Access Denied</h2>
-        <p className="text-gray-500">
-          You don't have permission to view this page.
-        </p>
+      <div className="flex h-full flex-col items-center justify-center py-24 text-center">
+        <ShieldOff className="mb-4 h-12 w-12 text-gray-500" aria-hidden="true" />
+        <h1 className="mb-2 text-2xl font-semibold text-gray-900">{t('access.deniedTitle')}</h1>
+        <p className="text-gray-700">{t('access.deniedBody')}</p>
       </div>
     )
   }
-
   return <>{children}</>
 }

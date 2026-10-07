@@ -1,47 +1,97 @@
 import Keycloak from 'keycloak-js'
-
-const keycloak = new Keycloak({
-  url: import.meta.env.VITE_KEYCLOAK_URL as string,
-  realm: import.meta.env.VITE_KEYCLOAK_REALM as string,
-  clientId: import.meta.env.VITE_KEYCLOAK_CLIENT_ID as string,
-})
+import { config } from './config'
+import { readStored, STORAGE_KEYS, writeStored } from './lib/storage'
 
 /**
- * Initialize Keycloak with login-required flow.
- * Must be called before rendering the app.
+ * One Keycloak realm per client company (D-005). The realm is chosen before
+ * Keycloak is initialised; with a single configured realm it is implicit.
  */
-export async function initKeycloak(): Promise<boolean> {
-  const authenticated = await keycloak.init({
-    onLoad: 'login-required',
-    checkLoginIframe: false,
-    pkceMethod: 'S256',
-  })
 
-  // Auto-refresh the access token 60 seconds before it expires.
-  keycloak.onTokenExpired = () => {
-    keycloak.updateToken(60).catch(() => {
-      console.warn('Token refresh failed — logging out')
-      keycloak.logout()
-    })
-  }
+let keycloak: Keycloak | null = null
+let currentRealm = ''
 
-  return authenticated
+/** Realm to use without asking, or null when the user must choose. */
+export function resolveRealm(): string | null {
+  const stored = readStored(STORAGE_KEYS.realm)
+  if (stored && config.realms.some((r) => r.id === stored)) return stored
+  if (config.realms.length === 1) return config.realms[0].id
+  return null
 }
 
-export function getToken(): string | undefined {
-  return keycloak.token
+export function rememberRealm(realm: string | null): void {
+  writeStored(STORAGE_KEYS.realm, realm)
+}
+
+let initPromise: { realm: string; promise: Promise<boolean> } | null = null
+
+/**
+ * Initialises Keycloak for the realm (login-required). Repeated calls for the
+ * same realm share one initialisation (React StrictMode runs effects twice).
+ */
+export function initKeycloak(realm: string): Promise<boolean> {
+  if (initPromise && initPromise.realm === realm) return initPromise.promise
+  currentRealm = realm
+  const instance = new Keycloak({ url: config.keycloakUrl, realm, clientId: config.keycloakClientId })
+  keycloak = instance
+  const promise = instance
+    .init({ onLoad: 'login-required', checkLoginIframe: false, pkceMethod: 'S256' })
+    .then((authenticated) => {
+      instance.onTokenExpired = () => {
+        instance.updateToken(30).catch(() => instance.login())
+      }
+      return authenticated
+    })
+    .catch((err: unknown) => {
+      initPromise = null
+      throw err instanceof Error ? err : new Error(String((err as { error?: string })?.error ?? 'Keycloak init failed'))
+    })
+  initPromise = { realm, promise }
+  return promise
+}
+
+function kc(): Keycloak | null {
+  return keycloak
+}
+
+/** Returns a fresh access token, refreshing it when it expires within 30 s. */
+export async function freshToken(): Promise<string | undefined> {
+  const k = kc()
+  if (!k) return undefined
+  try {
+    await k.updateToken(30)
+  } catch {
+    // Refresh token expired — the 401 handler sends the user to login.
+  }
+  return k.token
+}
+
+export function login(): void {
+  kc()?.login()
 }
 
 export function getUserRoles(): string[] {
-  return keycloak.realmAccess?.roles ?? []
+  const k = kc()
+  if (!k) return []
+  const flat = k.tokenParsed?.['roles']
+  const fromClaim = Array.isArray(flat) ? flat.filter((r): r is string => typeof r === 'string') : []
+  return Array.from(new Set([...fromClaim, ...(k.realmAccess?.roles ?? [])]))
 }
 
 export function getUsername(): string {
-  return (keycloak.tokenParsed?.['preferred_username'] as string) ?? ''
+  const p = kc()?.tokenParsed
+  return ((p?.['preferred_username'] ?? p?.['name'] ?? '') as string) || ''
+}
+
+export function getRealm(): string {
+  return currentRealm
 }
 
 export function logout(): void {
-  keycloak.logout()
+  kc()?.logout({ redirectUri: window.location.origin + '/' })
 }
 
-export default keycloak
+/** Logs out and forgets the chosen organisation so the picker shows again. */
+export function switchOrganisation(): void {
+  rememberRealm(null)
+  logout()
+}

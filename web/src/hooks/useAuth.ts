@@ -1,20 +1,38 @@
-import { getUsername, getUserRoles, logout } from '../keycloak'
+import { useMemo } from 'react'
+import { getRealm, getUserRoles, getUsername, logout, switchOrganisation } from '../keycloak'
+import { config } from '../config'
+import { can, type Capability } from '../lib/roles'
 
 export interface AuthUser {
   username: string
   roles: string[]
+  realm: string
+  realmLabel: string
 }
 
 /**
- * Returns the current authenticated user's info and a logout function.
- * Reads directly from the Keycloak singleton — no React state needed
- * since Keycloak is initialized before the app renders.
+ * Current user and role checks. Keycloak is initialised before the app
+ * renders, so values are read from the singleton.
  */
 export function useAuth() {
-  const user: AuthUser = {
-    username: getUsername(),
-    roles: getUserRoles(),
-  }
-
-  return { user, logout }
+  const roles = getUserRoles()
+  const realm = getRealm()
+  const key = roles.join(',')
+  return useMemo(() => {
+    const user: AuthUser = {
+      username: getUsername(),
+      roles,
+      realm,
+      realmLabel: config.realms.find((r) => r.id === realm)?.label ?? realm,
+    }
+    return {
+      user,
+      can: (cap: Capability) => can(roles, cap),
+      logout,
+      switchOrganisation,
+      multiRealm: config.realms.length > 1,
+    }
+    // roles array identity changes per call; key captures its content
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, realm])
 }
