@@ -489,7 +489,24 @@ func (h *Handler) visitorExit(c *fiber.Ctx) error {
 	return c.JSON(out)
 }
 
-// ── Media upload ─────────────────────────────────────────────────────────────
+// ── Media ────────────────────────────────────────────────────────────────────
+
+// GET /media/url?key= — pre-signed URL for any stored photo (selfies, defects,
+// visitors, scans) of a site the caller can read.
+func (h *Handler) mediaURL(c *fiber.Ctx) error {
+	key := c.Query("key")
+	parts := strings.SplitN(key, "/", 3)
+	if len(parts) < 3 || parts[0] != "sites" {
+		return h.fail(c, service.BadRequest("invalid_object_key", "invalid photo key"))
+	}
+	if err := service.CheckObjectKey(&key, parts[1]); err != nil {
+		return h.fail(c, err)
+	}
+	if _, err := h.siteFor(c, parts[1]); err != nil {
+		return h.fail(c, err)
+	}
+	return c.JSON(h.photos(c.Context(), key)[0])
+}
 
 // MaxPhotoBytes caps a single photo upload.
 const MaxPhotoBytes = 10 << 20

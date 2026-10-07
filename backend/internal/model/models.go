@@ -127,6 +127,7 @@ type AttendanceRecord struct {
 	ID              string     `json:"id"`
 	ShiftID         *string    `json:"shift_id,omitempty"`
 	GuardID         string     `json:"guard_id"`
+	GuardName       string     `json:"guard_name,omitempty"`
 	SiteID          string     `json:"site_id"`
 	ClockInAt       *time.Time `json:"clock_in_at,omitempty"`
 	ClockOutAt      *time.Time `json:"clock_out_at,omitempty"`
@@ -205,6 +206,7 @@ type Incident struct {
 	ID              string    `json:"id"`
 	SiteID          string    `json:"site_id"`
 	GuardID         string    `json:"guard_id"`
+	GuardName       string    `json:"guard_name,omitempty"`
 	DeviceID        *string   `json:"device_id,omitempty"`
 	Type            string    `json:"type"`     // category: theft, trespassing, medical, …
 	Severity        string    `json:"severity"` // low | medium | high | critical
@@ -232,6 +234,7 @@ type DefectReport struct {
 	ID             string    `json:"id"`
 	SiteID         string    `json:"site_id"`
 	GuardID        string    `json:"guard_id"`
+	GuardName      string    `json:"guard_name,omitempty"`
 	DeviceID       *string   `json:"device_id,omitempty"`
 	DefectType     *string   `json:"defect_type,omitempty"`
 	Location       *string   `json:"location,omitempty"`
@@ -247,6 +250,7 @@ type VisitorLog struct {
 	ID             string     `json:"id"`
 	SiteID         string     `json:"site_id"`
 	GuardID        string     `json:"guard_id"`
+	GuardName      string     `json:"guard_name,omitempty"`
 	DeviceID       *string    `json:"device_id,omitempty"`
 	VisitorName    string     `json:"visitor_name"`
 	IDType         *string    `json:"id_type,omitempty"`
@@ -264,6 +268,7 @@ type VisitorLog struct {
 type SosAlert struct {
 	ID             string     `json:"id"`
 	GuardID        string     `json:"guard_id"`
+	GuardName      string     `json:"guard_name,omitempty"`
 	SiteID         string     `json:"site_id"`
 	DeviceID       *string    `json:"device_id,omitempty"`
 	FiredAt        time.Time  `json:"fired_at"`

@@ -12,14 +12,15 @@ import (
 const attendanceColumns = `id, shift_id, guard_id, site_id, clock_in_at, clock_out_at, status,
 	late_minutes, early_out_minutes, selfie_object_key, gps_lat, gps_lng,
 	clock_out_gps_lat, clock_out_gps_lng, device_id, override_reason, overridden_by,
-	overridden_at, needs_review, review_note, reviewed_by, reviewed_at, created_at`
+	overridden_at, needs_review, review_note, reviewed_by, reviewed_at, created_at,
+	COALESCE((SELECT g.name FROM guards g WHERE g.id = attendance_records.guard_id), '')`
 
 func scanAttendance(row pgx.Row) (model.AttendanceRecord, error) {
 	var r model.AttendanceRecord
 	err := row.Scan(&r.ID, &r.ShiftID, &r.GuardID, &r.SiteID, &r.ClockInAt, &r.ClockOutAt, &r.Status,
 		&r.LateMinutes, &r.EarlyOutMinutes, &r.SelfieObjectKey, &r.GPSLat, &r.GPSLng,
 		&r.ClockOutGPSLat, &r.ClockOutGPSLng, &r.DeviceID, &r.OverrideReason, &r.OverriddenBy,
-		&r.OverriddenAt, &r.NeedsReview, &r.ReviewNote, &r.ReviewedBy, &r.ReviewedAt, &r.CreatedAt)
+		&r.OverriddenAt, &r.NeedsReview, &r.ReviewNote, &r.ReviewedBy, &r.ReviewedAt, &r.CreatedAt, &r.GuardName)
 	return r, err
 }
 

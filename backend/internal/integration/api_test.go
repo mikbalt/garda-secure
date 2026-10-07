@@ -513,6 +513,14 @@ func TestAPIEndToEnd(t *testing.T) {
 		t.Fatalf("original incident changed or amendment missing: %v", det)
 	}
 	e.expect(e.do("PUT", "/api/v1/incidents/"+incID+"/status", sup, "", map[string]any{"status": "in_progress"}), 200, "incident status")
+	if l := e.do("GET", "/api/v1/incidents?site_id="+siteA, client, "", nil).list(); l[0].(map[string]any)["guard_name"] != "Budi" {
+		t.Fatalf("incident list lacks guard_name: %v", l[0])
+	}
+	if p := e.expect(e.do("GET", "/api/v1/media/url?key="+photo, client, "", nil), 200, "media url").obj(); p["key"] != photo || p["uploaded"] != false {
+		t.Fatalf("media url = %v", p)
+	}
+	e.expect(e.do("GET", "/api/v1/media/url?key="+photo, otherAdmin, "", nil), 404, "media url other realm")
+	e.expect(e.do("GET", "/api/v1/media/url?key=sites/x/../../etc", client, "", nil), 400, "media url bad key")
 
 	// ── SOS ──────────────────────────────────────────────────────────────────
 	sosID := uuid.NewString()

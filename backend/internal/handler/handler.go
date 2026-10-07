@@ -141,6 +141,7 @@ func (h *Handler) Register(api fiber.Router) {
 	vis.Post("/:id/exit", append(field, h.visitorExit)...)
 
 	api.Post("/media", append(field, h.uploadMedia)...)
+	api.Get("/media/url", web(rolesWeb...), h.mediaURL)
 
 	rep := api.Group("/reports")
 	rep.Get("/attendance/daily", web(rolesWeb...), h.reportDailyAttendance)
@@ -339,7 +340,7 @@ func sendCSV(c *fiber.Ctx, filename string, header []string, rows [][]string) er
 // csvSafe stops spreadsheet apps from evaluating user-entered text as a
 // formula (CSV injection).
 func csvSafe(s string) string {
-	if s != "" && strings.ContainsRune("=+-@	", rune(s[0])) {
+	if s != "" && strings.ContainsRune("=+-@\t\r", rune(s[0])) {
 		return "'" + s
 	}
 	return s

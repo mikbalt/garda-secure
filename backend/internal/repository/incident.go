@@ -13,12 +13,13 @@ import (
 // ── Incidents ────────────────────────────────────────────────────────────────
 
 const incidentColumns = `id, site_id, guard_id, device_id, type, severity, description,
-	photo_object_keys, location, status, occurred_at, created_at, updated_at`
+	photo_object_keys, location, status, occurred_at, created_at, updated_at,
+	COALESCE((SELECT g.name FROM guards g WHERE g.id = incidents.guard_id), '')`
 
 func scanIncident(row pgx.Row) (model.Incident, error) {
 	var i model.Incident
 	err := row.Scan(&i.ID, &i.SiteID, &i.GuardID, &i.DeviceID, &i.Type, &i.Severity, &i.Description,
-		&i.PhotoObjectKeys, &i.Location, &i.Status, &i.OccurredAt, &i.CreatedAt, &i.UpdatedAt)
+		&i.PhotoObjectKeys, &i.Location, &i.Status, &i.OccurredAt, &i.CreatedAt, &i.UpdatedAt, &i.GuardName)
 	if i.PhotoObjectKeys == nil {
 		i.PhotoObjectKeys = []string{}
 	}
@@ -130,12 +131,13 @@ func ListAmendments(ctx context.Context, db DBTX, incidentID string) ([]model.In
 // ── SOS ──────────────────────────────────────────────────────────────────────
 
 const sosColumns = `id, guard_id, site_id, device_id, fired_at, received_at, gps_lat, gps_lng,
-	acknowledged_by, acknowledged_at`
+	acknowledged_by, acknowledged_at,
+	COALESCE((SELECT g.name FROM guards g WHERE g.id = sos_alerts.guard_id), '')`
 
 func scanSos(row pgx.Row) (model.SosAlert, error) {
 	var a model.SosAlert
 	err := row.Scan(&a.ID, &a.GuardID, &a.SiteID, &a.DeviceID, &a.FiredAt, &a.ReceivedAt,
-		&a.GPSLat, &a.GPSLng, &a.AcknowledgedBy, &a.AcknowledgedAt)
+		&a.GPSLat, &a.GPSLng, &a.AcknowledgedBy, &a.AcknowledgedAt, &a.GuardName)
 	return a, err
 }
 
@@ -201,12 +203,13 @@ func AcknowledgeSosAlert(ctx context.Context, db DBTX, id, actor string) (*model
 // ── Defect reports ───────────────────────────────────────────────────────────
 
 const defectColumns = `id, site_id, guard_id, device_id, defect_type, location, description,
-	photo_object_key, status, created_at, updated_at`
+	photo_object_key, status, created_at, updated_at,
+	COALESCE((SELECT g.name FROM guards g WHERE g.id = defect_reports.guard_id), '')`
 
 func scanDefect(row pgx.Row) (model.DefectReport, error) {
 	var d model.DefectReport
 	err := row.Scan(&d.ID, &d.SiteID, &d.GuardID, &d.DeviceID, &d.DefectType, &d.Location,
-		&d.Description, &d.PhotoObjectKey, &d.Status, &d.CreatedAt, &d.UpdatedAt)
+		&d.Description, &d.PhotoObjectKey, &d.Status, &d.CreatedAt, &d.UpdatedAt, &d.GuardName)
 	return d, err
 }
 
@@ -268,12 +271,13 @@ func UpdateDefectStatus(ctx context.Context, db DBTX, id, status string) (*model
 // ── Visitor logs ─────────────────────────────────────────────────────────────
 
 const visitorColumns = `id, site_id, guard_id, device_id, visitor_name, id_type, id_number, plate,
-	host_name, entry_at, exit_at, purpose, photo_object_key, created_at`
+	host_name, entry_at, exit_at, purpose, photo_object_key, created_at,
+	COALESCE((SELECT g.name FROM guards g WHERE g.id = visitor_logs.guard_id), '')`
 
 func scanVisitor(row pgx.Row) (model.VisitorLog, error) {
 	var v model.VisitorLog
 	err := row.Scan(&v.ID, &v.SiteID, &v.GuardID, &v.DeviceID, &v.VisitorName, &v.IDType, &v.IDNumber,
-		&v.Plate, &v.HostName, &v.EntryAt, &v.ExitAt, &v.Purpose, &v.PhotoObjectKey, &v.CreatedAt)
+		&v.Plate, &v.HostName, &v.EntryAt, &v.ExitAt, &v.Purpose, &v.PhotoObjectKey, &v.CreatedAt, &v.GuardName)
 	return v, err
 }
 
