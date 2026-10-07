@@ -50,7 +50,7 @@ The entire platform runs as a single Docker Compose stack — designed to be ope
 - **FR-AUTH-02** Web login via username + password through Keycloak; optional 2FA (TOTP) for admin/HR roles — configured in Keycloak admin UI, no custom code required.
 - **FR-AUTH-03** Role-based access control (RBAC) managed in Keycloak; JWT claims carry role; the Go API validates tokens without touching credentials.
 - **FR-AUTH-04** Auto-lock tablet after configurable idle timeout; guard must re-enter PIN.
-- **FR-AUTH-05** Tablet PIN auth handled by the mobile app locally; full web SSO via Keycloak OIDC.
+- **FR-AUTH-05** Tablet PIN auth handled by the mobile app locally; full web SSO via Keycloak OIDC. Tablets are shared per site and authenticate to the API with a device token (see OQ-9).
 - **FR-AUTH-06** Each client has its own Keycloak realm; user namespaces are fully isolated between clients.
 
 ### 4.2 Attendance & Shift Management
@@ -216,6 +216,9 @@ Redis  ────────────────────────�
 | OQ-4 | SLA default for checkpoints? | **No system-wide default.** SLA is optional and set per-checkpoint in the route editor. Routes with no SLA produce no alerts. |
 | OQ-5 | Client site owner access model? | **Both:** read-only Keycloak login to web dashboard + automated monthly recap email. |
 | OQ-6 | Keycloak realm strategy? | **One realm per client.** Full user namespace isolation between clients. |
+| OQ-7 | UI languages? | **v1: English + Bahasa Indonesia** on both web and tablet. |
+| OQ-8 | Recurring shifts? | **Shift template + pre-generated instances.** Admin manages a recurring template (guard, site, start/end time, weekdays); the system pre-generates concrete shift rows ahead of time. Attendance, absent auto-flag, and reports run against the generated instances. |
+| OQ-9 | Tablet authentication model? | **Shared tablet per site, device token + local PIN.** Each tablet is a Keycloak *device* account bound to one site; it registers itself and stays pending until an admin approves it and assigns the site (admin can revoke at any time). Guards unlock the tablet with their PIN, verified locally against a PIN hash synced from the server, so switching guards works offline. Every API call carries the device token plus `X-Guard-ID`; the API rejects guards who are inactive or not assigned to the device's site. Guard identity is never taken from the request body. |
 
 ---
 
@@ -225,7 +228,7 @@ Redis  ────────────────────────�
 - Live video streaming from patrol
 - Payroll system integration (monthly recap report is the handoff)
 - LINE / Telegram notifications (v2)
-- Multi-language UI (English + Thai assumed; i18n hooks added for v2)
+- Additional UI languages beyond English + Bahasa Indonesia (i18n hooks in place)
 - Mobile push notifications via FCM/APNs
 - Kubernetes / multi-node HA deployment (Docker Compose single-node)
 
