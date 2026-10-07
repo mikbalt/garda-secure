@@ -5,6 +5,7 @@ import { ProtectedRoute } from './components/ProtectedRoute'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import Dashboard from './pages/Dashboard'
 import Attendance from './pages/Attendance'
+import Guards from './pages/Guards'
 import Patrol from './pages/Patrol'
 import Incidents from './pages/Incidents'
 import Reports from './pages/Reports'
@@ -32,6 +33,14 @@ export function App() {
                 element={
                   <ProtectedRoute roles={['admin', 'supervisor', 'hr']}>
                     <Attendance />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/guards"
+                element={
+                  <ProtectedRoute roles={['admin', 'supervisor']}>
+                    <Guards />
                   </ProtectedRoute>
                 }
               />

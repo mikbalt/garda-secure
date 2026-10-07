@@ -21,6 +21,7 @@ import (
 	"github.com/securepatrol/backend/internal/db"
 	"github.com/securepatrol/backend/internal/handler"
 	"github.com/securepatrol/backend/internal/middleware"
+	"github.com/securepatrol/backend/internal/notification"
 	"github.com/securepatrol/backend/internal/storage"
 )
 
@@ -89,10 +90,12 @@ func main() {
 	// ── Worker mode ──────────────────────────────────────────────────────────
 	if len(os.Args) > 1 && os.Args[1] == "worker" {
 		logger.Info().Msg("starting notification worker")
-		// TODO: consume Redis queue and dispatch SMTP / WhatsApp notifications
+		w := notification.NewWorker(rdb, cfg, logger)
+		w.Start(ctx)
 		quit := make(chan os.Signal, 1)
 		signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
 		<-quit
+		w.Stop()
 		logger.Info().Msg("worker shutting down")
 		return
 	}
@@ -123,11 +126,21 @@ func main() {
 	// Public routes
 	app.Get("/health", handler.Health(pool, rdb))
 
-	// Protected API group
-	api := app.Group("/api/v1", jwtMiddleware)
+	// Protected API group — inject pool + storage into every request context
+	api := app.Group("/api/v1",
+		jwtMiddleware,
+		middleware.Inject(pool, stg),
+		middleware.Audit(pool),
+	)
+
 	handler.RegisterAttendance(api.Group("/attendance"))
 	handler.RegisterPatrol(api.Group("/patrol"))
 	handler.RegisterIncidents(api.Group("/incidents"))
+	handler.RegisterGuards(api.Group("/guards"))
+	handler.RegisterSites(api.Group("/sites"))
+	handler.RegisterShifts(api.Group("/shifts"))
+	handler.RegisterReports(api.Group("/reports"))
+	handler.RegisterVisitors(api.Group("/visitors"))
 
 	// ── Graceful shutdown ────────────────────────────────────────────────────
 	quit := make(chan os.Signal, 1)

@@ -14,6 +14,7 @@ import { useAuth } from '../hooks/useAuth'
 const navItems = [
   { to: '/',           label: 'Dashboard',  icon: LayoutDashboard, end: true },
   { to: '/attendance', label: 'Attendance', icon: ClipboardList },
+  { to: '/guards',     label: 'Guards',     icon: Users },
   { to: '/patrol',     label: 'Patrol',     icon: MapPin },
   { to: '/incidents',  label: 'Incidents',  icon: AlertTriangle },
   { to: '/reports',    label: 'Reports',    icon: BarChart2 },
