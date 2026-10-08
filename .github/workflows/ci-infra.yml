@@ -8,6 +8,10 @@ on:
   pull_request:
     paths:
       - 'infra/**'
+      - '.github/workflows/ci-infra.yml'
+
+permissions:
+  contents: read
 
 defaults:
   run:

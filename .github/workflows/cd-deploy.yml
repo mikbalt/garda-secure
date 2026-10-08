@@ -1,62 +1,97 @@
 name: CD — Deploy to Production
 
+# Deploys are deliberate: push a version tag (git tag v1.0.0 && git push --tags)
+# or run the workflow manually with a branch/tag. Deploying on every push to
+# the integration branch would ship unfinished work to the client sites.
 on:
   push:
-    branches:
-      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch or tag to deploy'
+        required: true
+        default: 'init'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
 
 jobs:
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
     environment: production
+    env:
+      DEPLOY_REF: ${{ github.event.inputs.ref || github.ref_name }}
+      # Secrets cannot be used in `if:` directly; expose whether mail is set up.
+      NOTIFY: ${{ secrets.SMTP_HOST != '' && secrets.DEPLOY_NOTIFY_EMAIL != '' }}
     steps:
-      - uses: actions/checkout@v4
-
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          envs: DEPLOY_REF,DEPLOY_PATH
+          command_timeout: 30m
           script: |
-            set -e
-            cd /opt/securepatrol
-            git pull origin main
-            docker compose pull
-            docker compose up -d --remove-orphans
+            set -eu
+            cd "${DEPLOY_PATH:-/opt/securepatrol}"
+            git fetch --tags --prune --force origin
+            # Branch names resolve via origin/<branch>; tags resolve directly.
+            if git rev-parse --verify --quiet "origin/${DEPLOY_REF}" >/dev/null; then
+              git checkout --force --detach "origin/${DEPLOY_REF}"
+            else
+              git checkout --force --detach "${DEPLOY_REF}"
+            fi
+            echo "Deploying $(git rev-parse --short HEAD) (${DEPLOY_REF})"
+            cd infra
+            test -f .env || { echo "infra/.env is missing on the server" >&2; exit 1; }
+            test -f nginx/certs/cert.pem || { echo "TLS cert missing in infra/nginx/certs" >&2; exit 1; }
+            # --wait fails the deploy if a service does not become healthy.
+            VERSION="${DEPLOY_REF}" docker compose -f docker-compose.yml -f docker-compose.app.yml \
+              up -d --build --remove-orphans --wait --wait-timeout 600
             docker image prune -f
             echo "Deploy complete: $(date)"
 
       - name: Notify on success
-        if: success()
+        if: success() && env.NOTIFY == 'true'
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: ${{ secrets.SMTP_HOST }}
-          server_port: ${{ secrets.SMTP_PORT }}
+          server_port: ${{ secrets.SMTP_PORT || 587 }}
           username: ${{ secrets.SMTP_USER }}
           password: ${{ secrets.SMTP_PASSWORD }}
-          subject: "✅ SecurePatrol deployed — ${{ github.sha }}"
+          subject: "SecurePatrol deployed: ${{ env.DEPLOY_REF }}"
           to: ${{ secrets.DEPLOY_NOTIFY_EMAIL }}
           from: ${{ secrets.SMTP_FROM }}
           body: |
             Deploy succeeded.
-            Commit: ${{ github.sha }}
+            Ref: ${{ env.DEPLOY_REF }} (${{ github.sha }})
             By: ${{ github.actor }}
-            Branch: ${{ github.ref }}
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
       - name: Notify on failure
-        if: failure()
+        if: failure() && env.NOTIFY == 'true'
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: ${{ secrets.SMTP_HOST }}
-          server_port: ${{ secrets.SMTP_PORT }}
+          server_port: ${{ secrets.SMTP_PORT || 587 }}
           username: ${{ secrets.SMTP_USER }}
           password: ${{ secrets.SMTP_PASSWORD }}
-          subject: "❌ SecurePatrol deploy FAILED — ${{ secrets.DEPLOY_HOST }}"
+          subject: "SecurePatrol deploy FAILED: ${{ env.DEPLOY_REF }}"
           to: ${{ secrets.DEPLOY_NOTIFY_EMAIL }}
           from: ${{ secrets.SMTP_FROM }}
           body: |
-            Deploy failed. Check GitHub Actions for details.
-            Commit: ${{ github.sha }}
+            Deploy failed. Check the run for details:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            Ref: ${{ env.DEPLOY_REF }}
             By: ${{ github.actor }}

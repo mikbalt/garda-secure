@@ -57,13 +57,14 @@ The Flutter tablet app (`mobile/`) is deferred until backend/web v1 is done.
 
 ## CI/CD
 
-GitHub Actions pipelines run on every PR:
-- **ci-backend**: lint (golangci-lint) → test (race) → security (gosec) → docker build
-- **ci-web**: lint (ESLint) → typecheck → build
-- **ci-mobile**: analyze → test → APK build (smoke)
-- **ci-infra**: compose config validate → nginx -t
+GitHub Actions pipelines run on pushes and PRs that touch each folder:
+- **ci-backend**: lint (golangci-lint) → unit tests (race) + integration tests (embedded Postgres) → security (gosec) → docker build
+- **ci-web**: lint (ESLint) → typecheck → build → docker build (+ runtime config check)
+- **ci-infra**: compose config validate → Keycloak realm JSON → nginx -t
+- **ci-mobile**: manual only while the app is deferred
 
-On merge to `main`: SSH deploy to production server.
+Deploy (**cd-deploy**): push a tag `v*` or run it manually with a branch/tag —
+see [docs/runbook.md](docs/runbook.md) §7 for the required secrets.
 
 ## Tech Stack
 

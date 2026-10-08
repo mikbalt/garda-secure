@@ -8,6 +8,14 @@ on:
   pull_request:
     paths:
       - 'web/**'
+      - '.github/workflows/ci-web.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-web-${{ github.ref }}
+  cancel-in-progress: true
 
 defaults:
   run:
@@ -56,3 +64,17 @@ jobs:
         with:
           name: web-dist
           path: web/dist/
+
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t securepatrol/web:${{ github.sha }} .
+      - name: Runtime config is generated at start
+        run: |
+          cid=$(docker run -d -e KEYCLOAK_REALMS="securepatrol-client1:Client 1" securepatrol/web:${{ github.sha }})
+          sleep 3
+          docker exec "$cid" cat /usr/share/nginx/html/config.js | tee /dev/stderr | grep -q '"securepatrol-client1"'
+          docker rm -f "$cid"

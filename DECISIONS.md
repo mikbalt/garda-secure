@@ -152,3 +152,20 @@ in PRD §9 (OQ-x). New entries go at the bottom with the next free number.
 - Web container gets runtime config (`/config.js`) from env vars; images are
   environment-independent.
 - The API runs DB migrations on start; the worker waits for a healthy API.
+
+### D-020 — Supervisor read access in the web app
+- **Date:** 2026-10-08 · **Status:** Accepted (confirmed by product owner)
+- Supervisors see Schedules, Guards and Patrol routes (incl. QR printing)
+  read-only, matching what the API allows them to read. Only admins edit.
+  Role → page mapping lives in `web/src/lib/roles.ts`.
+
+### D-021 — CI/CD
+- **Date:** 2026-10-08 · **Status:** Accepted
+- Production deploys run only from a version tag (`v*`) or a manual
+  `workflow_dispatch` with a branch/tag — never on every push. The server
+  checks out that ref and runs the compose stack from `infra/` with
+  `--wait`, so an unhealthy service fails the deploy. Mail notification
+  is sent only when the SMTP secrets are configured.
+- `gosec` is pinned to v2.20.0 (newer versions need Go ≥ 1.25; the repo
+  targets Go 1.22).
+- Mobile CI is manual-only while the app is deferred (D-017).

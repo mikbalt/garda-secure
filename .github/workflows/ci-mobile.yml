@@ -1,13 +1,13 @@
 name: CI — Mobile
 
+# The Flutter app is deferred (DECISIONS.md D-017): mobile/ has no android/,
+# test/ or .env yet, so these jobs cannot pass. Run manually only; restore the
+# push/pull_request triggers when the mobile work is resumed.
 on:
-  push:
-    paths:
-      - 'mobile/**'
-      - '.github/workflows/ci-mobile.yml'
-  pull_request:
-    paths:
-      - 'mobile/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 defaults:
   run:

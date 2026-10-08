@@ -106,7 +106,26 @@ git pull
 cd infra && make up      # rebuilds images; the API applies DB migrations on start
 ```
 
-## 7. Troubleshooting
+## 7. Automatic deploys (GitHub Actions)
+
+One-time server setup: clone the repo to `/opt/securepatrol` (or set
+`DEPLOY_PATH`), create `infra/.env` and the TLS cert, and make sure the deploy
+user can run `docker` and `git fetch` (deploy key with read access).
+
+Repository → Settings → Environments → **production** → secrets:
+
+| Secret | Required | Meaning |
+|---|---|---|
+| `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_KEY` | yes | SSH target and private key |
+| `DEPLOY_PORT` | no | SSH port (default 22) |
+| `DEPLOY_PATH` | no | repo path on the server (default `/opt/securepatrol`) |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `DEPLOY_NOTIFY_EMAIL` | no | deploy result e-mail; skipped when unset |
+
+Deploy a release: `git tag v1.0.0 && git push origin v1.0.0`, or Actions →
+*CD — Deploy to Production* → *Run workflow* with a branch/tag. Roll back by
+deploying the previous tag.
+
+## 8. Troubleshooting
 
 | Symptom | Check |
 |---|---|

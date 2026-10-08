@@ -45,7 +45,6 @@ Backend
 - [ ] Excel (.xlsx) export (CSV with BOM for now)
 - [ ] Rate limiting on tablet endpoints (Redis)
 - [ ] Retention/cleanup for old backups in MinIO (lifecycle rule)
-- [ ] gosec job in CI uses `@latest` with Go 1.22 — pin a compatible gosec version
 
 Web
 - [ ] Manual UI pass against a running stack (all roles, both languages)
@@ -54,11 +53,12 @@ Web
 - [ ] Live patrol map (needs checkpoint lat/lng in routes)
 
 Infra / Ops
-- [ ] `cd-deploy.yml` targets branch `main` and runs compose from repo root — align with `init` branch and `infra/` overlay
+- [ ] Configure the `production` environment secrets and do a first tagged deploy (runbook §7)
 - [ ] Let's Encrypt / production TLS notes
 - [ ] Load test 2 sites / 10 guards (M7)
 
 Mobile (deferred — D-017)
+- [ ] Re-enable push/PR triggers in `ci-mobile.yml` once `flutter create` scaffolding (android/, test/) exists
 - [ ] Device registration + offline PIN unlock (D-001), roster sync
 - [ ] Switch to new endpoints (docs/api.md), `X-Guard-ID`, client UUIDs, JPEG photo keys
 - [ ] Fix `connectivity_plus` v6 `List<ConnectivityResult>` check
@@ -72,6 +72,7 @@ Mobile (deferred — D-017)
 | PRD v3 decisions OQ-7/8/9, CLAUDE.md / PROGRESS.md / DECISIONS.md | `muhamhad-pc1/claude` | 2026-10-07 | 928fb4a |
 | Backend v1 core: multi-realm JWT + RBAC, device/guard auth, migration 003, shift templates + generator, attendance rules, patrol sessions + SLA, incidents/amendments, SOS, defects, visitors, media upload, reports + CSV, dashboard, notifications (rules/log/retry, SMTP/WhatsApp), encrypted channel settings, backups, scheduler; unit + integration tests (embedded Postgres) | `muhamhad-pc1/claude` | 2026-10-07 | ace9df5 |
 | Infra: Alpine API image with pg_dump, compose fixes (worker command, Keycloak DB/path/proxy, healthchecks), nginx fixes (/api prefix, web:80, /auth, MinIO :9443, 12 MB uploads), two realm files + generator, env examples, Makefile, CI (integration tests, nginx/realm validation) | `muhamhad-pc1/claude` | 2026-10-07 | ace9df5 |
-| Web v1: runtime `/config.js`, multi-realm org picker, role-aware nav, site selector, EN/ID i18n, Dashboard + SOS banner, Attendance (+override, review queue), Schedules, Guards (+PIN), Patrol (route editor + QR print, live, sessions), Incidents/SOS/Defects/Visitors, 5 reports + CSV + print, Settings (sites, devices, rules, channels, log, backups) | `muhamhad-pc1/claude` | 2026-10-07 | this push |
+| Web v1: runtime `/config.js`, multi-realm org picker, role-aware nav, site selector, EN/ID i18n, Dashboard + SOS banner, Attendance (+override, review queue), Schedules, Guards (+PIN), Patrol (route editor + QR print, live, sessions), Incidents/SOS/Defects/Visitors, 5 reports + CSV + print, Settings (sites, devices, rules, channels, log, backups) | `muhamhad-pc1/claude` | 2026-10-07 | 7d851f8 |
 | Backend: `guard_name` on list rows, `GET /media/url` | `muhamhad-pc1/claude` | 2026-10-07 | 8cfc11a |
+| CI/CD fixes: gosec pinned, web Docker image job, mobile CI manual-only, tag/manual deploy from `infra/` with health wait; actionlint clean | `muhamhad-pc1/claude` | 2026-10-08 | this push |
 | Docs: `docs/api.md` (API contract), `docs/runbook.md` (install, users, tablets, backups/restore) | `muhamhad-pc1/claude` | 2026-10-07 | ace9df5 |
