@@ -1,0 +1,23 @@
+# Local override: remap ports that conflict with Zscaler VPN (port 9000).
+# Usage: docker compose -f docker-compose.yml -f docker-compose.app.yml -f docker-compose.local.yml up -d
+services:
+  minio:
+    ports: !override
+      - "127.0.0.1:9002:9000"  # Zscaler occupies 9000; use 9002 for local S3 access
+      - "127.0.0.1:9001:9001"  # MinIO console unchanged
+
+  web:
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://0.0.0.0/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  api:
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://0.0.0.0:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
