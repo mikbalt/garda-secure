@@ -127,6 +127,7 @@ func (h *Handler) clockIn(c *fiber.Ctx) error {
 	res, err := service.ClockIn(c.Context(), h.DB, service.ClockInInput{
 		ID: nilIfEmpty(b.ID), At: b.ClockInAt, Guard: guard, Site: site, DeviceID: deviceID(c),
 		SelfieObjectKey: nilIfEmpty(b.SelfieObjectKey), GPSLat: b.GPSLat, GPSLng: b.GPSLng,
+		DeviceLastSeen: middleware.GetDevice(c).LastSeenAt,
 	})
 	if err != nil {
 		return h.fail(c, err)

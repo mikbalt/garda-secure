@@ -49,6 +49,7 @@ type SiteConfig struct {
 	AbsentAfterMinutes   int    `json:"absent_after_minutes"`    // no clock-in by start + this → absent
 	IdleLockMinutes      int    `json:"idle_lock_minutes"`       // tablet auto-lock
 	Language             string `json:"language"`                // notification language: id | en
+	ScanRadiusMeters     int    `json:"scan_radius_m"`           // scans with GPS farther from the checkpoint are flagged gps_far; 0 = off
 }
 
 // DefaultSiteConfig returns the configuration applied when a site has no overrides.
@@ -60,6 +61,7 @@ func DefaultSiteConfig() SiteConfig {
 		AbsentAfterMinutes:   30,
 		IdleLockMinutes:      5,
 		Language:             "id",
+		ScanRadiusMeters:     150,
 	}
 }
 
@@ -148,6 +150,10 @@ type AttendanceRecord struct {
 	ReviewedBy      *string    `json:"reviewed_by,omitempty"`
 	ReviewedAt      *time.Time `json:"reviewed_at,omitempty"`
 	CreatedAt       time.Time  `json:"created_at"`
+	// ReceivedAt is when the clock-in reached the server; Flags are
+	// plausibility findings (service.Flag*).
+	ReceivedAt *time.Time `json:"received_at,omitempty"`
+	Flags      []string   `json:"flags"`
 }
 
 // Checkpoint is an individual stop on a patrol route (stored as JSONB inside Route).
@@ -198,6 +204,7 @@ type CheckpointScan struct {
 	PhotoObjectKey *string   `json:"photo_object_key,omitempty"`
 	GPSLat         *float64  `json:"gps_lat,omitempty"`
 	GPSLng         *float64  `json:"gps_lng,omitempty"`
+	Flags          []string  `json:"flags"` // plausibility findings, e.g. gps_far, too_fast
 }
 
 // Incident records a security event filed by a guard. The original is
@@ -217,6 +224,8 @@ type Incident struct {
 	OccurredAt      time.Time `json:"occurred_at"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
+	ReceivedAt      time.Time `json:"received_at"` // server receipt time
+	Flags           []string  `json:"flags"`
 }
 
 // IncidentAmendment is a supervisor-approved correction to an incident.
@@ -277,6 +286,7 @@ type SosAlert struct {
 	GPSLng         *float64   `json:"gps_lng,omitempty"`
 	AcknowledgedBy *string    `json:"acknowledged_by,omitempty"`
 	AcknowledgedAt *time.Time `json:"acknowledged_at,omitempty"`
+	Flags          []string   `json:"flags"`
 }
 
 // NotificationRule routes an event type at a site to a channel recipient.

@@ -22,6 +22,9 @@ type ClockInInput struct {
 	DeviceID        *string
 	SelfieObjectKey *string
 	GPSLat, GPSLng  *float64
+	// DeviceLastSeen is when the tablet was last seen before this request
+	// (plausibility check of backdated clock-ins).
+	DeviceLastSeen *time.Time
 }
 
 // ClockInResult reports the stored record and what happened.
@@ -75,6 +78,8 @@ func ClockIn(ctx context.Context, pool *pgxpool.Pool, in ClockInInput) (*ClockIn
 			GPSLat: in.GPSLat, GPSLng: in.GPSLng,
 		}
 		p.Status, p.LateMinutes = arrivalStatus(shift.StartTime, at, cfg.LateGraceMinutes)
+		p.ReceivedAt = Now()
+		p.Flags, p.NeedsReview = ClockInFlags(at, p.ReceivedAt, p.Status, in.DeviceLastSeen)
 
 		existing, err := repository.GetAttendanceByShift(ctx, tx, shift.ID)
 		switch {

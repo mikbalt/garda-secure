@@ -144,7 +144,7 @@ func (h *Handler) createIncident(c *fiber.Ctx) error {
 	inc, isNew, err := repository.CreateIncident(c.Context(), h.DB, model.Incident{
 		SiteID: site.ID, GuardID: guard.ID, DeviceID: deviceID(c), Type: b.Type, Severity: b.Severity,
 		Description: nilIfEmpty(b.Description), Location: nilIfEmpty(b.Location),
-		PhotoObjectKeys: b.PhotoObjectKeys, OccurredAt: at,
+		PhotoObjectKeys: b.PhotoObjectKeys, OccurredAt: at, Flags: service.TimeFlags(at, service.Now()),
 	}, nilIfEmpty(b.ID))
 	if err != nil {
 		return h.fail(c, err)
@@ -288,6 +288,7 @@ func (h *Handler) createSos(c *fiber.Ctx) error {
 	}
 	alert, isNew, err := repository.CreateSosAlert(c.Context(), h.DB, model.SosAlert{
 		GuardID: guard.ID, SiteID: site.ID, DeviceID: deviceID(c), FiredAt: at, GPSLat: b.GPSLat, GPSLng: b.GPSLng,
+		Flags: service.TimeFlags(at, service.Now()),
 	}, nilIfEmpty(b.ID))
 	if err != nil {
 		return h.fail(c, err)

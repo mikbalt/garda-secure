@@ -79,6 +79,7 @@ type CheckpointProgress struct {
 	ScannedAt *time.Time `json:"scanned_at,omitempty"`
 	Method    *string    `json:"method,omitempty"`
 	ScannedBy *string    `json:"scanned_by,omitempty"`
+	ScanFlags []string   `json:"scan_flags,omitempty"` // plausibility flags of the scan
 	DueAt     *time.Time `json:"due_at,omitempty"`
 	// Status: on_time | late | overdue (not scanned, past due) | missed
 	// (session ended without a scan) | pending.
@@ -120,6 +121,9 @@ func ComputeProgress(route model.Route, s model.PatrolSession, scans []model.Che
 		if sc, ok := first[cp.ID]; ok {
 			id, at, method, by := sc.ID, sc.ScannedAt, sc.Method, sc.GuardID
 			cpp.ScanID, cpp.ScannedAt, cpp.Method, cpp.ScannedBy = &id, &at, &method, &by
+			if len(sc.Flags) > 0 {
+				cpp.ScanFlags = sc.Flags
+			}
 			cpp.Status = "on_time"
 			if due != nil && at.After(*due) {
 				cpp.Status = "late"
@@ -275,11 +279,15 @@ func RecordScan(ctx context.Context, pool *pgxpool.Pool, in ScanInput) (*model.C
 		return nil, false, BadRequest("unknown_checkpoint", "checkpoint is not part of this route")
 	}
 
+	flags, err := scanFlags(ctx, pool, s.ID, route, *cp, at, in)
+	if err != nil {
+		return nil, false, err
+	}
 	sessionID := s.ID
 	scan, created, err := repository.InsertScan(ctx, pool, model.CheckpointScan{
 		SessionID: &sessionID, RouteID: route.ID, CheckpointID: cp.ID, GuardID: in.Guard.ID,
 		DeviceID: in.DeviceID, ScannedAt: at, Method: in.Method, PhotoObjectKey: in.PhotoObjectKey,
-		GPSLat: in.GPSLat, GPSLng: in.GPSLng,
+		GPSLat: in.GPSLat, GPSLng: in.GPSLng, Flags: flags,
 	}, in.ID)
 	if err != nil {
 		return nil, false, err
@@ -288,6 +296,28 @@ func RecordScan(ctx context.Context, pool *pgxpool.Pool, in ScanInput) (*model.C
 		return nil, false, err
 	}
 	return scan, created, nil
+}
+
+// scanFlags runs the time, GPS and speed plausibility checks of a scan
+// against the previous scan of the session.
+func scanFlags(ctx context.Context, db repository.DBTX, sessionID string, route *model.Route,
+	cp model.Checkpoint, at time.Time, in ScanInput) ([]string, error) {
+	sc := ScanContext{RadiusMeters: in.Site.Config().ScanRadiusMeters, Checkpoint: cp, GPSLat: in.GPSLat, GPSLng: in.GPSLng}
+	scans, err := repository.ListSessionScans(ctx, db, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	for i := len(scans) - 1; i >= 0; i-- { // ordered by scanned_at
+		if !scans[i].ScannedAt.After(at) {
+			for k := range route.Checkpoints {
+				if route.Checkpoints[k].ID == scans[i].CheckpointID {
+					sc.Previous, sc.PreviousAt = &route.Checkpoints[k], scans[i].ScannedAt
+				}
+			}
+			break
+		}
+	}
+	return append(TimeFlags(at, Now()), ScanFlags(at, sc)...), nil
 }
 
 // EndSession completes a session (or marks it abandoned).

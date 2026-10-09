@@ -54,6 +54,14 @@ func IsInvalidInput(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "22P02"
 }
 
+// flagsOrEmpty stores a nil flag list as an empty array (column NOT NULL).
+func flagsOrEmpty(f []string) []string {
+	if f == nil {
+		return []string{}
+	}
+	return f
+}
+
 // prefixed qualifies a comma-separated column list with a table alias.
 func prefixed(alias, columns string) string {
 	parts := strings.Split(columns, ",")

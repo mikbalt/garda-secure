@@ -72,6 +72,9 @@ func (b *siteBody) validate() error {
 			return service.BadRequest("invalid_config", "%s must be between 0 and 720", name)
 		}
 	}
+	if cfg.ScanRadiusMeters < 0 || cfg.ScanRadiusMeters > 5000 {
+		return service.BadRequest("invalid_config", "scan_radius_m must be between 0 and 5000")
+	}
 	if cfg.Language != "id" && cfg.Language != "en" {
 		return service.BadRequest("invalid_config", "language must be id or en")
 	}
