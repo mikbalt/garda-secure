@@ -49,8 +49,7 @@
       "rootUrl": "",
       "baseUrl": "/",
       "redirectUris": [
-        "https://localhost/*",
-        "http://localhost:5173/*"
+        "https://localhost/*"
       ],
       "webOrigins": ["+"],
       "attributes": {
