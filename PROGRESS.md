@@ -10,6 +10,10 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 | Task | Agent | Since | Notes |
 |---|---|---|---|
 | Mobile tablet app v1 (D-024): device login/registration, offline PIN unlock, clock-in/out, QR patrol, incidents/defects/visitors, SOS, offline outbox; backend `GET /device/status`, `GET /device/sos` | `muhamhad-pc1/claude` | 2026-10-09 | Please don't edit `mobile/` until pushed. |
+| Hardening wave 1 — backend reliability: notifications/worker/jobs/backups/observability (audit BE-R*, BE-O1, F2 part, F14) | `muhamhad-pc1/claude-be-rel` | 2026-10-09 | branch `agent/muhamhad-pc1/be-reliability`; migration 004 |
+| Hardening wave 1 — backend security: tenancy replay, settings exfil, JWT, limits/rate limit, audit log, deps + Go upgrade (audit BE-S2..S10) | `muhamhad-pc1/claude-be-sec` | 2026-10-09 | branch `agent/muhamhad-pc1/be-security`; migration 005 |
+| Hardening wave 1 — infra/ops/CI: first-boot fixes, nginx, TLS/preflight, backups off-host, monitoring, CI smoke + supply chain (audit INF-*) | `muhamhad-pc1/claude-infra` | 2026-10-09 | branch `agent/muhamhad-pc1/infra-hardening` |
+| Hardening wave 1 — web: deps, CSP, SOS all sites, idle logout, a11y, i18n errors, tests (audit WEB-*) | `muhamhad-pc1/claude-web` | 2026-10-09 | branch `agent/muhamhad-pc1/web-hardening` |
 
 ## Migration numbers
 
@@ -18,7 +22,9 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 | 001 | init_schema | — | pushed |
 | 002 | audit_log | — | pushed |
 | 003 | v1_core (devices, shift templates, patrol sessions, amendments, notifications, settings, backups) | `muhamhad-pc1/claude` | pushed |
-| 004 | *(next free)* | | |
+| 004 | be_reliability | `muhamhad-pc1/claude-be-rel` | reserved |
+| 005 | be_security | `muhamhad-pc1/claude-be-sec` | reserved |
+| 006 | *(next free)* | | |
 
 ## Milestones (PRD §11)
 
