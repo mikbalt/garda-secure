@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -142,7 +143,8 @@ func RegenerateTemplateShifts(ctx context.Context, db repository.DBTX, t model.S
 	return GenerateTemplateShifts(ctx, db, t, loc)
 }
 
-// GenerateAllShifts runs the generator for every active template.
+// GenerateAllShifts runs the generator for every active template. A failing
+// template does not stop the others; the errors are joined (audit BE-R4).
 func GenerateAllShifts(ctx context.Context, db repository.DBTX) (int, error) {
 	templates, err := repository.ListActiveShiftTemplates(ctx, db)
 	if err != nil {
@@ -150,21 +152,27 @@ func GenerateAllShifts(ctx context.Context, db repository.DBTX) (int, error) {
 	}
 	sites := map[string]*time.Location{}
 	total := 0
+	var errs []error
 	for _, t := range templates {
 		loc, ok := sites[t.SiteID]
 		if !ok {
 			site, err := repository.GetSite(ctx, db, t.SiteID)
 			if err != nil {
-				return total, err
+				errs = append(errs, fmt.Errorf("template %s: %w", t.ID, err))
+				continue
 			}
 			loc = site.Location()
 			sites[t.SiteID] = loc
 		}
 		n, err := GenerateTemplateShifts(ctx, db, t, loc)
 		if err != nil {
-			return total, err
+			errs = append(errs, fmt.Errorf("template %s: %w", t.ID, err))
+			continue
 		}
 		total += n
+	}
+	if len(errs) > 0 {
+		return total, fmt.Errorf("%d/%d templates failed: %w", len(errs), len(templates), errors.Join(errs...))
 	}
 	return total, nil
 }
