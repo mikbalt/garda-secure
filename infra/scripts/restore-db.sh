@@ -18,17 +18,31 @@ case "$which" in
   *) die "first argument must be app or keycloak" ;;
 esac
 
-printf 'Restore %s into database "%s" (current data is REPLACED). Type the database name to continue: ' "$file" "$db"
-read -r answer
+# Non-interactive use (restore drills): RESTORE_CONFIRM=<database name>.
+answer=${RESTORE_CONFIRM:-}
+if [ -z "$answer" ]; then
+  printf 'Restore %s into database "%s" (current data is REPLACED). Type the database name to continue: ' "$file" "$db"
+  read -r answer
+fi
 [ "$answer" = "$db" ] || die "aborted"
 
-info "stopping $services"
-# shellcheck disable=SC2086
-compose stop $services
+running=$(compose ps --status running --services 2>/dev/null || true)
+printf '%s\n' "$running" | grep -qx postgres || die "postgres is not running (docker compose up -d postgres)"
+stopped=""
+for s in $services; do
+  if printf '%s\n' "$running" | grep -qx "$s"; then stopped="$stopped $s"; fi
+done
+if [ -n "$stopped" ]; then
+  info "stopping$stopped"
+  # shellcheck disable=SC2086
+  compose stop $stopped
+fi
 info "restoring $db as role $owner"
 compose exec -T postgres pg_restore -U "$POSTGRES_USER" --dbname "$db" --clean --if-exists \
   --no-owner --no-privileges --role "$owner" --single-transaction < "$file"
-info "starting $services"
-# shellcheck disable=SC2086
-compose start $services
+if [ -n "$stopped" ]; then
+  info "starting$stopped"
+  # shellcheck disable=SC2086
+  compose start $stopped
+fi
 info "restore of $db finished"
