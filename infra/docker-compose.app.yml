@@ -1,26 +1,48 @@
-# docker-compose.app.yml — overlay for the application services.
-# Usage (from infra/):
-#   docker compose -f docker-compose.yml -f docker-compose.app.yml up -d --build
+# docker-compose.app.yml — application services (api, worker, web) and the
+# public TLS nginx. Included through COMPOSE_FILE in .env; explicit form:
+#   docker compose -f docker-compose.yml -f docker-compose.app.yml -f docker-compose.ops.yml up -d
 #
-# Infra services (postgres, redis, minio, keycloak, nginx, grafana, prometheus)
-# come from docker-compose.yml; this file adds api, worker and web and switches
-# nginx to the full TLS config.
+# The backend image is built once (service `api`); the worker runs the same
+# image with the `worker` command. Production pulls CI-built images
+# (${IMAGE_REPO}/api:${VERSION}) — see scripts/deploy.sh.
 
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+# Go binaries: no capabilities, read-only root fs, non-root user (Dockerfile).
+x-app-hardening: &app-hardening
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+
+# Passwords are embedded in URLs: preflight requires URL-safe secrets (INF-D6).
 x-backend-env: &backend-env
-  DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+  DATABASE_URL: postgres://${APP_DB_USER}:${APP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+  DB_MAX_CONNS: ${DB_MAX_CONNS:-20}
   REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
   MINIO_ENDPOINT: minio:9000
   MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT}
   MINIO_PUBLIC_USE_SSL: ${MINIO_PUBLIC_USE_SSL:-true}
-  MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
-  MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+  # Least-privilege key when configured (minio-init creates it), else root.
+  MINIO_ACCESS_KEY: ${MINIO_APP_ACCESS_KEY:-${MINIO_ROOT_USER}}
+  MINIO_SECRET_KEY: ${MINIO_APP_SECRET_KEY:-${MINIO_ROOT_PASSWORD}}
   MINIO_BUCKET_PHOTOS: ${MINIO_BUCKET_PHOTOS}
   MINIO_BUCKET_BACKUPS: ${MINIO_BUCKET_BACKUPS}
   KEYCLOAK_URL: http://keycloak:8080/auth
   KEYCLOAK_PUBLIC_URL: ${KEYCLOAK_PUBLIC_URL}
   KEYCLOAK_REALMS: ${KEYCLOAK_REALMS}
+  PLATFORM_ADMIN_REALMS: ${PLATFORM_ADMIN_REALMS:-}
   APP_PUBLIC_URL: ${PUBLIC_URL}
   CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+  # Only nginx (inside this network) may set X-Real-IP.
+  TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.28.0.0/24}
   SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY}
   SMTP_HOST: ${SMTP_HOST:-}
   SMTP_PORT: ${SMTP_PORT:-587}
@@ -33,6 +55,7 @@ x-backend-env: &backend-env
   WHATSAPP_TEMPLATE_NAME: ${WHATSAPP_TEMPLATE_NAME:-}
   WHATSAPP_TEMPLATE_LANG: ${WHATSAPP_TEMPLATE_LANG:-id}
   BACKUP_HOUR: ${BACKUP_HOUR:-2}
+  BACKUP_TZ: ${BACKUP_TZ:-Asia/Jakarta}
   TZ: ${TZ:-Asia/Jakarta}
   LOG_LEVEL: ${LOG_LEVEL:-info}
 
@@ -41,8 +64,10 @@ services:
     build:
       context: ../backend
       dockerfile: Dockerfile
-    image: securepatrol/api:${VERSION:-dev}
+    image: ${IMAGE_REPO:-securepatrol}/api:${VERSION:-dev}
     restart: always
+    <<: *app-hardening
+    logging: *logging
     environment:
       <<: *backend-env
       PORT: "8080"
@@ -53,10 +78,13 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
       keycloak:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/health"]
+      # 127.0.0.1, not localhost: localhost may resolve to ::1 (INF-D1).
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -65,17 +93,27 @@ services:
       - securepatrol
 
   notification-worker:
-    build:
-      context: ../backend
-      dockerfile: Dockerfile
-    image: securepatrol/api:${VERSION:-dev}
+    # Same image as api (built once); no build section on purpose.
+    image: ${IMAGE_REPO:-securepatrol}/api:${VERSION:-dev}
     restart: always
+    <<: *app-hardening
+    logging: *logging
     command: ["worker"]
     environment:
       <<: *backend-env
+      # /health (dispatch loop + scheduler ticked < 60 s ago) and /metrics.
+      WORKER_HTTP_ADDR: ":9091"
+      # Keycloak DB is dumped with its own (owner) credentials.
+      BACKUP_KEYCLOAK_DATABASE_URL: postgres://${KC_DB_USER}:${KC_DB_PASSWORD}@postgres:5432/${KC_DB_NAME}?sslmode=disable
     depends_on:
       api:
         condition: service_healthy # api applies migrations first
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9091/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     networks:
       - securepatrol
 
@@ -83,8 +121,24 @@ services:
     build:
       context: ../web
       dockerfile: Dockerfile
-    image: securepatrol/web:${VERSION:-dev}
+    image: ${IMAGE_REPO:-securepatrol}/web:${VERSION:-dev}
     restart: always
+    logging: *logging
+    read_only: true
+    tmpfs:
+      - /tmp:size=8m
+      - /run:size=8m
+      - /var/cache/nginx:size=32m
+    # nginx master needs to bind :80 and drop to the nginx user.
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
     environment:
       # Runtime config written to /config.js at container start.
       API_URL: /api/v1
@@ -92,7 +146,7 @@ services:
       KEYCLOAK_CLIENT_ID: securepatrol-web
       KEYCLOAK_REALMS: ${WEB_KEYCLOAK_REALMS}
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:80/"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:80/"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -103,15 +157,32 @@ services:
   nginx:
     volumes: !override
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/snippets:/etc/nginx/snippets:ro
+      - ./nginx/docker-entrypoint.d/40-securepatrol.sh:/docker-entrypoint.d/40-securepatrol.sh:ro
       - ./nginx/certs:/etc/nginx/certs:ro
+    read_only: true
+    tmpfs:
+      - /etc/nginx/generated:size=1m
+      - /var/cache/nginx:size=64m
+      - /run:size=8m
+      - /tmp:size=8m
+    # No cap_drop here: the nginx master (root) must read nginx/certs/key.pem,
+    # which is 0600 and owned by the operator account on the host.
+    environment:
+      ADMIN_ALLOW_CIDRS: ${ADMIN_ALLOW_CIDRS:-10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 127.0.0.1/32}
+      MINIO_BUCKET_PHOTOS: ${MINIO_BUCKET_PHOTOS}
     ports: !override
       - "80:80"
       - "443:443"
-      - "9443:9443" # MinIO pre-signed photo URLs over TLS
+      - "9443:9443" # pre-signed photo URLs over TLS (photos bucket only)
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:80/nginx-health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    # Upstreams are re-resolved at runtime (resolver 127.0.0.11), so nginx
+    # can start before them and survives their redeploys (INF-D5).
     depends_on:
-      api:
-        condition: service_healthy
       web:
-        condition: service_healthy
-      keycloak:
         condition: service_healthy
