@@ -11,6 +11,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
@@ -162,6 +163,14 @@ func (h *Handler) Register(api fiber.Router) {
 	notif.Delete("/rules/:id", h.deleteRule)
 	notif.Get("/log", h.listNotificationLog)
 	notif.Post("/log/:id/retry", h.retryNotification)
+	// Install-wide operations alerts (backup failed/stale, SOS undelivered, ...).
+	notif.Get("/ops-event-types", h.opsEventTypes)
+	notif.Get("/ops-rules", h.listOpsRules)
+	notif.Post("/ops-rules", h.createOpsRule)
+	notif.Put("/ops-rules/:id", h.updateOpsRule)
+	notif.Delete("/ops-rules/:id", h.deleteOpsRule)
+	notif.Get("/ops-log", h.listOpsLog)
+	notif.Post("/ops-log/:id/retry", h.retryOpsNotification)
 
 	set := api.Group("/settings", web(rolesAdmin...))
 	set.Get("/channels", h.getChannels)
@@ -194,8 +203,13 @@ func (h *Handler) fail(c *fiber.Ctx, err error) error {
 	case repository.IsCheckViolation(err):
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid value", "code": "invalid_value"})
 	}
-	h.Log.Error().Err(err).Str("path", c.Path()).Str("method", c.Method()).Msg("request failed")
-	return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
+	rid := requestID(c)
+	h.Log.Error().Err(err).Str("request_id", rid).Str("path", c.Path()).Str("method", c.Method()).Msg("request failed")
+	body := fiber.Map{"error": "internal error"}
+	if rid != "" {
+		body["request_id"] = rid
+	}
+	return c.Status(fiber.StatusInternalServerError).JSON(body)
 }
 
 // parse decodes a JSON body.
@@ -348,9 +362,51 @@ func csvSafe(s string) string {
 	return s
 }
 
-// publish sends a notification event, logging (not failing) on error.
-func (h *Handler) publish(ctx context.Context, ev notification.Event) {
-	if _, err := h.Notifier.Publish(ctx, ev); err != nil {
-		h.Log.Error().Err(err).Str("event", ev.Type).Msg("publish notification failed")
+// ── Notifications (transactional outbox, audit BE-R1) ────────────────────────
+
+// replayWindow bounds re-staging notifications on idempotent replays: a
+// replay of a record older than this does not notify recipients added since.
+const replayWindow = 24 * time.Hour
+
+// replayFresh reports whether a replayed record is recent enough to fill in
+// missing notifications.
+func replayFresh(recorded time.Time) bool {
+	return service.Now().Sub(recorded) < replayWindow
+}
+
+// writeWithEvents runs fn in a transaction and stages the notification events
+// it returns in that same transaction, so a domain row (SOS, incident, ...)
+// can never commit without its deliveries. After commit the worker is woken
+// via Redis; if that fails it still finds the rows by polling Postgres.
+// Staging errors fail the request (the tablet retries), never silently.
+func (h *Handler) writeWithEvents(c *fiber.Ctx, fn func(tx pgx.Tx) ([]notification.Event, error)) error {
+	ctx := c.Context()
+	var staged []notification.Staged
+	err := pgx.BeginFunc(ctx, h.DB, func(tx pgx.Tx) error {
+		staged = staged[:0]
+		events, err := fn(tx)
+		if err != nil {
+			return err
+		}
+		for _, ev := range events {
+			ev.RequestID = requestID(c)
+			s, err := h.Notifier.Stage(ctx, tx, ev)
+			if err != nil {
+				return err
+			}
+			staged = append(staged, s)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
+	h.Notifier.Wake(ctx, staged...)
+	return nil
+}
+
+// requestID returns the request's ID (set by the requestid middleware).
+func requestID(c *fiber.Ctx) string {
+	id, _ := c.Locals("requestid").(string)
+	return id
 }

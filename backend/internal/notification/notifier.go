@@ -1,5 +1,10 @@
 // Package notification turns domain events into per-recipient deliveries
 // (notification_log rows) and dispatches them from the worker.
+//
+// Delivery is a transactional outbox (audit BE-R1): Stage writes the
+// notification_log rows in the same transaction as the domain row (SOS,
+// incident, ...). Postgres is the source of truth; workers claim due rows from
+// it (BE-R5). Redis only carries a wake-up signal that shortens latency.
 package notification
 
 import (
@@ -7,6 +12,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 
@@ -25,59 +32,144 @@ const (
 	EventMonthlyRecap = "monthly_recap"
 )
 
-// EventTypes lists every event a rule can subscribe to.
+// EventTypes lists every site event a rule can subscribe to.
 var EventTypes = []string{
 	EventSOS, EventSLAMissed, EventAbsent, EventLateClockIn,
 	EventIncidentHigh, EventDefectOpened, EventMonthlyRecap,
 }
 
-// Redis keys.
+// Install-wide operations events. Their recipients are ops_alert_rules, not
+// the per-site notification_rules.
 const (
-	queueKey   = "notifications:queue"   // list of notification_log IDs ready to send
-	delayedKey = "notifications:delayed" // zset of IDs scored by retry time
+	EventOpsBackupFailed   = "ops_backup_failed"   // a backup run failed
+	EventOpsBackupStale    = "ops_backup_stale"    // no successful backup for > 26 h
+	EventOpsSOSUndelivered = "ops_sos_undelivered" // an SOS delivery gave up, or a site has no SOS recipients
+	EventOpsJobFailing     = "ops_job_failing"     // a scheduled job keeps failing
 )
 
-// Event is a domain event to fan out to the recipients configured for a site.
+// OpsEventTypes lists every ops event an ops rule can subscribe to.
+var OpsEventTypes = []string{EventOpsBackupFailed, EventOpsBackupStale, EventOpsSOSUndelivered, EventOpsJobFailing}
+
+// IsOpsEvent reports whether t is an install-wide operations event.
+func IsOpsEvent(t string) bool { return strings.HasPrefix(t, "ops_") }
+
+// Lanes. SOS deliveries have their own lane so they never queue behind e-mail.
+const (
+	LaneSOS    = "sos"
+	LaneNormal = "normal"
+)
+
+// LaneFor returns the dispatch lane of an event type.
+func LaneFor(eventType string) string {
+	if eventType == EventSOS || eventType == EventOpsSOSUndelivered {
+		return LaneSOS
+	}
+	return LaneNormal
+}
+
+// wakeKey is the Redis list workers block on; entries carry no meaning beyond
+// "there is new work".
+const wakeKey = "notifications:wake"
+
+// wakeCap bounds the wake list while no worker is consuming it.
+const wakeCap = 1000
+
+// Event is a domain event to fan out to the recipients configured for a site
+// (or, for ops events, to the install-wide ops recipients).
 type Event struct {
 	Type   string
-	Site   *model.Site
+	Site   *model.Site       // nil for ops events
 	Params map[string]string // placeholders used by the message templates
 	// DedupeKey makes publishing idempotent (e.g. "absent:<record id>").
 	// Each recipient gets "<DedupeKey>|<channel>|<recipient>".
 	DedupeKey string
-	// Body overrides the rendered body (used for the monthly recap e-mail).
+	// Subject/Body override the rendered text (monthly recap e-mail).
 	Subject, Body string
+	// TextBody replaces an HTML Body for channels that cannot render HTML
+	// (WhatsApp).
+	TextBody string
+	// RequestID links the delivery to the API request that caused it.
+	RequestID string
 }
 
-// Notifier publishes events.
+// Staged is the result of staging an event: the new delivery IDs.
+type Staged struct {
+	IDs []string
+}
+
+// Notifier stages events and wakes the workers.
 type Notifier struct {
-	db  repository.DBTX
-	rdb *redis.Client
-	log zerolog.Logger
+	pool *pgxpool.Pool
+	rdb  *redis.Client
+	log  zerolog.Logger
 }
 
 // NewNotifier creates a notifier.
-func NewNotifier(db repository.DBTX, rdb *redis.Client, log zerolog.Logger) *Notifier {
-	return &Notifier{db: db, rdb: rdb, log: log.With().Str("component", "notifier").Logger()}
+func NewNotifier(pool *pgxpool.Pool, rdb *redis.Client, log zerolog.Logger) *Notifier {
+	return &Notifier{pool: pool, rdb: rdb, log: log.With().Str("component", "notifier").Logger()}
 }
 
-// Publish records one delivery per enabled recipient and enqueues it. It
-// returns the number of new deliveries. Failures to reach Redis are not
-// fatal: the worker's sweeper re-enqueues rows left in "queued".
-func (n *Notifier) Publish(ctx context.Context, ev Event) (int, error) {
-	if ev.Site == nil {
-		return 0, fmt.Errorf("publish %s: site is required", ev.Type)
+// Stage records one delivery per enabled recipient using db, which should be
+// the transaction that writes the domain row. Already-staged deliveries
+// (same dedupe key) are skipped, so staging again on an idempotent replay
+// only fills in what is missing. After commit call Wake.
+func (n *Notifier) Stage(ctx context.Context, db repository.DBTX, ev Event) (Staged, error) {
+	return stage(ctx, db, n.log, ev)
+}
+
+func stage(ctx context.Context, db repository.DBTX, log zerolog.Logger, ev Event) (Staged, error) {
+	var out Staged
+	type recipient struct{ channel, address string }
+	var recipients []recipient
+	var siteID *string
+	lang := "id"
+	params := map[string]string{}
+
+	if IsOpsEvent(ev.Type) {
+		rules, err := repository.ListOpsRecipients(ctx, db, ev.Type)
+		if err != nil {
+			return out, err
+		}
+		for _, r := range rules {
+			recipients = append(recipients, recipient{r.Channel, r.Recipient})
+		}
+		if len(recipients) == 0 {
+			log.Warn().Str("event", ev.Type).Str("dedupe", ev.DedupeKey).Str("request_id", ev.RequestID).
+				Msg("ops alert has no recipients (configure ops alert rules)")
+		}
+	} else {
+		if ev.Site == nil {
+			return out, fmt.Errorf("stage %s: site is required", ev.Type)
+		}
+		rules, err := repository.ListRecipients(ctx, db, ev.Site.ID, ev.Type)
+		if err != nil {
+			return out, err
+		}
+		for _, r := range rules {
+			recipients = append(recipients, recipient{r.Channel, r.Recipient})
+		}
+		id := ev.Site.ID
+		siteID = &id
+		lang = ev.Site.Config().Language
+		params["site"] = ev.Site.Name
+		if len(recipients) == 0 && ev.Type == EventSOS {
+			// An SOS nobody receives is an operations problem, not a no-op.
+			log.Error().Str("site_id", id).Str("dedupe", ev.DedupeKey).Str("request_id", ev.RequestID).
+				Msg("SOS has no recipients at this site; alerting ops")
+			ops := Event{
+				Type: EventOpsSOSUndelivered, DedupeKey: "ops:sos_no_recipients:" + ev.DedupeKey, RequestID: ev.RequestID,
+				Params: map[string]string{
+					"site": ev.Site.Name, "guard": ev.Params["guard"], "time": ev.Params["time"],
+					"recipient": "(none)", "reason": "no SOS notification rule is configured for this site",
+				},
+			}
+			return stage(ctx, db, log, ops)
+		}
 	}
-	rules, err := repository.ListRecipients(ctx, n.db, ev.Site.ID, ev.Type)
-	if err != nil {
-		return 0, err
-	}
-	if len(rules) == 0 {
-		return 0, nil
+	if len(recipients) == 0 {
+		return out, nil
 	}
 
-	lang := ev.Site.Config().Language
-	params := map[string]string{"site": ev.Site.Name}
 	for k, v := range ev.Params {
 		params[k] = v
 	}
@@ -91,36 +183,81 @@ func (n *Notifier) Publish(ctx context.Context, ev Event) (int, error) {
 			body = b
 		}
 	}
+	var reqID *string
+	if ev.RequestID != "" {
+		reqID = &ev.RequestID
+	}
+	lane := LaneFor(ev.Type)
 
-	added := 0
-	for _, r := range rules {
+	for _, r := range recipients {
 		var dedupe *string
 		if ev.DedupeKey != "" {
-			k := ev.DedupeKey + "|" + r.Channel + "|" + r.Recipient
+			k := ev.DedupeKey + "|" + r.channel + "|" + r.address
 			dedupe = &k
 		}
-		siteID := ev.Site.ID
-		id, err := repository.InsertNotificationLog(ctx, n.db, model.NotificationLog{
-			SiteID: &siteID, EventType: ev.Type, Channel: r.Channel, Recipient: r.Recipient,
-			Subject: subject, Body: body,
-		}, dedupe)
+		b := body
+		if r.channel != "email" && ev.TextBody != "" {
+			b = ev.TextBody
+		}
+		id, err := repository.InsertNotificationLog(ctx, db, model.NotificationLog{
+			SiteID: siteID, EventType: ev.Type, Channel: r.channel, Recipient: r.address,
+			Subject: subject, Body: b,
+		}, lane, reqID, dedupe)
 		if err != nil {
-			return added, err
+			return out, err
 		}
-		if id == "" {
-			continue // already published
-		}
-		added++
-		if err := n.rdb.LPush(ctx, queueKey, id).Err(); err != nil {
-			n.log.Warn().Err(err).Str("id", id).Msg("enqueue failed; sweeper will retry")
+		if id != "" {
+			out.IDs = append(out.IDs, id)
 		}
 	}
-	return added, nil
+	return out, nil
 }
 
-// Enqueue pushes an existing delivery (e.g. an admin retry) onto the queue.
-func Enqueue(ctx context.Context, rdb *redis.Client, id string) error {
-	return rdb.LPush(ctx, queueKey, id).Err()
+// Wake signals the workers that staged deliveries are ready. It never fails
+// the caller: if Redis is down the workers still find the rows by polling
+// Postgres within a couple of seconds.
+func (n *Notifier) Wake(ctx context.Context, staged ...Staged) {
+	total := 0
+	for _, s := range staged {
+		total += len(s.IDs)
+	}
+	if total == 0 || n.rdb == nil {
+		return
+	}
+	if err := wake(ctx, n.rdb); err != nil {
+		n.log.Warn().Err(err).Int("deliveries", total).Msg("wake-up via redis failed; workers will poll postgres")
+	}
+}
+
+func wake(ctx context.Context, rdb *redis.Client) error {
+	pipe := rdb.Pipeline()
+	pipe.LPush(ctx, wakeKey, "1")
+	pipe.LTrim(ctx, wakeKey, 0, wakeCap-1)
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+// Publish stages an event in its own transaction and wakes the workers. Use
+// it when there is no domain row to write atomically (jobs, ops alerts).
+// It returns the number of new deliveries.
+func (n *Notifier) Publish(ctx context.Context, ev Event) (int, error) {
+	var s Staged
+	err := pgx.BeginFunc(ctx, n.pool, func(tx pgx.Tx) error {
+		var err error
+		s, err = n.Stage(ctx, tx, ev)
+		return err
+	})
+	if err != nil {
+		return 0, fmt.Errorf("publish %s: %w", ev.Type, err)
+	}
+	n.Wake(ctx, s)
+	return len(s.IDs), nil
+}
+
+// Enqueue wakes the workers for an existing delivery (e.g. an admin retry
+// after RequeueNotification). The row itself is already due in Postgres.
+func Enqueue(ctx context.Context, rdb *redis.Client, _ string) error {
+	return wake(ctx, rdb)
 }
 
 // ── Message templates ────────────────────────────────────────────────────────
@@ -142,6 +279,14 @@ var templates = map[string]map[string]template{
 		EventDefectOpened: {"[Kerusakan] {defect} di {site}",
 			"Laporan kerusakan baru dari {guard} di {site}.\nJenis: {defect}\nLokasi: {location}\n{description}"},
 		EventMonthlyRecap: {"Rekap absensi bulanan {month} — {site}", "Rekap absensi {month} untuk {site}."},
+		EventOpsBackupFailed: {"[OPS] Backup database gagal",
+			"Backup {backup} ({trigger}) gagal pada {time}: {error}. Periksa log worker dan ruang penyimpanan MinIO."},
+		EventOpsBackupStale: {"[OPS] Tidak ada backup berhasil sejak {last}",
+			"Backup database terakhir yang berhasil: {last}. Backup harian (jam {hour}) tidak berjalan atau gagal. Periksa worker."},
+		EventOpsSOSUndelivered: {"[OPS] SOS tidak terkirim — {site}",
+			"SOS dari {guard} di {site} ({time}) tidak terkirim ke {recipient}: {reason}. Hubungi lokasi secara langsung dan periksa pengaturan notifikasi."},
+		EventOpsJobFailing: {"[OPS] Job {job} terus gagal",
+			"Job terjadwal {job} gagal {failures} kali berturut-turut. Error terakhir: {error}."},
 	},
 	"en": {
 		EventSOS: {"[SOS] {guard} at {site}",
@@ -157,6 +302,14 @@ var templates = map[string]map[string]template{
 		EventDefectOpened: {"[Defect] {defect} at {site}",
 			"New defect report from {guard} at {site}.\nType: {defect}\nLocation: {location}\n{description}"},
 		EventMonthlyRecap: {"Monthly attendance recap {month} — {site}", "Attendance recap {month} for {site}."},
+		EventOpsBackupFailed: {"[OPS] Database backup failed",
+			"Backup {backup} ({trigger}) failed at {time}: {error}. Check the worker logs and MinIO storage."},
+		EventOpsBackupStale: {"[OPS] No successful backup since {last}",
+			"The newest successful database backup is from {last}. The daily backup ({hour}:00) is not running or failing. Check the worker."},
+		EventOpsSOSUndelivered: {"[OPS] SOS not delivered — {site}",
+			"SOS from {guard} at {site} ({time}) could not be delivered to {recipient}: {reason}. Contact the site directly and check the notification settings."},
+		EventOpsJobFailing: {"[OPS] Job {job} keeps failing",
+			"Scheduled job {job} failed {failures} times in a row. Last error: {error}."},
 	},
 }
 

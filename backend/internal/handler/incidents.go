@@ -12,6 +12,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/securepatrol/backend/internal/middleware"
 	"github.com/securepatrol/backend/internal/model"
@@ -140,23 +141,33 @@ func (h *Handler) createIncident(c *fiber.Ctx) error {
 		return h.fail(c, err)
 	}
 	guard := middleware.GetGuard(c)
-	inc, isNew, err := repository.CreateIncident(c.Context(), h.DB, model.Incident{
-		SiteID: site.ID, GuardID: guard.ID, DeviceID: deviceID(c), Type: b.Type, Severity: b.Severity,
-		Description: nilIfEmpty(b.Description), Location: nilIfEmpty(b.Location),
-		PhotoObjectKeys: b.PhotoObjectKeys, OccurredAt: at,
-	}, nilIfEmpty(b.ID))
-	if err != nil {
-		return h.fail(c, err)
-	}
-	if isNew && (inc.Severity == "high" || inc.Severity == "critical") {
-		h.publish(c.Context(), notification.Event{
+	var inc *model.Incident
+	var isNew bool
+	err = h.writeWithEvents(c, func(tx pgx.Tx) ([]notification.Event, error) {
+		var err error
+		inc, isNew, err = repository.CreateIncident(c.Context(), tx, model.Incident{
+			SiteID: site.ID, GuardID: guard.ID, DeviceID: deviceID(c), Type: b.Type, Severity: b.Severity,
+			Description: nilIfEmpty(b.Description), Location: nilIfEmpty(b.Location),
+			PhotoObjectKeys: b.PhotoObjectKeys, OccurredAt: at,
+		}, nilIfEmpty(b.ID))
+		if err != nil {
+			return nil, err
+		}
+		if inc.SiteID != site.ID || (inc.Severity != "high" && inc.Severity != "critical") ||
+			(!isNew && !replayFresh(inc.CreatedAt)) {
+			return nil, nil
+		}
+		return []notification.Event{{
 			Type: notification.EventIncidentHigh, Site: site, DedupeKey: "incident:" + inc.ID,
 			Params: map[string]string{
-				"guard": guard.Name, "severity": strings.ToUpper(inc.Severity), "type": inc.Type,
+				"guard": inc.GuardName, "severity": strings.ToUpper(inc.Severity), "type": inc.Type,
 				"location": deref(inc.Location), "description": deref(inc.Description),
 				"time": inc.OccurredAt.In(site.Location()).Format("02 Jan 15:04"),
 			},
-		})
+		}}, nil
+	})
+	if err != nil {
+		return h.fail(c, err)
 	}
 	return created(c, isNew, inc)
 }
@@ -266,20 +277,32 @@ func (h *Handler) createSos(c *fiber.Ctx) error {
 		return h.fail(c, err)
 	}
 	guard := middleware.GetGuard(c)
-	alert, isNew, err := repository.CreateSosAlert(c.Context(), h.DB, model.SosAlert{
-		GuardID: guard.ID, SiteID: site.ID, DeviceID: deviceID(c), FiredAt: at, GPSLat: b.GPSLat, GPSLng: b.GPSLng,
-	}, nilIfEmpty(b.ID))
-	if err != nil {
-		return h.fail(c, err)
-	}
-	if isNew {
-		h.publish(c.Context(), notification.Event{
+	var alert *model.SosAlert
+	var isNew bool
+	// The alert and its deliveries commit together; a replay (tablet retry)
+	// fills in deliveries that are missing, so an SOS is never left
+	// un-notified (audit BE-R1).
+	err = h.writeWithEvents(c, func(tx pgx.Tx) ([]notification.Event, error) {
+		var err error
+		alert, isNew, err = repository.CreateSosAlert(c.Context(), tx, model.SosAlert{
+			GuardID: guard.ID, SiteID: site.ID, DeviceID: deviceID(c), FiredAt: at, GPSLat: b.GPSLat, GPSLng: b.GPSLng,
+		}, nilIfEmpty(b.ID))
+		if err != nil {
+			return nil, err
+		}
+		if alert.SiteID != site.ID || (!isNew && !replayFresh(alert.ReceivedAt)) {
+			return nil, nil
+		}
+		return []notification.Event{{
 			Type: notification.EventSOS, Site: site, DedupeKey: "sos:" + alert.ID,
 			Params: map[string]string{
-				"guard": guard.Name, "time": alert.FiredAt.In(site.Location()).Format("02 Jan 15:04:05"),
+				"guard": alert.GuardName, "time": alert.FiredAt.In(site.Location()).Format("02 Jan 15:04:05"),
 				"location": fmtGPS(alert.GPSLat, alert.GPSLng),
 			},
-		})
+		}}, nil
+	})
+	if err != nil {
+		return h.fail(c, err)
 	}
 	return created(c, isNew, alert)
 }
@@ -349,22 +372,31 @@ func (h *Handler) createDefect(c *fiber.Ctx) error {
 		return h.fail(c, err)
 	}
 	guard := middleware.GetGuard(c)
-	d, isNew, err := repository.CreateDefect(c.Context(), h.DB, model.DefectReport{
-		SiteID: site.ID, GuardID: guard.ID, DeviceID: deviceID(c), DefectType: b.DefectType,
-		Location: nilIfEmpty(b.Location), Description: nilIfEmpty(b.Description),
-		PhotoObjectKey: nilIfEmpty(b.PhotoObjectKey), CreatedAt: at,
-	}, nilIfEmpty(b.ID))
-	if err != nil {
-		return h.fail(c, err)
-	}
-	if isNew {
-		h.publish(c.Context(), notification.Event{
+	var d *model.DefectReport
+	var isNew bool
+	err = h.writeWithEvents(c, func(tx pgx.Tx) ([]notification.Event, error) {
+		var err error
+		d, isNew, err = repository.CreateDefect(c.Context(), tx, model.DefectReport{
+			SiteID: site.ID, GuardID: guard.ID, DeviceID: deviceID(c), DefectType: b.DefectType,
+			Location: nilIfEmpty(b.Location), Description: nilIfEmpty(b.Description),
+			PhotoObjectKey: nilIfEmpty(b.PhotoObjectKey), CreatedAt: at,
+		}, nilIfEmpty(b.ID))
+		if err != nil {
+			return nil, err
+		}
+		if d.SiteID != site.ID || (!isNew && !replayFresh(d.UpdatedAt)) {
+			return nil, nil
+		}
+		return []notification.Event{{
 			Type: notification.EventDefectOpened, Site: site, DedupeKey: "defect:" + d.ID,
 			Params: map[string]string{
-				"guard": guard.Name, "defect": deref(d.DefectType), "location": deref(d.Location),
+				"guard": d.GuardName, "defect": deref(d.DefectType), "location": deref(d.Location),
 				"description": deref(d.Description),
 			},
-		})
+		}}, nil
+	})
+	if err != nil {
+		return h.fail(c, err)
 	}
 	return created(c, isNew, d)
 }
