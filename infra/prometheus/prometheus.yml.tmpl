@@ -1,17 +1,103 @@
+# Prometheus configuration TEMPLATE. Rendered at container start by
+# scripts/render.awk (__SERVER_HOST__ comes from .env); do not edit the
+# rendered copy in the data volume. Validate with:
+#   promtool check config <rendered>   (ci-infra does this)
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
   external_labels:
-    monitor: 'securepatrol'
+    monitor: securepatrol
+    server: __SERVER_HOST__
 
-# Postgres/Redis need exporters (postgres_exporter, redis_exporter) to be
-# scraped; the API /metrics endpoint is on the backlog (PROGRESS.md).
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
 scrape_configs:
-  - job_name: 'prometheus'
+  - job_name: prometheus
     static_configs:
-      - targets: ['localhost:9090']
+      - targets: ['127.0.0.1:9090']
 
-  - job_name: 'minio'
+  - job_name: alertmanager
+    static_configs:
+      - targets: ['alertmanager:9093']
+
+  # API metrics on its own port; never routed through public nginx.
+  - job_name: api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['api:8080']
+
+  - job_name: worker
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['notification-worker:9091']
+
+  - job_name: keycloak
+    metrics_path: /auth/metrics
+    static_configs:
+      - targets: ['keycloak:8080']
+
+  - job_name: minio
     metrics_path: /minio/v2/metrics/cluster
     static_configs:
       - targets: ['minio:9000']
+
+  - job_name: node
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  - job_name: cadvisor
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['cadvisor:8080']
+
+  - job_name: postgres
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+  - job_name: redis
+    static_configs:
+      - targets: ['redis-exporter:9121']
+
+  - job_name: blackbox
+    static_configs:
+      - targets: ['blackbox-exporter:9115']
+
+  # External view of the server, as browsers/tablets see it: TLS chain (private
+  # CA), certificate expiry, nginx -> api path.
+  - job_name: probe_https
+    scrape_interval: 60s
+    metrics_path: /probe
+    params:
+      module: [https_2xx]
+    static_configs:
+      - targets:
+          - https://__SERVER_HOST__/health
+          - https://__SERVER_HOST__/
+        labels:
+          probe: web
+    relabel_configs: &blackbox_relabel
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # Photo endpoint: only the photos bucket is served, "/" must answer 403.
+  - job_name: probe_photos
+    scrape_interval: 60s
+    metrics_path: /probe
+    params:
+      module: [https_403]
+    static_configs:
+      - targets:
+          - https://__SERVER_HOST__:9443/
+        labels:
+          probe: photos
+    relabel_configs: *blackbox_relabel

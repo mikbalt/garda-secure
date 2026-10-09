@@ -1,0 +1,37 @@
+# Alertmanager config TEMPLATE (rendered by entrypoint.sh with render.awk).
+# One operator, one route: every alert goes to ALERT_EMAIL_TO. Critical alerts
+# repeat every hour until resolved, warnings every 12 hours.
+global:
+  smtp_smarthost: "__YAML_ALERT_SMTP_HOST__:__YAML_ALERT_SMTP_PORT__"
+  smtp_from: "__YAML_ALERT_SMTP_FROM__"
+  smtp_auth_username: "__YAML_ALERT_SMTP_USER__"
+  smtp_auth_password: "__YAML_ALERT_SMTP_PASSWORD__"
+  smtp_require_tls: __ALERT_SMTP_REQUIRE_TLS__
+  resolve_timeout: 5m
+
+route:
+  receiver: operator-email
+  group_by: [alertname, severity]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 12h
+  routes:
+    - matchers: ['severity="critical"']
+      receiver: operator-email
+      group_wait: 10s
+      repeat_interval: 1h
+
+inhibit_rules:
+  # A dead API also fails the public probe and the 5xx rate; report the cause.
+  - source_matchers: ['alertname="APIDown"']
+    target_matchers: ['alertname=~"PublicEndpointDown|API5xxRateHigh"']
+  - source_matchers: ['alertname="WorkerHeartbeatMissing"']
+    target_matchers: ['alertname="WorkerHeartbeatStale"']
+
+receivers:
+  - name: operator-email
+    email_configs:
+      - to: "__YAML_ALERT_EMAIL_TO__"
+        send_resolved: true
+        headers:
+          Subject: '[SecurePatrol __SERVER_HOST__] {{ .Status | toUpper }} {{ .CommonLabels.alertname }} ({{ .CommonLabels.severity }})'

@@ -1,0 +1,27 @@
+# Blackbox exporter modules (probes defined in prometheus.yml.tmpl).
+# Certificates are verified against nginx/certs/ca.pem: the private CA from
+# `make certs`, or — with a public/ACME certificate — its issuing root.
+modules:
+  https_2xx:
+    prober: http
+    timeout: 10s
+    http:
+      method: GET
+      valid_status_codes: [200]
+      fail_if_not_ssl: true
+      preferred_ip_protocol: ip4
+      ip_protocol_fallback: false
+      tls_config:
+        ca_file: /etc/blackbox/certs/ca.pem
+
+  https_403:
+    prober: http
+    timeout: 10s
+    http:
+      method: GET
+      valid_status_codes: [403]
+      fail_if_not_ssl: true
+      preferred_ip_protocol: ip4
+      ip_protocol_fallback: false
+      tls_config:
+        ca_file: /etc/blackbox/certs/ca.pem

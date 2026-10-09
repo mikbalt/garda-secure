@@ -1,0 +1,194 @@
+# SecurePatrol alert rules (INF-M1). Routed by Alertmanager to ALERT_EMAIL_TO.
+# Severity: critical = act now (guards' safety / data loss), warning = today.
+# Metric contract with the backend: docs/runbook.md §8.
+groups:
+  - name: securepatrol-safety
+    rules:
+      - alert: WorkerHeartbeatStale
+        expr: time() - max(sp_worker_heartbeat_timestamp_seconds) > 120
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: Notification worker heartbeat is older than 2 minutes
+          description: SOS / SLA / absence alerts are NOT being sent. Check `make logs` and `docker compose ps notification-worker`.
+      - alert: WorkerHeartbeatMissing
+        expr: absent(sp_worker_heartbeat_timestamp_seconds)
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: No worker heartbeat metric at all
+          description: The worker is down or its /metrics endpoint is unreachable; notifications are not being sent.
+      - alert: SOSUnacknowledged
+        expr: max(sp_sos_unacknowledged) > 0
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $value }} SOS alert(s) unacknowledged for more than 5 minutes"
+          description: A guard pressed SOS and no supervisor acknowledged it in the web app. Call the site.
+      - alert: NotificationsFailing
+        expr: sum by (event) (increase(sp_notifications_failed_total[15m])) > 0
+        labels: {severity: critical}
+        annotations:
+          summary: Notifications permanently failed in the last 15 minutes
+          description: "Check Settings -> Notification log (SMTP/WhatsApp credentials, quota). Events: {{ $labels.event }}"
+      - alert: NotificationErrorRateHigh
+        expr: |
+          sum(rate(sp_notifications_total{result=~"error|fail.*|retry"}[15m]))
+            / clamp_min(sum(rate(sp_notifications_total[15m])), 1e-9) > 0.2
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: More than 20 % of notification attempts are failing (retrying)
+      - alert: NotificationQueueBacklog
+        expr: max by (lane) (sp_notification_queue_depth) > 50
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "Notification queue {{ $labels.lane }} has {{ $value }} pending items for 10 minutes"
+
+  - name: securepatrol-jobs
+    rules:
+      - alert: BackupStale
+        expr: time() - max(sp_backup_last_success_timestamp_seconds) > 26 * 3600
+        labels: {severity: critical}
+        annotations:
+          summary: No successful database backup for more than 26 hours (RPO 24 h)
+          description: Check Settings -> Backups and the worker logs. Run "Back up now" after fixing.
+      - alert: BackupMetricMissing
+        expr: absent(sp_backup_last_success_timestamp_seconds)
+        for: 30h
+        labels: {severity: warning}
+        annotations:
+          summary: The worker has not reported any successful backup for 30 hours
+      - alert: OffsiteBackupStale
+        expr: time() - sp_offsite_backup_last_success_timestamp_seconds > 26 * 3600
+        labels: {severity: critical}
+        annotations:
+          summary: Off-site (restic) backup has not succeeded for more than 26 hours
+          description: "Check `docker compose logs backup-offsite` and that OFFSITE_BACKUP_REPO (second disk / NAS) is mounted."
+      - alert: OffsiteBackupFailed
+        expr: sp_offsite_backup_last_result == 0
+        labels: {severity: critical}
+        annotations:
+          summary: The last off-site backup run failed
+      - alert: OffsiteCheckFailed
+        expr: sp_offsite_check_last_result == 0
+        labels: {severity: warning}
+        annotations:
+          summary: The monthly restic integrity check failed — the off-site repository may be damaged
+      # The backend's `job` label collides with Prometheus' target label and
+      # is therefore stored as `exported_job`.
+      - alert: JobNotSucceeding
+        expr: |
+          (time() - max by (exported_job) (sp_job_last_success_timestamp_seconds)) > 1800
+          and on (exported_job)
+          sum by (exported_job) (increase(sp_job_runs_total{result=~"error|fail.*"}[30m])) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: "Scheduled job {{ $labels.exported_job }} keeps failing and has not succeeded for 30 minutes"
+          description: Check the worker logs (make logs) for the job's error.
+
+  - name: securepatrol-api
+    rules:
+      - alert: TargetDown
+        expr: up == 0
+        for: 3m
+        labels: {severity: warning}
+        annotations:
+          summary: "Prometheus cannot scrape {{ $labels.job }} ({{ $labels.instance }})"
+      - alert: APIDown
+        expr: up{job="api"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: API is down — web app and tablets cannot sync
+      - alert: API5xxRateHigh
+        expr: |
+          sum(rate(sp_http_requests_total{status=~"5.."}[5m]))
+            / clamp_min(sum(rate(sp_http_requests_total[5m])), 1e-9) > 0.05
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: More than 5 % of API requests fail with 5xx
+      - alert: APILatencyHigh
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(sp_http_request_duration_seconds_bucket[5m]))) > 2
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: API p95 latency above 2 s for 15 minutes
+      - alert: PublicEndpointDown
+        expr: probe_success == 0
+        for: 3m
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.instance }} is not reachable over HTTPS (as browsers/tablets see it)"
+      - alert: CertificateExpiresSoon
+        expr: (probe_ssl_earliest_cert_expiry - time()) / 86400 < 21
+        labels: {severity: warning}
+        annotations:
+          summary: "TLS certificate of {{ $labels.instance }} expires in {{ $value | humanize }} days"
+          description: Renew it (runbook §6 "Certificates"); tablets reject expired certificates.
+      - alert: CertificateExpiresVerySoon
+        expr: (probe_ssl_earliest_cert_expiry - time()) / 86400 < 7
+        labels: {severity: critical}
+        annotations:
+          summary: "TLS certificate of {{ $labels.instance }} expires in {{ $value | humanize }} days"
+
+  - name: securepatrol-host
+    rules:
+      - alert: DiskAlmostFull
+        expr: |
+          (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs"}
+               / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs"}) > 0.85
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "Filesystem {{ $labels.mountpoint }} is {{ $value | humanizePercentage }} full"
+          description: A full disk stops PostgreSQL. Free space or grow the disk.
+      - alert: DiskCriticallyFull
+        expr: |
+          (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs"}
+               / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs"}) > 0.95
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "Filesystem {{ $labels.mountpoint }} is {{ $value | humanizePercentage }} full"
+      - alert: ContainerRestarting
+        expr: |
+          changes(container_start_time_seconds{container_label_com_docker_compose_service!=""}[15m]) > 2
+        labels: {severity: warning}
+        annotations:
+          summary: "Container {{ $labels.container_label_com_docker_compose_service }} restarted more than twice in 15 minutes"
+      - alert: ContainerMemoryNearLimit
+        expr: |
+          (container_memory_working_set_bytes{container_label_com_docker_compose_service!=""}
+             / (container_spec_memory_limit_bytes > 0)) > 0.9
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.container_label_com_docker_compose_service }} uses more than 90 % of its memory limit"
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: PostgreSQL is not reachable
+      - alert: PostgresConnectionsHigh
+        expr: sum(pg_stat_activity_count) / max(pg_settings_max_connections) > 0.8
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: PostgreSQL connections above 80 % of max_connections
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: Redis is not reachable — notification dispatch is affected
+      - alert: HostMemoryLow
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.1
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: Less than 10 % memory available on the server

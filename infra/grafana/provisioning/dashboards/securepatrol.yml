@@ -1,0 +1,14 @@
+apiVersion: 1
+
+# Dashboards are files in infra/grafana/dashboards (version-controlled).
+# Edits in the UI are not saved back: export the JSON and commit it.
+providers:
+  - name: securepatrol
+    folder: SecurePatrol
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 60
+    options:
+      path: /var/lib/grafana-dashboards
+      foldersFromFilesStructure: false
