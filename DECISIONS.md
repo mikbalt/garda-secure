@@ -130,7 +130,7 @@ in PRD §9 (OQ-x). New entries go at the bottom with the next free number.
   and return `ErrNotFound`; see CLAUDE.md conventions.
 
 ### D-017 — Mobile app deferred
-- **Date:** 2026-10-07 · **Status:** Accepted
+- **Date:** 2026-10-07 · **Status:** Superseded by D-024
 - Focus on backend, web and infra for v1. The Flutter app will be updated later to
   the device-token/PIN flow (D-001) and the new endpoints.
 
@@ -194,3 +194,20 @@ in PRD §9 (OQ-x). New entries go at the bottom with the next free number.
 - **Date:** 2026-10-09 · **Status:** Accepted
 - Numbers entered as Indonesian local format (`08…`) are stored as `628…`
   (API and web both normalise); WhatsApp requires the country code.
+
+### D-024 — Mobile tablet app un-deferred (supersedes D-017)
+- **Date:** 2026-10-09 · **Status:** Accepted
+- Flutter 3.24 app for the shared post tablet, built against docs/api.md:
+  first-run server setup (URL + organisation realm), device login with the
+  Keycloak device account (password grant, offline token kept in secure
+  storage), registration → wait for approval, roster sync, guard picker +
+  local bcrypt PIN unlock, auto-lock after the site's idle time.
+- Every field action goes through a persistent SQLite **outbox** with client
+  UUIDs and event timestamps (idempotent replays, D-006); photos are saved
+  locally and uploaded first with deterministic keys
+  `sites/<site>/<kind>/<uuid>.jpg`. SOS jumps the queue and retries every 10 s.
+- State management: `provider`; config via first-run screen with
+  `--dart-define` defaults (no bundled .env asset).
+- Two tablet endpoints added to the API: `GET /device/status` (acting guard's
+  current shift, open attendance and running patrol) and `GET /device/sos`
+  (unacknowledged SOS of the site, so supervisors on any tablet see them).

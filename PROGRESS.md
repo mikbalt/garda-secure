@@ -9,7 +9,7 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
-| *(nothing claimed)* | | | |
+| Mobile tablet app v1 (D-024): device login/registration, offline PIN unlock, clock-in/out, QR patrol, incidents/defects/visitors, SOS, offline outbox; backend `GET /device/status`, `GET /device/sos` | `muhamhad-pc1/claude` | 2026-10-09 | Please don't edit `mobile/` until pushed. |
 
 ## Migration numbers
 
