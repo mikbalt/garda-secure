@@ -39,7 +39,7 @@ function timeZones(): string[] {
 }
 
 /** Create / edit a site including its operational config_json. */
-export function SiteModal({ site, onClose }: { site: Site | null; onClose: () => void }) {
+export function SiteModal({ site, onClose, onSaved }: { site: Site | null; onClose: () => void; onSaved?: (s: Site) => void }) {
   const { t, lang } = useI18n()
   const qc = useQueryClient()
   const toast = useToast()
@@ -75,6 +75,7 @@ export function SiteModal({ site, onClose }: { site: Site | null; onClose: () =>
       qc.invalidateQueries({ queryKey: ['sites'] })
       if (!site) setSiteId(saved.id)
       onClose()
+      onSaved?.(saved)
     },
   })
 

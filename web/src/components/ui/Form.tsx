@@ -12,7 +12,7 @@ import {
 import { useT } from '../../i18n/context'
 
 const control =
-  'block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm placeholder:text-gray-500 focus:border-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-600/30 disabled:bg-gray-100 disabled:text-gray-500 aria-[invalid=true]:border-red-600'
+  'block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm transition-colors placeholder:text-gray-400 hover:border-gray-400 focus:border-primary-500 focus:outline-none focus:ring-4 focus:ring-primary-500/15 disabled:bg-gray-50 disabled:text-gray-500 aria-[invalid=true]:border-red-500 aria-[invalid=true]:focus:ring-red-500/15'
 
 interface FieldProps {
   label: string
@@ -42,7 +42,7 @@ export function Field({ label, children, hint, error, required, optional, classN
     : children
   return (
     <div className={className}>
-      <label htmlFor={id} className="mb-1 block text-sm font-medium text-gray-800">
+      <label htmlFor={id} className="mb-1.5 block text-sm font-medium text-gray-700">
         {label}
         {required && (
           <span className="text-red-700" aria-hidden="true">
@@ -50,16 +50,16 @@ export function Field({ label, children, hint, error, required, optional, classN
             *
           </span>
         )}
-        {optional && <span className="font-normal text-gray-600"> ({t('common.optional')})</span>}
+        {optional && <span className="font-normal text-gray-400"> ({t('common.optional')})</span>}
       </label>
       {control}
       {hint && (
-        <p id={hintId} className="mt-1 text-xs text-gray-600">
+        <p id={hintId} className="mt-1.5 text-xs text-gray-500">
           {hint}
         </p>
       )}
       {error && (
-        <p id={errorId} className="mt-1 text-xs text-red-700">
+        <p id={errorId} className="mt-1.5 text-xs font-medium text-red-600">
           {error}
         </p>
       )}
@@ -101,7 +101,7 @@ export function Checkbox({ label, className = '', ...rest }: CheckboxProps) {
     <label className={`inline-flex cursor-pointer items-center gap-2 text-sm text-gray-800 ${className}`}>
       <input
         type="checkbox"
-        className="h-4 w-4 rounded border-gray-400 text-primary-700 focus:ring-2 focus:ring-primary-600"
+        className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-2 focus:ring-primary-500"
         {...rest}
       />
       {label}
@@ -113,7 +113,7 @@ export function Checkbox({ label, className = '', ...rest }: CheckboxProps) {
 export function FormError({ message }: { message?: string | null }) {
   if (!message) return null
   return (
-    <div role="alert" className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+    <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
       {message}
     </div>
   )

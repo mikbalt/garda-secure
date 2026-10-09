@@ -1,0 +1,497 @@
+/**
+ * Demo-mode API: an axios adapter that answers every endpoint in docs/api.md
+ * from the in-memory World. Loaded with a dynamic import only when
+ * config.demo is on, so it never ships in the normal request path.
+ */
+import type { AxiosAdapter, AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios'
+import type {
+  CheckpointProgress,
+  DailyAttendanceRow,
+  GuardKpiRow,
+  MonthlyRecapRow,
+  PatrolRoute,
+  PatrolSession,
+  SessionProgress,
+  SessionSummary,
+  Severity,
+} from '../types'
+import { emptyWorld, iso, seedWorld, uid, wib, type World } from './world'
+
+const STORE_KEY = 'sp.demo.world'
+const MODE_KEY = 'sp.demo.mode'
+
+export type DemoMode = 'sample' | 'empty'
+
+function load(): World {
+  try {
+    const raw = sessionStorage.getItem(STORE_KEY)
+    if (raw) return JSON.parse(raw) as World
+  } catch {
+    /* fall through */
+  }
+  return demoMode() === 'empty' ? emptyWorld() : seedWorld()
+}
+
+const w: World = load()
+
+function persist() {
+  try {
+    sessionStorage.setItem(STORE_KEY, JSON.stringify(w))
+  } catch {
+    /* storage full or blocked — keep in memory */
+  }
+}
+
+export function demoMode(): DemoMode {
+  try {
+    return (localStorage.getItem(MODE_KEY) as DemoMode) || 'sample'
+  } catch {
+    return 'sample'
+  }
+}
+
+/** Resets the demo data, optionally switching between sample and empty. */
+export function resetDemo(mode: DemoMode = demoMode()) {
+  try {
+    localStorage.setItem(MODE_KEY, mode)
+    sessionStorage.removeItem(STORE_KEY)
+    localStorage.removeItem('sp.site')
+  } catch {
+    /* ignore */
+  }
+  window.location.reload()
+}
+
+// ── HTTP helpers ─────────────────────────────────────────────────────────────
+
+class HttpError {
+  constructor(public status: number, public code: string, public msg: string) {}
+}
+const notFound = () => new HttpError(404, 'not_found', 'not found')
+const bad = (code: string, msg: string) => new HttpError(400, code, msg)
+
+type Params = Record<string, string | undefined>
+type Body = Record<string, unknown>
+type Handler = (p: { params: Params; query: Params; body: Body }) => unknown
+
+const routes: { method: string; re: RegExp; keys: string[]; fn: Handler }[] = []
+function on(method: string, path: string, fn: Handler) {
+  const keys: string[] = []
+  const re = new RegExp('^' + path.replace(/:(\w+)/g, (_, k: string) => (keys.push(k), '([^/]+)')) + '/?$')
+  routes.push({ method, re, keys, fn })
+}
+
+const now = () => new Date()
+const byId = <T extends { id: string }>(list: T[], id?: string) => {
+  const v = list.find((x) => x.id === id)
+  if (!v) throw notFound()
+  return v
+}
+const siteOf = (q: Params) => byId(w.sites, q.site_id)
+const guardName = (id: string) => w.guards.find((g) => g.id === id)?.name ?? '—'
+
+/** [from, to) for site-local dates (WIB in the demo). */
+function dayRange(date?: string): [Date, Date] {
+  const start = date ? new Date(Date.parse(date + 'T00:00:00+07:00')) : wib(0, 0)
+  return [start, new Date(start.getTime() + 86_400_000)]
+}
+function dateRange(from?: string, to?: string): [Date, Date] {
+  return [dayRange(from)[0], dayRange(to)[1]]
+}
+function monthRange(month?: string): [Date, Date] {
+  const m = month ?? new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 7)
+  const [y, mo] = m.split('-').map(Number)
+  return [new Date(Date.UTC(y, mo - 1, 1) - 7 * 3600_000), new Date(Date.UTC(y, mo, 1) - 7 * 3600_000)]
+}
+const inRange = (t: string | undefined, [a, b]: [Date, Date]) => !!t && Date.parse(t) >= a.getTime() && Date.parse(t) < b.getTime()
+
+// ── Domain computations (ports of the backend logic) ─────────────────────────
+
+function progress(s: PatrolSession): SessionProgress {
+  const route = byId(w.routes, s.route_id)
+  const scans = w.scans.filter((x) => x.session_id === s.id)
+  const ended = s.status !== 'in_progress'
+  let anchor = Date.parse(s.started_at)
+  let scanned = 0
+  let next: number | undefined
+  const checkpoints: CheckpointProgress[] = route.checkpoints.map((cp, i) => {
+    const sc = scans.filter((x) => x.checkpoint_id === cp.id).sort((a, b) => a.scanned_at.localeCompare(b.scanned_at))[0]
+    const due = cp.sla_minutes ? anchor + cp.sla_minutes * 60_000 : undefined
+    const out: CheckpointProgress = { ...cp, due_at: due ? new Date(due).toISOString() : undefined, status: 'pending' }
+    if (sc) {
+      scanned++
+      out.scan_id = sc.id
+      out.scanned_at = sc.scanned_at
+      out.method = sc.method
+      out.scanned_by = sc.guard_id
+      out.status = due && Date.parse(sc.scanned_at) > due ? 'late' : 'on_time'
+      anchor = Date.parse(sc.scanned_at)
+    } else {
+      out.status = ended ? 'missed' : due && Date.now() > due ? 'overdue' : 'pending'
+      if (next === undefined && !ended) next = i
+      if (due) anchor = due
+    }
+    return out
+  })
+  const total = route.checkpoints.length
+  return {
+    session: s, route_name: route.name, checkpoints, total, scanned,
+    completion_pct: total ? Math.round((scanned / total) * 1000) / 10 : 0, next_index: next,
+  }
+}
+
+function summary(s: PatrolSession): SessionSummary {
+  const p = progress(s)
+  return {
+    session_id: s.id, route_id: s.route_id, route_name: p.route_name, guard_id: s.guard_id, guard_name: guardName(s.guard_id),
+    started_at: s.started_at, ended_at: s.ended_at, status: s.status, total_checkpoints: p.total, scanned_count: p.scanned,
+    sla_breaches: p.checkpoints.filter((c) => c.status === 'late' || c.status === 'overdue').length, completion_pct: p.completion_pct,
+  }
+}
+
+function dailyRows(siteId: string, range: [Date, Date]): DailyAttendanceRow[] {
+  return w.shifts
+    .filter((s) => s.site_id === siteId && inRange(s.start_time, range))
+    .sort((a, b) => a.start_time.localeCompare(b.start_time))
+    .map((s) => {
+      const g = w.guards.find((x) => x.id === s.guard_id)
+      const a = w.attendance.find((x) => x.shift_id === s.id)
+      const hours = a?.clock_in_at && a.clock_out_at ? (Date.parse(a.clock_out_at) - Date.parse(a.clock_in_at)) / 3_600_000 : 0
+      return {
+        shift_id: s.id, guard_id: s.guard_id, guard_name: g?.name ?? '—', employee_id: g?.employee_id,
+        shift_start: s.start_time, shift_end: s.end_time, attendance_id: a?.id, status: a?.status ?? 'pending',
+        clock_in_at: a?.clock_in_at, clock_out_at: a?.clock_out_at, late_minutes: a?.late_minutes ?? 0,
+        early_out_minutes: a?.early_out_minutes ?? 0, hours_worked: Math.round(hours * 10) / 10,
+        needs_review: a?.needs_review ?? false, override_reason: a?.override_reason, selfie_object_key: a?.selfie_object_key,
+      }
+    })
+}
+
+function monthly(siteId: string, range: [Date, Date]): MonthlyRecapRow[] {
+  const rows = new Map<string, MonthlyRecapRow>()
+  for (const r of dailyRows(siteId, range)) {
+    const m = rows.get(r.guard_id) ?? {
+      guard_id: r.guard_id, guard_name: r.guard_name, employee_id: r.employee_id, scheduled_shifts: 0, present: 0, late: 0,
+      absent: 0, early_out: 0, pending: 0, total_hours: 0, patrol_sessions: 0, patrol_completion_pct: 0,
+    }
+    m.scheduled_shifts++
+    if (r.status === 'pending') m.pending++
+    else m[r.status]++
+    if (r.early_out_minutes > 0) m.early_out++
+    m.total_hours = Math.round((m.total_hours + r.hours_worked) * 10) / 10
+    rows.set(r.guard_id, m)
+  }
+  for (const s of w.sessions.filter((x) => x.site_id === siteId && inRange(x.started_at, range))) {
+    const m = rows.get(s.guard_id)
+    if (!m) continue
+    const p = progress(s)
+    m.patrol_completion_pct = Math.round(((m.patrol_completion_pct * m.patrol_sessions + p.completion_pct) / (m.patrol_sessions + 1)) * 10) / 10
+    m.patrol_sessions++
+  }
+  return [...rows.values()].sort((a, b) => a.guard_name.localeCompare(b.guard_name))
+}
+
+// ── Routes ───────────────────────────────────────────────────────────────────
+
+on('GET', '/me', () => ({ subject: 'demo', username: 'demo', realm: 'demo', client_id: 'securepatrol-web', roles: [] }))
+
+// Sites
+on('GET', '/sites', () => w.sites)
+on('GET', '/sites/:id', ({ params }) => byId(w.sites, params.id))
+on('POST', '/sites', ({ body }) => {
+  if (!String(body.name ?? '').trim()) throw bad('name_required', 'name is required')
+  const s = { id: uid(), keycloak_realm: 'demo', created_at: iso(now()), timezone: 'Asia/Jakarta', ...body } as World['sites'][0]
+  w.sites.push(s)
+  return s
+})
+on('PUT', '/sites/:id', ({ params, body }) => Object.assign(byId(w.sites, params.id), body))
+
+// Guards
+on('GET', '/guards', ({ query }) => w.guards.filter((g) => !query.site_id || g.site_id === query.site_id))
+on('GET', '/guards/:id', ({ params }) => byId(w.guards, params.id))
+on('POST', '/guards', ({ body }) => {
+  if (!body.site_id) throw bad('site_id_required', 'site_id is required')
+  const g = { id: uid(), has_pin: false, role: 'guard', status: 'active', created_at: iso(now()), updated_at: iso(now()), ...body } as World['guards'][0]
+  w.guards.push(g)
+  return g
+})
+on('PUT', '/guards/:id', ({ params, body }) => Object.assign(byId(w.guards, params.id), body, { updated_at: iso(now()) }))
+on('PUT', '/guards/:id/pin', ({ params, body }) => {
+  if (!/^\d{4,6}$/.test(String(body.pin ?? ''))) throw bad('invalid_pin', 'PIN must be 4–6 digits')
+  if (['1234', '0000', '1111', '123456'].includes(String(body.pin))) throw bad('weak_pin', 'PIN is too easy to guess')
+  byId(w.guards, params.id).has_pin = true
+  return { has_pin: true }
+})
+
+// Devices
+on('GET', '/devices', () => w.devices)
+on('PUT', '/devices/:id', ({ params, body }) => {
+  const d = byId(w.devices, params.id)
+  if (body.status === 'active' && !body.site_id) throw bad('site_required', 'assign a site before activating the device')
+  return Object.assign(d, body, { updated_at: iso(now()), approved_at: d.approved_at ?? (body.status === 'active' ? iso(now()) : undefined) })
+})
+
+// Schedules
+on('GET', '/shift-templates', ({ query }) => w.templates.filter((t) => t.site_id === query.site_id))
+on('POST', '/shift-templates', ({ body }) => {
+  const t = { id: uid(), active: true, created_at: iso(now()), updated_at: iso(now()), ...body } as World['templates'][0]
+  w.templates.push(t)
+  return { template: t, generated_shifts: generate(t) }
+})
+on('PUT', '/shift-templates/:id', ({ params, body }) => {
+  const t = Object.assign(byId(w.templates, params.id), body, { updated_at: iso(now()) })
+  w.shifts = w.shifts.filter((s) => !(s.template_id === t.id && Date.parse(s.start_time) > Date.now() && !w.attendance.some((a) => a.shift_id === s.id)))
+  return { template: t, generated_shifts: generate(t) }
+})
+on('DELETE', '/shift-templates/:id', ({ params }) => {
+  w.templates = w.templates.filter((t) => t.id !== params.id)
+  w.shifts = w.shifts.filter((s) => !(s.template_id === params.id && Date.parse(s.start_time) > Date.now()))
+  return null
+})
+function generate(t: World['templates'][0]): number {
+  if (!t.active) return 0
+  const [sh, sm] = t.start_time.split(':').map(Number)
+  const [eh, em] = t.end_time.split(':').map(Number)
+  let n = 0
+  for (let day = 0; day <= 14; day++) {
+    const start = wib(day, sh, sm)
+    if (start.getTime() <= Date.now()) continue
+    const wd = ((new Date(start.getTime() + 7 * 3600_000).getUTCDay() + 6) % 7) + 1
+    if (!t.weekdays.includes(wd)) continue
+    const end = eh * 60 + em <= sh * 60 + sm ? wib(day + 1, eh, em) : wib(day, eh, em)
+    if (w.shifts.some((s) => s.template_id === t.id && s.start_time === iso(start))) continue
+    w.shifts.push({ id: uid(), guard_id: t.guard_id, site_id: t.site_id, template_id: t.id, start_time: iso(start), end_time: iso(end), created_at: iso(now()) })
+    n++
+  }
+  return n
+}
+on('GET', '/shifts', ({ query }) =>
+  w.shifts
+    .filter((s) => s.site_id === query.site_id && inRange(s.start_time, dateRange(query.from, query.to)) && (!query.guard_id || s.guard_id === query.guard_id))
+    .sort((a, b) => a.start_time.localeCompare(b.start_time)),
+)
+on('POST', '/shifts', ({ body }) => {
+  const s = { id: uid(), created_at: iso(now()), ...body } as World['shifts'][0]
+  w.shifts.push(s)
+  return s
+})
+on('PUT', '/shifts/:id', ({ params, body }) => {
+  if (w.attendance.some((a) => a.shift_id === params.id)) throw new HttpError(409, 'shift_has_attendance', 'shift already has attendance')
+  return Object.assign(byId(w.shifts, params.id), body, { template_id: undefined })
+})
+on('DELETE', '/shifts/:id', ({ params }) => {
+  if (w.attendance.some((a) => a.shift_id === params.id)) throw new HttpError(409, 'shift_has_attendance', 'shift already has attendance')
+  w.shifts = w.shifts.filter((s) => s.id !== params.id)
+  return null
+})
+
+// Attendance
+on('GET', '/attendance/daily', ({ query }) => ({ site_id: query.site_id, date: query.date ?? iso(wib(0, 0)).slice(0, 10), rows: dailyRows(siteOf(query).id, dayRange(query.date)) }))
+on('GET', '/attendance/review', ({ query }) => w.attendance.filter((a) => a.site_id === query.site_id && a.needs_review).map((a) => ({ ...a, guard_name: guardName(a.guard_id) })))
+on('POST', '/attendance/:id/review', ({ params, body }) =>
+  Object.assign(byId(w.attendance, params.id), { needs_review: false, reviewed_by: 'demo', reviewed_at: iso(now()), review_note: body.note ?? undefined }),
+)
+on('PUT', '/attendance/shifts/:shiftId/override', ({ params, body }) => {
+  if (!String(body.reason ?? '').trim()) throw bad('reason_required', 'a reason is required for an attendance override')
+  const shift = byId(w.shifts, params.shiftId)
+  let a = w.attendance.find((x) => x.shift_id === shift.id)
+  if (!a) {
+    a = { id: uid(), shift_id: shift.id, guard_id: shift.guard_id, site_id: shift.site_id, status: 'present', late_minutes: 0, early_out_minutes: 0, needs_review: false, created_at: iso(now()) }
+    w.attendance.push(a)
+  }
+  return Object.assign(a, { status: body.status, override_reason: body.reason, overridden_by: 'demo/admin', overridden_at: iso(now()), needs_review: false, clock_in_at: body.clock_in_at ?? a.clock_in_at, clock_out_at: body.clock_out_at ?? a.clock_out_at })
+})
+
+// Patrol
+on('GET', '/patrol/routes', ({ query }) => w.routes.filter((r) => r.site_id === query.site_id && (query.active !== 'true' || r.active)))
+on('GET', '/patrol/routes/:id', ({ params }) => byId(w.routes, params.id))
+const normalizeRoute = (body: Body, base?: PatrolRoute): PatrolRoute => {
+  const cps = ((body.checkpoints as PatrolRoute['checkpoints']) ?? []).map((c, i) => ({
+    ...c, id: c.id || uid(), qr_code: c.qr_code || `SP-${uid().slice(-6).toUpperCase()}`, order_index: i,
+  }))
+  if (!String(body.name ?? '').trim()) throw bad('name_required', 'route name is required')
+  if (cps.length === 0) throw bad('checkpoints_required', 'a route needs at least one checkpoint')
+  return { ...(base ?? { id: uid(), site_id: String(body.site_id), created_at: iso(now()) }), name: String(body.name), active: body.active !== false, checkpoints: cps } as PatrolRoute
+}
+on('POST', '/patrol/routes', ({ body }) => {
+  const r = normalizeRoute(body)
+  w.routes.push(r)
+  return r
+})
+on('PUT', '/patrol/routes/:id', ({ params, body }) => {
+  const r = normalizeRoute(body, byId(w.routes, params.id))
+  w.routes = w.routes.map((x) => (x.id === r.id ? r : x))
+  return r
+})
+on('GET', '/patrol/live', ({ query }) =>
+  w.sessions.filter((s) => s.site_id === query.site_id && s.status === 'in_progress').map((s) => ({ guard_name: guardName(s.guard_id), progress: progress(s) })),
+)
+on('GET', '/patrol/sessions', ({ query }) =>
+  w.sessions.filter((s) => s.site_id === query.site_id && inRange(s.started_at, dateRange(query.from, query.to))).sort((a, b) => b.started_at.localeCompare(a.started_at)).map(summary),
+)
+on('GET', '/patrol/sessions/:id', ({ params }) => progress(byId(w.sessions, params.id)))
+
+// Incidents & field reports
+on('GET', '/incidents', ({ query }) =>
+  w.incidents
+    .filter((i) => i.site_id === query.site_id && (!query.type || i.type === query.type) && (!query.severity || i.severity === query.severity) && (!query.status || i.status === query.status) && (!query.from || inRange(i.occurred_at, dateRange(query.from, query.to))))
+    .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at)),
+)
+on('GET', '/incidents/:id', ({ params }) => {
+  const i = byId(w.incidents, params.id)
+  return { incident: i, guard_name: guardName(i.guard_id), amendments: w.amendments.filter((a) => a.incident_id === i.id), photos: i.photo_object_keys.map((key) => ({ key, uploaded: true, url: photoUrl(key) })) }
+})
+on('PUT', '/incidents/:id/status', ({ params, body }) => Object.assign(byId(w.incidents, params.id), { status: body.status, updated_at: iso(now()) }))
+on('POST', '/incidents/:id/amendments', ({ params, body }) => {
+  if (!String(body.reason ?? '').trim()) throw bad('reason_required', 'a reason is required')
+  const a = { id: uid(), incident_id: params.id!, changes: body.changes as Record<string, string>, reason: String(body.reason), amended_by: 'demo/supervisor', created_at: iso(now()) }
+  w.amendments.push(a)
+  return a
+})
+on('GET', '/sos', ({ query }) => w.sos.filter((s) => s.site_id === query.site_id && (query.unack_only !== 'true' || !s.acknowledged_at)).sort((a, b) => b.fired_at.localeCompare(a.fired_at)))
+on('POST', '/sos/:id/acknowledge', ({ params }) => {
+  const s = byId(w.sos, params.id)
+  s.acknowledged_by ??= 'demo/supervisor'
+  s.acknowledged_at ??= iso(now())
+  return s
+})
+on('GET', '/defects', ({ query }) => w.defects.filter((d) => d.site_id === query.site_id && (!query.status || d.status === query.status)))
+on('PUT', '/defects/:id/status', ({ params, body }) => Object.assign(byId(w.defects, params.id), { status: body.status, updated_at: iso(now()) }))
+on('GET', '/visitors', ({ query }) => w.visitors.filter((v) => v.site_id === query.site_id && inRange(v.entry_at, dateRange(query.from, query.to))))
+on('GET', '/media/url', ({ query }) => ({ key: query.key, uploaded: true, url: photoUrl(query.key ?? '') }))
+
+// Reports & dashboard
+on('GET', '/dashboard/summary', ({ query }) => {
+  const site = siteOf(query)
+  const rows = dailyRows(site.id, dayRange())
+  const weekly = Array.from({ length: 7 }, (_, i) => {
+    const date = new Date(wib(i - 6, 0).getTime() + 7 * 3600_000).toISOString().slice(0, 10)
+    const r = dailyRows(site.id, dayRange(date))
+    return { date, present: r.filter((x) => x.status === 'present').length, late: r.filter((x) => x.status === 'late').length, absent: r.filter((x) => x.status === 'absent').length }
+  })
+  const open = w.incidents.filter((i) => i.site_id === site.id && i.status !== 'resolved')
+  const bySev: Partial<Record<Severity, number>> = {}
+  for (const i of open) bySev[i.severity] = (bySev[i.severity] ?? 0) + 1
+  return {
+    shifts_today: rows.length,
+    attended_today: rows.filter((r) => r.status === 'present' || r.status === 'late').length,
+    absent_today: rows.filter((r) => r.status === 'absent').length,
+    active_patrols: w.sessions.filter((s) => s.site_id === site.id && s.status === 'in_progress').length,
+    open_incidents: open.length,
+    sos_alerts_unacknowledged: w.sos.filter((s) => s.site_id === site.id && !s.acknowledged_at).length,
+    open_defects: w.defects.filter((d) => d.site_id === site.id && d.status !== 'resolved').length,
+    attendance_pending_review: w.attendance.filter((a) => a.site_id === site.id && a.needs_review).length,
+    weekly_attendance: weekly,
+    incidents_by_severity: bySev,
+  }
+})
+on('GET', '/reports/attendance/daily', ({ query }) => ({ site_id: query.site_id, date: query.date, rows: dailyRows(siteOf(query).id, dayRange(query.date)) }))
+on('GET', '/reports/attendance/monthly', ({ query }) => ({ site_id: query.site_id, month: query.month, rows: monthly(siteOf(query).id, monthRange(query.month)) }))
+on('GET', '/reports/patrol/sessions', ({ query }) => ({
+  site_id: query.site_id,
+  rows: w.sessions.filter((s) => s.site_id === query.site_id && inRange(s.started_at, dateRange(query.from, query.to))).map(summary),
+}))
+on('GET', '/reports/incidents', ({ query }) => w.incidents.filter((i) => i.site_id === query.site_id))
+on('GET', '/reports/guards/kpi', ({ query }): { site_id?: string; rows: GuardKpiRow[] } => ({
+  site_id: query.site_id,
+  rows: monthly(siteOf(query).id, dateRange(query.from, query.to)).map((m) => {
+    const decided = m.present + m.late + m.absent
+    return {
+      guard_id: m.guard_id, guard_name: m.guard_name,
+      attendance_rate_pct: decided ? Math.round(((m.present + m.late) / decided) * 1000) / 10 : 0,
+      on_time_rate_pct: m.present + m.late ? Math.round((m.present / (m.present + m.late)) * 1000) / 10 : 0,
+      patrol_completion_pct: m.patrol_completion_pct,
+      incidents_filed: w.incidents.filter((i) => i.guard_id === m.guard_id).length,
+      sla_breaches: 0,
+    }
+  }),
+}))
+
+// Administration
+on('GET', '/notifications/event-types', () => ({ event_types: ['sos', 'sla_missed', 'absent', 'late_clock_in', 'incident_high', 'defect_opened', 'monthly_recap'], channels: ['email', 'whatsapp'] }))
+on('GET', '/notifications/rules', ({ query }) => w.rules.filter((r) => r.site_id === query.site_id))
+on('POST', '/notifications/rules', ({ body }) => {
+  const r = { id: uid(), enabled: true, created_at: iso(now()), ...body } as World['rules'][0]
+  w.rules.push(r)
+  return r
+})
+on('PUT', '/notifications/rules/:id', ({ params, body }) => Object.assign(byId(w.rules, params.id), { enabled: !!body.enabled }))
+on('DELETE', '/notifications/rules/:id', ({ params }) => {
+  w.rules = w.rules.filter((r) => r.id !== params.id)
+  return null
+})
+on('GET', '/notifications/log', ({ query }) => w.log.filter((l) => (!query.site_id || l.site_id === query.site_id) && (!query.status || l.status === query.status)))
+on('POST', '/notifications/log/:id/retry', ({ params }) => {
+  Object.assign(byId(w.log, params.id), { status: 'queued', last_error: undefined })
+  return { status: 'queued' }
+})
+on('GET', '/settings/channels', () => w.channels)
+on('PUT', '/settings/channels', ({ body }) => {
+  w.channels = body as unknown as World['channels']
+  return w.channels
+})
+on('POST', '/settings/channels/test', () => {
+  throw new HttpError(502, 'delivery_failed', 'Demo mode: messages are not really sent')
+})
+on('GET', '/backups', () => [...w.backups].sort((a, b) => b.created_at.localeCompare(a.created_at)))
+on('POST', '/backups', () => {
+  const b = { id: uid(), object_key: `postgres/securepatrol-manual-${Date.now()}.dump`, status: 'pending' as const, trigger: 'manual' as const, requested_by: 'demo/admin', created_at: iso(now()) }
+  w.backups.push(b)
+  setTimeout(() => Object.assign(b, { status: 'succeeded', size_bytes: 18_600_000, started_at: iso(now()), finished_at: iso(now()) }) && persist(), 2500)
+  return b
+})
+
+/** A neutral placeholder photo (SVG) so demo photos render offline. */
+function photoUrl(key: string): string {
+  const kind = key.split('/')[2] ?? 'photo'
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="420"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1e293b"/><stop offset="1" stop-color="#334155"/></linearGradient></defs><rect width="640" height="420" fill="url(#g)"/><text x="320" y="215" fill="#94a3b8" font-family="sans-serif" font-size="26" text-anchor="middle">Demo ${kind} photo</text></svg>`
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)
+}
+
+// ── Adapter ──────────────────────────────────────────────────────────────────
+
+function toCsv(data: unknown): string {
+  const rows = Array.isArray(data) ? data : ((data as { rows?: unknown[] })?.rows ?? [])
+  if (rows.length === 0) return 'no data\n'
+  const keys = Object.keys(rows[0] as object)
+  const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
+  return [keys.join(','), ...rows.map((r) => keys.map((k) => esc((r as Record<string, unknown>)[k])).join(','))].join('\n')
+}
+
+const adapter: AxiosAdapter = async (cfg: InternalAxiosRequestConfig) => {
+  await new Promise((r) => setTimeout(r, 120 + Math.random() * 180)) // feel like a network
+  const method = (cfg.method ?? 'get').toUpperCase()
+  const path = (cfg.url ?? '').split('?')[0]
+  const query = Object.fromEntries(Object.entries(cfg.params ?? {}).map(([k, v]) => [k, v == null ? undefined : String(v)])) as Params
+  const body = typeof cfg.data === 'string' && cfg.data ? (JSON.parse(cfg.data) as Body) : ((cfg.data as Body) ?? {})
+  const respond = (status: number, data: unknown, headers: Record<string, string> = {}): AxiosResponse =>
+    ({ data, status, statusText: String(status), headers, config: cfg, request: {} }) as AxiosResponse
+
+  for (const r of routes) {
+    if (r.method !== method) continue
+    const m = r.re.exec(path)
+    if (!m) continue
+    const params = Object.fromEntries(r.keys.map((k, i) => [k, decodeURIComponent(m[i + 1])]))
+    try {
+      const data = r.fn({ params, query, body })
+      if (method !== 'GET') persist()
+      if (query.format === 'csv') {
+        const blob = new Blob(['﻿' + toCsv(data)], { type: 'text/csv' })
+        return respond(200, blob, { 'content-disposition': `attachment; filename="demo${path.replace(/\//g, '-')}.csv"` })
+      }
+      return respond(method === 'POST' && data !== null ? 201 : data === null ? 204 : 200, data)
+    } catch (e) {
+      if (e instanceof HttpError) {
+        const err = Object.assign(new Error(e.msg), { isAxiosError: true, config: cfg, response: respond(e.status, { error: e.msg, code: e.code }) })
+        throw err
+      }
+      throw e
+    }
+  }
+  const err = Object.assign(new Error('demo: no handler'), { isAxiosError: true, config: cfg, response: respond(404, { error: `Demo mode has no handler for ${method} ${path}`, code: 'not_found' }) })
+  throw err
+}
+
+export function installDemoApi(client: AxiosInstance) {
+  client.defaults.adapter = adapter
+}

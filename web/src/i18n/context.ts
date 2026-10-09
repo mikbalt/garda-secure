@@ -41,3 +41,9 @@ export function useI18n(): I18nValue {
 export function useT() {
   return useContext(I18nContext).t
 }
+
+/** Incident category label: translated for known categories, else humanised. */
+export function incidentTypeLabel(lang: Lang, type: string): string {
+  const human = type.replace(/[_-]+/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
+  return translateMaybe(lang, `incType.${type}`, human)
+}

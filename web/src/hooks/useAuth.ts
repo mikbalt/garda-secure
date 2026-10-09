@@ -23,7 +23,7 @@ export function useAuth() {
       username: getUsername(),
       roles,
       realm,
-      realmLabel: config.realms.find((r) => r.id === realm)?.label ?? realm,
+      realmLabel: config.demo ? 'PT Logistik Nusantara · Demo' : config.realms.find((r) => r.id === realm)?.label ?? realm,
     }
     return {
       user,

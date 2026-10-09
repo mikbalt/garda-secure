@@ -78,27 +78,27 @@ export function Modal({ open, onClose, title, children, footer, variant = 'cente
 
   const panelClass =
     variant === 'drawer'
-      ? 'ml-auto h-full w-full max-w-2xl flex flex-col bg-white shadow-xl'
-      : `m-auto w-full ${widths[size]} max-h-[90vh] flex flex-col rounded-xl bg-white shadow-xl`
+      ? 'ml-auto h-full w-full max-w-2xl flex flex-col bg-white shadow-overlay animate-slide-in-right sm:rounded-2xl'
+      : `m-auto w-full ${widths[size]} max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-overlay animate-slide-up`
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex bg-gray-900/50 p-0 sm:p-4 no-print" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="fixed inset-0 z-50 flex animate-fade-in bg-gray-950/40 p-0 backdrop-blur-[2px] sm:p-4 no-print" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div ref={panelRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className={`${panelClass} focus:outline-none`}>
-        <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
-          <h2 id={titleId} className="text-base font-semibold text-gray-900">
+        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+          <h2 id={titleId} className="text-base font-semibold tracking-tight text-gray-900">
             {title}
           </h2>
           <button
             type="button"
             onClick={onClose}
-            className="rounded p-1 text-gray-600 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
+            className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
             aria-label={t('common.close')}
           >
             <X className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
-        <div className="modal-body flex-1 overflow-y-auto px-5 py-4">{children}</div>
-        {footer && <div className="flex justify-end gap-2 border-t border-gray-200 px-5 py-3">{footer}</div>}
+        <div className="modal-body scroll-thin flex-1 overflow-y-auto px-6 py-5">{children}</div>
+        {footer && <div className="flex justify-end gap-2 rounded-b-2xl border-t border-gray-100 bg-gray-50/70 px-6 py-3.5">{footer}</div>}
       </div>
     </div>,
     document.body

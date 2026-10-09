@@ -23,7 +23,15 @@ export function Bootstrap() {
     if (!authRealm) return
     let cancelled = false
     initKeycloak(authRealm)
-      .then((ok) => {
+      .then(async (ok) => {
+        if (config.demo) {
+          // Demo mode answers the API from sample data in the browser.
+          const [{ installDemoApi }, { default: apiClient }] = await Promise.all([
+            import('../demo/mockApi'),
+            import('../api/client'),
+          ])
+          installDemoApi(apiClient)
+        }
         if (!cancelled && ok) setPhase({ kind: 'ready' })
       })
       .catch((err: unknown) => {

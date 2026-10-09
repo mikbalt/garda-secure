@@ -21,4 +21,5 @@ export const STORAGE_KEYS = {
   realm: 'sp.realm',
   lang: 'sp.lang',
   site: 'sp.site',
+  demoRole: 'sp.demo.role',
 } as const

@@ -14,6 +14,7 @@ import Patrol from './pages/Patrol'
 import Incidents from './pages/Incidents'
 import Reports from './pages/Reports'
 import Settings from './pages/Settings'
+import Setup from './pages/Setup'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -45,6 +46,7 @@ export function App() {
                   <Route path="/patrol" element={<ProtectedRoute cap="viewPatrol"><Patrol /></ProtectedRoute>} />
                   <Route path="/incidents" element={<ProtectedRoute cap="viewIncidents"><Incidents /></ProtectedRoute>} />
                   <Route path="/reports" element={<ProtectedRoute cap="viewReports"><Reports /></ProtectedRoute>} />
+                  <Route path="/setup" element={<ProtectedRoute cap="viewSettings"><Setup /></ProtectedRoute>} />
                   <Route path="/settings" element={<ProtectedRoute cap="viewSettings"><Settings /></ProtectedRoute>} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Route>

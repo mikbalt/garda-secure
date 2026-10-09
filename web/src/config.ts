@@ -14,6 +14,8 @@ export interface AppConfig {
   keycloakUrl: string
   keycloakClientId: string
   realms: RealmOption[]
+  /** Demo mode: no backend or Keycloak; sample data in the browser. */
+  demo: boolean
 }
 
 declare global {
@@ -62,6 +64,7 @@ function load(): AppConfig {
     keycloakClientId:
       nonEmpty(rt.keycloakClientId) ?? nonEmpty(env.VITE_KEYCLOAK_CLIENT_ID as string | undefined) ?? 'securepatrol-web',
     realms,
+    demo: rt.demo === true || String(rt.demo) === 'true' || env.VITE_DEMO === 'true',
   }
 }
 

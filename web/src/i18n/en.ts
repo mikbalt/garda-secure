@@ -1,3 +1,5 @@
+import { uxEn } from './ux.en'
+
 /** English dictionary. Keys are the source of truth for the `Key` type. */
 export const en = {
   // app / common
@@ -419,6 +421,7 @@ export const en = {
   'bk.object': 'Object',
   'bk.finished': 'Finished',
   'bk.empty': 'No backups yet.',
+  ...uxEn,
 } as const
 
 export type Key = keyof typeof en

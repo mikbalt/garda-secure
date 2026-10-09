@@ -12,6 +12,7 @@ let currentRealm = ''
 
 /** Realm to use without asking, or null when the user must choose. */
 export function resolveRealm(): string | null {
+  if (config.demo) return 'demo'
   const stored = readStored(STORAGE_KEYS.realm)
   if (stored && config.realms.some((r) => r.id === stored)) return stored
   if (config.realms.length === 1) return config.realms[0].id
@@ -29,6 +30,10 @@ let initPromise: { realm: string; promise: Promise<boolean> } | null = null
  * same realm share one initialisation (React StrictMode runs effects twice).
  */
 export function initKeycloak(realm: string): Promise<boolean> {
+  if (config.demo) {
+    currentRealm = realm
+    return Promise.resolve(true)
+  }
   if (initPromise && initPromise.realm === realm) return initPromise.promise
   currentRealm = realm
   const instance = new Keycloak({ url: config.keycloakUrl, realm, clientId: config.keycloakClientId })
@@ -55,6 +60,7 @@ function kc(): Keycloak | null {
 
 /** Returns a fresh access token, refreshing it when it expires within 30 s. */
 export async function freshToken(): Promise<string | undefined> {
+  if (config.demo) return undefined
   const k = kc()
   if (!k) return undefined
   try {
@@ -69,7 +75,13 @@ export function login(): void {
   kc()?.login()
 }
 
+/** Demo mode: the role chosen in the demo bar (default admin). */
+export function demoRole(): string {
+  return readStored(STORAGE_KEYS.demoRole) || 'admin'
+}
+
 export function getUserRoles(): string[] {
+  if (config.demo) return [demoRole()]
   const k = kc()
   if (!k) return []
   const flat = k.tokenParsed?.['roles']
@@ -78,6 +90,7 @@ export function getUserRoles(): string[] {
 }
 
 export function getUsername(): string {
+  if (config.demo) return `demo.${demoRole()}`
   const p = kc()?.tokenParsed
   return ((p?.['preferred_username'] ?? p?.['name'] ?? '') as string) || ''
 }
@@ -87,6 +100,7 @@ export function getRealm(): string {
 }
 
 export function logout(): void {
+  if (config.demo) return window.location.reload()
   kc()?.logout({ redirectUri: window.location.origin + '/' })
 }
 

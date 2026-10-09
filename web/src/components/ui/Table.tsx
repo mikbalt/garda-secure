@@ -29,16 +29,16 @@ export function Table<T>({ columns, rows, rowKey, isLoading, error, empty, capti
   if (error) return <ErrorState error={error} onRetry={onRetry} />
   if (!rows || rows.length === 0) return <EmptyState message={empty} />
   return (
-    <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white print-plain">
-      <table className="min-w-full divide-y divide-gray-200 text-sm">
+    <div className="scroll-thin overflow-x-auto rounded-2xl border border-gray-200/80 bg-white shadow-card print-plain">
+      <table className="min-w-full text-sm">
         {caption && <caption className="sr-only">{caption}</caption>}
-        <thead className="bg-gray-50">
+        <thead className="border-b border-gray-200 bg-gray-50/80">
           <tr>
             {columns.map((c) => (
               <th
                 key={c.key}
                 scope="col"
-                className={`whitespace-nowrap px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-700 ${
+                className={`whitespace-nowrap px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500 ${
                   c.numeric ? 'text-right' : 'text-left'
                 } ${c.className ?? ''}`}
               >
@@ -49,11 +49,11 @@ export function Table<T>({ columns, rows, rowKey, isLoading, error, empty, capti
         </thead>
         <tbody className="divide-y divide-gray-100">
           {rows.map((row) => (
-            <tr key={rowKey(row)} className={`hover:bg-gray-50 ${rowClassName?.(row) ?? ''}`}>
+            <tr key={rowKey(row)} className={`transition-colors hover:bg-gray-50/80 ${rowClassName?.(row) ?? ''}`}>
               {columns.map((c) => (
                 <td
                   key={c.key}
-                  className={`px-3 py-2 align-top text-gray-900 ${c.numeric ? 'text-right tabular-nums' : ''} ${c.className ?? ''}`}
+                  className={`px-4 py-3 align-middle text-gray-800 ${c.numeric ? 'text-right tabular-nums' : ''} ${c.className ?? ''}`}
                 >
                   {c.cell(row)}
                 </td>

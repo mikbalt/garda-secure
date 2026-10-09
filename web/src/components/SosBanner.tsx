@@ -46,43 +46,48 @@ export function SosBanner() {
   return (
     <div role="alert" aria-live="assertive" className="no-print">
       {alerts.length > 0 && (
-        <div className="border-b-4 border-red-900 bg-red-700 px-4 py-3 text-white sm:px-6">
-          <div className="flex items-center gap-2 font-semibold">
-            <Siren className="h-5 w-5 animate-pulse" aria-hidden="true" />
-            <span>
-              {t('sos.bannerTitle')} — {t('sos.bannerCount', { n: alerts.length })}
-            </span>
-          </div>
-          <ul className="mt-2 space-y-2">
-            {alerts.map((a) => (
-              <li key={a.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md bg-red-800/60 px-3 py-2 text-sm">
-                <span className="font-semibold">{t('sos.firedBy', { guard: (a.guard_name || '—') })}</span>
-                <span>{formatDateTime(a.fired_at, tz, lang)}</span>
-                {a.gps_lat != null && a.gps_lng != null ? (
-                  <a
-                    href={mapsUrl(a.gps_lat, a.gps_lng)}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 underline underline-offset-2 hover:text-red-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+        <div className="relative overflow-hidden bg-gradient-to-r from-red-600 via-red-600 to-rose-600 px-4 py-3 text-white shadow-[inset_0_-1px_0_rgba(0,0,0,0.15)] sm:px-6">
+          <div className="mx-auto flex max-w-[1400px] flex-col gap-2 lg:px-2">
+            <div className="flex items-center gap-2.5 text-sm font-semibold">
+              <span className="relative flex h-7 w-7 items-center justify-center rounded-full bg-white/15">
+                <span className="absolute inline-flex h-full w-full animate-ping2 rounded-full bg-white/30" />
+                <Siren className="relative h-4 w-4" aria-hidden="true" />
+              </span>
+              <span>
+                {t('sos.bannerTitle')} · {t('sos.bannerCount', { n: alerts.length })}
+              </span>
+            </div>
+            <ul className="space-y-1.5">
+              {alerts.map((a) => (
+                <li key={a.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl bg-black/15 px-3.5 py-2 text-sm ring-1 ring-white/10">
+                  <span className="font-semibold">{t('sos.firedBy', { guard: a.guard_name || '—' })}</span>
+                  <span className="text-white/80">{formatDateTime(a.fired_at, tz, lang)}</span>
+                  {a.gps_lat != null && a.gps_lng != null ? (
+                    <a
+                      href={mapsUrl(a.gps_lat, a.gps_lng)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-white/90 underline decoration-white/40 underline-offset-2 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                    >
+                      <MapPin className="h-4 w-4" aria-hidden="true" />
+                      {t('common.openMap')}
+                    </a>
+                  ) : (
+                    <span className="text-white/70">{t('sos.noGps')}</span>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="ml-auto !text-red-700 !ring-white"
+                    loading={ack.isPending && ack.variables === a.id}
+                    onClick={() => ack.mutate(a.id)}
                   >
-                    <MapPin className="h-4 w-4" aria-hidden="true" />
-                    {a.gps_lat.toFixed(5)}, {a.gps_lng.toFixed(5)}
-                  </a>
-                ) : (
-                  <span className="text-red-100">{t('sos.noGps')}</span>
-                )}
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  className="ml-auto !text-red-800"
-                  loading={ack.isPending && ack.variables === a.id}
-                  onClick={() => ack.mutate(a.id)}
-                >
-                  {t('sos.acknowledge')}
-                </Button>
-              </li>
-            ))}
-          </ul>
+                    {t('sos.acknowledge')}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       )}
     </div>

@@ -1,3 +1,4 @@
+import { uxId } from './ux.id'
 import type { Dict } from './en'
 
 /** Kamus Bahasa Indonesia (bahasa bawaan). */
@@ -406,4 +407,5 @@ export const id: Dict = {
   'bk.object': 'Objek',
   'bk.finished': 'Selesai',
   'bk.empty': 'Belum ada cadangan.',
+  ...uxId,
 }

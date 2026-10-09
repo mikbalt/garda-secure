@@ -32,7 +32,11 @@ export function Tabs<K extends string>({ tabs, active, onChange, label }: TabsPr
   }
 
   return (
-    <div role="tablist" aria-label={label} className="flex flex-wrap gap-1 border-b border-gray-200 no-print">
+    <div
+      role="tablist"
+      aria-label={label}
+      className="no-print inline-flex max-w-full flex-wrap gap-1 rounded-xl bg-gray-200/60 p-1"
+    >
       {tabs.map((tab, i) => {
         const selected = tab.key === active
         return (
@@ -48,13 +52,15 @@ export function Tabs<K extends string>({ tabs, active, onChange, label }: TabsPr
             tabIndex={selected ? 0 : -1}
             onClick={() => onChange(tab.key)}
             onKeyDown={(e) => onKey(e, i)}
-            className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 ${
-              selected ? 'border-primary-700 text-primary-800' : 'border-transparent text-gray-600 hover:text-gray-900'
+            className={`inline-flex items-center rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
+              selected ? 'bg-white text-gray-900 shadow-card' : 'text-gray-600 hover:bg-white/60 hover:text-gray-900'
             }`}
           >
             {tab.label}
             {tab.badge ? (
-              <span className="ml-2 rounded-full bg-red-700 px-1.5 py-0.5 text-xs text-white">{tab.badge}</span>
+              <span className="ml-2 min-w-[1.25rem] rounded-full bg-red-500 px-1.5 py-px text-center text-[11px] font-semibold text-white">
+                {tab.badge}
+              </span>
             ) : null}
           </button>
         )
