@@ -196,6 +196,17 @@ func DeleteShift(ctx context.Context, db DBTX, id string) error {
 	return nil
 }
 
+// LockShift row-locks a shift for the rest of the transaction, so a clock-in
+// and the absent auto-flag (or two identical clock-in retries) are
+// serialised per shift.
+func LockShift(ctx context.Context, db DBTX, id string) error {
+	var x int
+	if err := db.QueryRow(ctx, `SELECT 1 FROM shifts WHERE id = $1 FOR UPDATE`, id).Scan(&x); err != nil {
+		return mapNoRows(err)
+	}
+	return nil
+}
+
 // FindShiftForClockIn returns the guard's shift at a site whose clock-in
 // window contains t: [start - window, end). The latest-starting match wins.
 func FindShiftForClockIn(ctx context.Context, db DBTX, guardID, siteID string, t time.Time, window time.Duration) (*model.Shift, error) {

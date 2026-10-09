@@ -197,19 +197,22 @@ type AbsentFlag struct {
 }
 
 // FlagAbsentees inserts an absent record for every shift of an active guard
-// that started at least the site's absent threshold ago (within the last day)
-// and has no attendance yet. Safe to run repeatedly.
-func FlagAbsentees(ctx context.Context, db DBTX, defaultAbsentAfterMinutes int) ([]AbsentFlag, error) {
+// at a site that started at least the site's absent threshold ago (within
+// lookback) and has no attendance yet. Safe to run repeatedly. Shifts locked
+// by a concurrent clock-in are skipped; the next run sees the clock-in.
+func FlagAbsentees(ctx context.Context, db DBTX, siteID string, defaultAbsentAfterMinutes int, lookback time.Duration) ([]AbsentFlag, error) {
 	rows, err := db.Query(ctx, `
 		WITH due AS (
 		  SELECT s.id, s.guard_id, s.site_id, s.start_time
 		  FROM shifts s
 		  JOIN sites st ON st.id = s.site_id
 		  JOIN guards g ON g.id = s.guard_id AND g.status = 'active'
-		  WHERE s.start_time > now() - interval '1 day'
+		  WHERE s.site_id = $3
+		    AND s.start_time > now() - $2::interval
 		    AND s.start_time + make_interval(mins =>
 		          COALESCE((st.config_json->>'absent_after_minutes')::int, $1)) <= now()
 		    AND NOT EXISTS (SELECT 1 FROM attendance_records a WHERE a.shift_id = s.id)
+		  FOR UPDATE OF s SKIP LOCKED
 		),
 		ins AS (
 		  INSERT INTO attendance_records (shift_id, guard_id, site_id, status)
@@ -220,7 +223,7 @@ func FlagAbsentees(ctx context.Context, db DBTX, defaultAbsentAfterMinutes int) 
 		SELECT ins.id, ins.shift_id, ins.guard_id, g.name, ins.site_id, due.start_time
 		FROM ins
 		JOIN due ON due.id = ins.shift_id
-		JOIN guards g ON g.id = ins.guard_id`, defaultAbsentAfterMinutes)
+		JOIN guards g ON g.id = ins.guard_id`, defaultAbsentAfterMinutes, lookback, siteID)
 	if err != nil {
 		return nil, fmt.Errorf("FlagAbsentees: %w", err)
 	}

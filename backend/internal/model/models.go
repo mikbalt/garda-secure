@@ -318,6 +318,9 @@ type Backup struct {
 	CreatedAt   time.Time  `json:"created_at"`
 	StartedAt   *time.Time `json:"started_at,omitempty"`
 	FinishedAt  *time.Time `json:"finished_at,omitempty"`
+	// Keycloak database dump of the same run (when configured).
+	KeycloakObjectKey *string `json:"keycloak_object_key,omitempty"`
+	KeycloakSizeBytes *int64  `json:"keycloak_size_bytes,omitempty"`
 }
 
 // AuditLog records admin/mutating actions for compliance.

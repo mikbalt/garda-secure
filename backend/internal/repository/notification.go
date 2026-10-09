@@ -100,16 +100,18 @@ func scanLog(row pgx.Row) (model.NotificationLog, error) {
 
 func scanLogRows(rows pgx.Rows) (model.NotificationLog, error) { return scanLog(rows) }
 
-// InsertNotificationLog queues one delivery. When dedupeKey is set and was
-// already used, nothing is inserted and ("", nil) is returned.
-func InsertNotificationLog(ctx context.Context, db DBTX, l model.NotificationLog, dedupeKey *string) (string, error) {
+// InsertNotificationLog queues one delivery on a lane ("sos" | "normal").
+// When dedupeKey is set and was already used, nothing is inserted and
+// ("", nil) is returned. Call it in the transaction that writes the domain
+// row (transactional outbox, BE-R1).
+func InsertNotificationLog(ctx context.Context, db DBTX, l model.NotificationLog, lane string, requestID, dedupeKey *string) (string, error) {
 	var id string
 	err := db.QueryRow(ctx, `
-		INSERT INTO notification_log (site_id, event_type, channel, recipient, subject, body, dedupe_key)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO notification_log (site_id, event_type, channel, recipient, subject, body, dedupe_key, lane, request_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (dedupe_key) DO NOTHING
 		RETURNING id`,
-		l.SiteID, l.EventType, l.Channel, l.Recipient, l.Subject, l.Body, dedupeKey,
+		l.SiteID, l.EventType, l.Channel, l.Recipient, l.Subject, l.Body, dedupeKey, lane, requestID,
 	).Scan(&id)
 	if err != nil {
 		if mapNoRows(err) == ErrNotFound {
@@ -143,23 +145,12 @@ func ListNotificationLog(ctx context.Context, db DBTX, siteIDs []string, status 
 	return collect(rows, scanLogRows)
 }
 
-// MarkNotificationAttempt records the outcome of one delivery attempt.
-func MarkNotificationAttempt(ctx context.Context, db DBTX, id, status string, lastErr *string) error {
-	_, err := db.Exec(ctx, `
-		UPDATE notification_log
-		SET status = $2, attempts = attempts + 1, last_error = $3,
-		    sent_at = CASE WHEN $2 = 'sent' THEN now() ELSE sent_at END
-		WHERE id = $1`, id, status, lastErr)
-	if err != nil {
-		return fmt.Errorf("MarkNotificationAttempt: %w", err)
-	}
-	return nil
-}
-
-// RequeueNotification resets a failed delivery so it can be retried.
+// RequeueNotification resets a failed delivery so the worker sends it again
+// right away (one more attempt).
 func RequeueNotification(ctx context.Context, db DBTX, id string) error {
 	tag, err := db.Exec(ctx, `
-		UPDATE notification_log SET status = 'queued', last_error = NULL
+		UPDATE notification_log
+		SET status = 'queued', last_error = NULL, next_attempt_at = now(), locked_until = NULL
 		WHERE id = $1 AND status = 'failed'`, id)
 	if err != nil {
 		return fmt.Errorf("RequeueNotification: %w", err)
@@ -168,24 +159,6 @@ func RequeueNotification(ctx context.Context, db DBTX, id string) error {
 		return ErrNotFound
 	}
 	return nil
-}
-
-// ListQueuedNotificationIDs returns deliveries still queued after `olderThan`
-// seconds; the worker re-enqueues them in case Redis lost them.
-func ListQueuedNotificationIDs(ctx context.Context, db DBTX, olderThanSeconds int) ([]string, error) {
-	rows, err := db.Query(ctx, `
-		SELECT id FROM notification_log
-		WHERE status = 'queued' AND created_at < now() - make_interval(secs => $1::int)
-		  AND created_at > now() - interval '1 day'
-		ORDER BY created_at LIMIT 500`, olderThanSeconds)
-	if err != nil {
-		return nil, fmt.Errorf("ListQueuedNotificationIDs: %w", err)
-	}
-	return collect(rows, func(r pgx.Rows) (string, error) {
-		var id string
-		err := r.Scan(&id)
-		return id, err
-	})
 }
 
 // ── Settings ─────────────────────────────────────────────────────────────────

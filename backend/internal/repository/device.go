@@ -83,10 +83,16 @@ func UpdateDevice(ctx context.Context, db DBTX, id, name string, siteID *string,
 }
 
 // TouchDevice records that a device was just seen. Writes are throttled to
-// one per minute to avoid a row update on every request.
+// one per minute to avoid a row update on every request. A gap of more than
+// 3 minutes starts a new online period (online_since), which the SLA check
+// uses to tell "offline" from "missed" (audit F2).
 func TouchDevice(ctx context.Context, db DBTX, id string) error {
 	_, err := db.Exec(ctx, `
-		UPDATE devices SET last_seen_at = now()
+		UPDATE devices SET last_seen_at = now(),
+		       online_since = CASE
+		         WHEN online_since IS NULL OR last_seen_at IS NULL
+		              OR last_seen_at < now() - interval '3 minutes' THEN now()
+		         ELSE online_since END
 		WHERE id = $1 AND (last_seen_at IS NULL OR last_seen_at < now() - interval '1 minute')`, id)
 	return err
 }
