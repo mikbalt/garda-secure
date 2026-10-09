@@ -161,7 +161,9 @@ func (w *Worker) send(ctx context.Context, channel, recipient, subject, body str
 // promoteDelayed moves retries whose time has come back onto the queue.
 func (w *Worker) promoteDelayed(ctx context.Context) {
 	now := strconv.FormatInt(time.Now().Unix(), 10)
-	ids, err := w.rdb.ZRangeByScore(ctx, delayedKey, &redis.ZRangeBy{Min: "-inf", Max: now, Count: 100}).Result()
+	ids, err := w.rdb.ZRangeArgs(ctx, redis.ZRangeArgs{
+		Key: delayedKey, Start: "-inf", Stop: now, ByScore: true, Count: 100,
+	}).Result()
 	if err != nil {
 		return
 	}

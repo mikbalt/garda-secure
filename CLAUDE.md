@@ -31,7 +31,7 @@ below before touching code.
 ## Repo layout
 
 ```
-backend/   Go 1.22 + Fiber v2 — REST API; `securepatrol worker` = notification worker + scheduler
+backend/   Go 1.26 + Fiber v2 — REST API; `securepatrol worker` = notification worker + scheduler
 web/       React 18 + Vite + TS + TanStack Query + Tailwind — admin/HR/client dashboard
 mobile/    Flutter tablet app (DEFERRED — do not change until backend/web v1 is done)
 infra/     Docker Compose (postgres, redis, minio, keycloak, nginx, grafana, prometheus)
@@ -44,7 +44,7 @@ Backend (from `backend/`):
 go build ./... && go vet ./... && go test ./...
 go test -tags integration ./...   # spins up an embedded Postgres 16, no Docker needed
 ```
-If Go is not installed, a portable toolchain works: download `go1.22.x` zip,
+If Go is not installed, a portable toolchain works: download `go1.26.x` zip,
 put its `bin` on PATH and set `GOTOOLCHAIN=local`.
 
 Web (from `web/`): `npm ci && npm run lint && npx tsc --noEmit && npm run build`
