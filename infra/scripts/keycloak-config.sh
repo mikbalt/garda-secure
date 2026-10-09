@@ -50,7 +50,8 @@ exec_json() { kc get "authentication/flows/$FLOW/executions" -r "$1"; }
 
 set_requirement() { # realm, json-of-execution, requirement
   body=$(printf '%s' "$2" | jq -c --arg r "$3" '{id, requirement: $r} + (if has("priority") then {priority} else {} end)')
-  printf '%s' "$body" | kc update "authentication/flows/$FLOW/executions" -r "$1" --no-merge -f - >/dev/null
+  # With -f, kcadm sends the body as-is (no GET/merge of the execution list).
+  printf '%s' "$body" | kc update "authentication/flows/$FLOW/executions" -r "$1" -f - >/dev/null
 }
 
 configure_mfa() { # realm
@@ -87,7 +88,7 @@ configure_mfa() { # realm
     set_requirement "$r" "$(pick 'first(.[] | select(.providerId == "auth-otp-form"))')" REQUIRED
     cond_id=$(pick 'first(.[] | select(.providerId == "conditional-user-role")) | .id' | tr -d '"')
     kc create "authentication/executions/$cond_id/config" -r "$r" -s "alias=$FLOW-role" \
-      -s "config.condUserRole=$MFA_ROLE" -s config.negate=false >/dev/null
+      -s "config.condUserRole=$MFA_ROLE" >/dev/null
   fi
 
   kc update authentication/required-actions/CONFIGURE_TOTP -r "$r" -s enabled=true >/dev/null

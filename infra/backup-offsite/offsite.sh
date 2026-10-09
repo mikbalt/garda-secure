@@ -55,6 +55,7 @@ sp_offsite_check_last_success_timestamp_seconds $last_check_ok
 # TYPE sp_offsite_check_last_result gauge
 sp_offsite_check_last_result $check_result
 EOF
+  chmod 644 "$tmp"   # node-exporter (nobody) reads it
   mv "$tmp" "$METRICS"
 }
 

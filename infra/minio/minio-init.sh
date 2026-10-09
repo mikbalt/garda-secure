@@ -32,7 +32,8 @@ cat > /tmp/lifecycle.json <<EOF
   ]
 }
 EOF
-mc ilm import "sp/$MINIO_BUCKET_BACKUPS" < /tmp/lifecycle.json
+# `import` replaces the whole lifecycle configuration: idempotent.
+mc ilm rule import "sp/$MINIO_BUCKET_BACKUPS" < /tmp/lifecycle.json
 
 policy_file() { # $1 name, $2 bucket-level actions, $3 object-level actions (JSON arrays)
   cat > "/tmp/$1.json" <<EOF
@@ -72,10 +73,10 @@ if [ -n "${MINIO_APP_ACCESS_KEY:-}" ] && [ -n "${MINIO_APP_SECRET_KEY:-}" ]; the
 fi
 
 if [ -n "${MINIO_OFFSITE_ACCESS_KEY:-}" ] && [ -n "${MINIO_OFFSITE_SECRET_KEY:-}" ]; then
-  # Read-only: list + read current objects for `mc mirror`.
+  # Read-only: list + read objects (and their tags) for `mc mirror`.
   policy_file securepatrol-offsite \
-    '["s3:GetBucketLocation", "s3:ListBucket"]' \
-    '["s3:GetObject"]'
+    '["s3:GetBucketLocation", "s3:ListBucket", "s3:GetBucketVersioning"]' \
+    '["s3:GetObject", "s3:GetObjectTagging"]'
   mc admin policy create sp securepatrol-offsite /tmp/securepatrol-offsite.json
   ensure_user "$MINIO_OFFSITE_ACCESS_KEY" "$MINIO_OFFSITE_SECRET_KEY" securepatrol-offsite
 fi
