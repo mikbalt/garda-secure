@@ -1,11 +1,33 @@
 # Normalise line endings in the repo; files that run inside Linux containers
-# must keep LF even on Windows checkouts (core.autocrlf=true).
+# or on the Linux server must keep LF even on Windows checkouts
+# (core.autocrlf=true).
 * text=auto
 *.sh        text eol=lf
+*.envsh     text eol=lf
+*.awk       text eol=lf
+*.tmpl      text eol=lf
 Makefile    text eol=lf
 Dockerfile  text eol=lf
 *.conf      text eol=lf
 *.sql       text eol=lf
 *.yml       text eol=lf
 *.yaml      text eol=lf
+*.json      text eol=lf
 *.go        text eol=lf
+*.dart      text eol=lf
+*.gradle    text eol=lf
+*.kts       text eol=lf
+*.properties text eol=lf
+gradlew     text eol=lf
+infra/backup-offsite/offsite-health text eol=lf
+.env.example text eol=lf
+# Windows scripts need CRLF.
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+*.ps1       text eol=crlf
+# Binaries
+*.png       binary
+*.jpg       binary
+*.jar       binary
+*.keystore  binary
+*.jks       binary

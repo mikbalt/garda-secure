@@ -5,6 +5,12 @@
 *.key
 *.crt
 infra/nginx/certs/
+*.jks
+*.keystore
+mobile/android/key.properties
+# Operational state on the server (pre-deploy dumps, deploy history)
+infra/backups/
+infra/.deploy/
 
 # Go
 backend/vendor/
@@ -22,7 +28,8 @@ mobile/.dart_tool/
 mobile/build/
 mobile/.flutter-plugins
 mobile/.flutter-plugins-dependencies
-mobile/pubspec.lock
+# mobile/pubspec.lock IS committed: the app's dependency versions must be
+# reproducible (INF-C6).
 
 # Docker
 **/*.tar
