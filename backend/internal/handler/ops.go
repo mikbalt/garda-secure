@@ -53,6 +53,9 @@ func (h *Handler) createRule(c *fiber.Ctx) error {
 		return h.fail(c, service.BadRequest("invalid_event_type", "unknown event type %q", b.EventType))
 	}
 	b.Recipient = strings.TrimSpace(b.Recipient)
+	if err := service.CheckLengths(service.S("recipient", b.Recipient, 320)); err != nil {
+		return h.fail(c, err)
+	}
 	switch b.Channel {
 	case "email":
 		if !strings.Contains(b.Recipient, "@") {

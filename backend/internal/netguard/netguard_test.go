@@ -15,21 +15,21 @@ func TestPolicyAllowed(t *testing.T) {
 		t.Fatal(err)
 	}
 	cases := map[string]bool{
-		"8.8.8.8":         true,
-		"2a03:2880::1":    true,
-		"127.0.0.1":       false,
-		"::1":             false,
-		"10.0.0.5":        false,
-		"10.20.3.4":       true, // allow-listed relay network
-		"192.168.1.25":    true,
-		"192.168.1.26":    false,
-		"172.18.0.3":      false, // docker network
-		"169.254.169.254": false, // cloud metadata
-		"100.64.1.1":      false,
-		"0.0.0.0":         false,
+		"8.8.8.8":          true,
+		"2a03:2880::1":     true,
+		"127.0.0.1":        false,
+		"::1":              false,
+		"10.0.0.5":         false,
+		"10.20.3.4":        true, // allow-listed relay network
+		"192.168.1.25":     true,
+		"192.168.1.26":     false,
+		"172.18.0.3":       false, // docker network
+		"169.254.169.254":  false, // cloud metadata
+		"100.64.1.1":       false,
+		"0.0.0.0":          false,
 		"::ffff:127.0.0.1": false,
-		"fd00::1":         false,
-		"fe80::1":         false,
+		"fd00::1":          false,
+		"fe80::1":          false,
 	}
 	for ip, want := range cases {
 		if got := p.Allowed(netip.MustParseAddr(ip)); got != want {

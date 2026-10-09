@@ -88,10 +88,12 @@ type env struct {
 const (
 	realm1 = "securepatrol-client1"
 	realm2 = "securepatrol-client2"
+	realm3 = "securepatrol-client3" // used by the security tests only
+	realm4 = "securepatrol-client4"
 	issuer = "https://sp.test/auth/realms/"
 )
 
-func newEnv(t *testing.T) *env {
+func newEnv(t *testing.T, opts ...func(*config.Config)) *env {
 	t.Helper()
 	ctx := context.Background()
 	pool, err := db.New(ctx, dsn)
@@ -119,7 +121,10 @@ func newEnv(t *testing.T) *env {
 	cfg := &config.Config{
 		DatabaseURL: dsn, MinioBucketPhotos: "photos", MinioBucketBackups: "backups",
 		SettingsEncryptionKey: "test-key", SMTPPort: "587", WhatsAppAPIURL: "https://graph.example",
-		KeycloakRealms: []string{realm1, realm2}, PlatformAdminRealms: []string{realm1},
+		KeycloakRealms: []string{realm1, realm2, realm3, realm4}, PlatformAdminRealms: []string{realm1},
+	}
+	for _, o := range opts {
+		o(cfg)
 	}
 	stg, err := storage.New(storage.Options{Endpoint: "127.0.0.1:1", AccessKey: "x", SecretKey: "y"})
 	if err != nil {
@@ -134,6 +139,8 @@ func newEnv(t *testing.T) *env {
 	validator := middleware.NewValidator([]middleware.RealmKeys{
 		{Realm: realm1, Issuer: issuer + realm1, JWKSURL: jwks.URL},
 		{Realm: realm2, Issuer: issuer + realm2, JWKSURL: jwks.URL},
+		{Realm: realm3, Issuer: issuer + realm3, JWKSURL: jwks.URL},
+		{Realm: realm4, Issuer: issuer + realm4, JWKSURL: jwks.URL},
 	}, []string{"securepatrol-web", "securepatrol-tablet"}, log)
 
 	h := &handler.Handler{DB: pool, Redis: rdb, Storage: stg, Notifier: notifier, Settings: st, Cfg: cfg, Log: log}
@@ -184,6 +191,12 @@ func (r resp) str(key string) string {
 
 func (e *env) do(method, path, token, guardID string, body any) resp {
 	e.t.Helper()
+	return e.doH(method, path, token, guardID, body, nil)
+}
+
+// doH is do with extra request headers.
+func (e *env) doH(method, path, token, guardID string, body any, headers map[string]string) resp {
+	e.t.Helper()
 	var rdr io.Reader
 	if body != nil {
 		b, _ := json.Marshal(body)
@@ -196,6 +209,9 @@ func (e *env) do(method, path, token, guardID string, body any) resp {
 	}
 	if guardID != "" {
 		req.Header.Set(middleware.GuardHeader, guardID)
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
 	}
 	res, err := e.app.Test(req, 30_000)
 	if err != nil {
@@ -667,7 +683,6 @@ func TestAPIEndToEnd(t *testing.T) {
 	// ── Revocation & audit ───────────────────────────────────────────────────
 	e.expect(e.do("PUT", "/api/v1/devices/"+deviceID, admin, "", map[string]any{"status": "revoked", "site_id": siteA}), 200, "revoke")
 	e.expect(e.do("POST", "/api/v1/sos", tablet, budi, map[string]any{}), 403, "revoked device")
-	time.Sleep(200 * time.Millisecond) // audit writes are asynchronous
 	if n := e.count(`SELECT COUNT(*) FROM audit_log WHERE user_id LIKE $1`, realm1+"/admin1%"); n == 0 {
 		t.Fatal("no audit entries for admin")
 	}

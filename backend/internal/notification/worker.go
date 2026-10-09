@@ -46,7 +46,7 @@ func NewWorker(db repository.DBTX, rdb *redis.Client, st *settings.Store, log ze
 
 func defaultChannels() map[string]Channel {
 	return map[string]Channel{
-		"email":    emailChannel{},
+		"email": emailChannel{},
 		"whatsapp": whatsAppChannel{client: &http.Client{
 			Timeout: sendTimeout,
 			// Never follow redirects: the token must only go to the

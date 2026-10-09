@@ -7,6 +7,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/securepatrol/backend/internal/middleware"
 	"github.com/securepatrol/backend/internal/model"
 	"github.com/securepatrol/backend/internal/repository"
 	"github.com/securepatrol/backend/internal/service"
@@ -105,6 +106,7 @@ func (h *Handler) updateTemplate(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	middleware.SetAuditBefore(c, t)
 	var b templateBody
 	if err := parse(c, &b); err != nil {
 		return h.fail(c, err)
@@ -142,6 +144,7 @@ func (h *Handler) deleteTemplate(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	middleware.SetAuditBefore(c, t)
 	err = pgx.BeginFunc(c.Context(), h.DB, func(tx pgx.Tx) error {
 		if _, err := repository.DeleteFutureTemplateShifts(c.Context(), tx, t.ID, service.Now()); err != nil {
 			return err
@@ -231,6 +234,7 @@ func (h *Handler) updateShift(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	middleware.SetAuditBefore(c, s)
 	var b shiftBody
 	if err := parse(c, &b); err != nil {
 		return h.fail(c, err)
@@ -259,6 +263,7 @@ func (h *Handler) deleteShift(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	middleware.SetAuditBefore(c, s)
 	if err := repository.DeleteShift(c.Context(), h.DB, s.ID); err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return h.fail(c, service.Conflict("shift_has_attendance", "shift already has attendance and cannot be deleted"))

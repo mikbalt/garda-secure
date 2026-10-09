@@ -50,8 +50,8 @@ func ClockIn(ctx context.Context, pool *pgxpool.Pool, in ClockInInput) (*ClockIn
 	err = pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
 		if in.ID != nil {
 			if existing, err := repository.GetAttendance(ctx, tx, *in.ID); err == nil {
-				if existing.GuardID != in.Guard.ID {
-					return Conflict("id_conflict", "attendance id already used by another guard")
+				if err := CheckReplay(existing, false, in.Site.ID, in.Guard.ID); err != nil {
+					return err
 				}
 				res = &ClockInResult{Record: existing}
 				return nil

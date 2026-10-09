@@ -45,6 +45,11 @@ func (b *siteBody) validate() error {
 	if b.Name == "" {
 		return service.BadRequest("name_required", "name is required")
 	}
+	if err := service.CheckLengths(service.S("name", b.Name, service.MaxName),
+		service.F("client_id", b.ClientID, service.MaxShortText), service.F("address", b.Address, service.MaxAddress),
+		service.S("timezone", b.Timezone, 64)); err != nil {
+		return err
+	}
 	if b.Timezone == "" {
 		b.Timezone = "Asia/Jakarta"
 	}
@@ -115,6 +120,7 @@ func (h *Handler) updateSite(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	middleware.SetAuditBefore(c, site)
 	var b siteBody
 	if err := parse(c, &b); err != nil {
 		return h.fail(c, err)
@@ -141,10 +147,17 @@ type guardBody struct {
 	KeycloakUserID *string `json:"keycloak_user_id"`
 }
 
-func (h *Handler) validateGuard(c *fiber.Ctx, b *guardBody) error {
+// validateGuard checks a guard body; guardID is the guard being updated
+// ("" when creating).
+func (h *Handler) validateGuard(c *fiber.Ctx, b *guardBody, guardID string) error {
 	b.Name = strings.TrimSpace(b.Name)
 	if b.Name == "" {
 		return service.BadRequest("name_required", "name is required")
+	}
+	if err := service.CheckLengths(service.S("name", b.Name, service.MaxName),
+		service.F("employee_id", b.EmployeeID, service.MaxIdentifier),
+		service.F("keycloak_user_id", b.KeycloakUserID, service.MaxIdentifier)); err != nil {
+		return err
 	}
 	if b.Role == "" {
 		b.Role = "guard"
@@ -166,8 +179,19 @@ func (h *Handler) validateGuard(c *fiber.Ctx, b *guardBody) error {
 	if b.SiteID == nil {
 		return service.BadRequest("site_id_required", "site_id is required")
 	}
-	_, err := h.siteFor(c, *b.SiteID)
-	return err
+	if _, err := h.siteFor(c, *b.SiteID); err != nil {
+		return err
+	}
+	if b.EmployeeID != nil {
+		taken, err := repository.EmployeeIDTaken(c.Context(), h.DB, middleware.GetPrincipal(c).Realm, *b.EmployeeID, guardID)
+		if err != nil {
+			return err
+		}
+		if taken {
+			return service.Conflict("employee_id_taken", "employee ID %q is already used by another guard", *b.EmployeeID).WithField("employee_id")
+		}
+	}
+	return nil
 }
 
 // guardFor loads a guard assigned to one of the caller's sites.
@@ -217,7 +241,7 @@ func (h *Handler) createGuard(c *fiber.Ctx) error {
 	if err := parse(c, &b); err != nil {
 		return h.fail(c, err)
 	}
-	if err := h.validateGuard(c, &b); err != nil {
+	if err := h.validateGuard(c, &b, ""); err != nil {
 		return h.fail(c, err)
 	}
 	g, err := repository.CreateGuard(c.Context(), h.DB, model.Guard{
@@ -235,11 +259,12 @@ func (h *Handler) updateGuard(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	middleware.SetAuditBefore(c, g)
 	var b guardBody
 	if err := parse(c, &b); err != nil {
 		return h.fail(c, err)
 	}
-	if err := h.validateGuard(c, &b); err != nil {
+	if err := h.validateGuard(c, &b, g.ID); err != nil {
 		return h.fail(c, err)
 	}
 	g.Name, g.EmployeeID, g.SiteID, g.Role, g.Status, g.KeycloakUserID =
@@ -264,6 +289,7 @@ func (h *Handler) setGuardPin(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	middleware.SetAuditBefore(c, fiber.Map{"guard_id": g.ID, "has_pin": g.HasPin})
 	var b struct {
 		Pin string `json:"pin"`
 	}
@@ -304,6 +330,7 @@ func (h *Handler) updateDevice(c *fiber.Ctx) error {
 	if d.KeycloakRealm != middleware.GetPrincipal(c).Realm {
 		return h.fail(c, repository.ErrNotFound)
 	}
+	middleware.SetAuditBefore(c, d)
 	var b struct {
 		Name   string  `json:"name"`
 		SiteID *string `json:"site_id"`
@@ -315,6 +342,9 @@ func (h *Handler) updateDevice(c *fiber.Ctx) error {
 	b.Name = strings.TrimSpace(b.Name)
 	if b.Name == "" {
 		b.Name = d.Name
+	}
+	if err := service.CheckLengths(service.S("name", b.Name, service.MaxShortText)); err != nil {
+		return h.fail(c, err)
 	}
 	switch b.Status {
 	case "pending", "active", "revoked":

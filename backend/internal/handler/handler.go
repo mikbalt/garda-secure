@@ -175,6 +175,8 @@ func (h *Handler) Register(api fiber.Router) {
 	bk := api.Group("/backups", platform)
 	bk.Get("/", h.listBackups)
 	bk.Post("/", h.createBackup)
+
+	api.Get("/audit", web(rolesAdmin...), h.listAudit)
 }
 
 // ── Error handling ───────────────────────────────────────────────────────────

@@ -14,6 +14,9 @@ import (
 	"github.com/securepatrol/backend/internal/repository"
 )
 
+// MaxCheckpoints caps the checkpoints of one route.
+const MaxCheckpoints = 500
+
 // StaleSessionAge is when an in-progress session is auto-abandoned (D-008).
 const StaleSessionAge = 12 * time.Hour
 
@@ -24,8 +27,14 @@ func NormalizeRoute(r *model.Route) error {
 	if r.Name == "" {
 		return BadRequest("name_required", "route name is required")
 	}
+	if err := CheckLengths(S("name", r.Name, MaxName)); err != nil {
+		return err
+	}
 	if len(r.Checkpoints) == 0 {
 		return BadRequest("checkpoints_required", "a route needs at least one checkpoint")
+	}
+	if len(r.Checkpoints) > MaxCheckpoints {
+		return BadRequest("too_many_checkpoints", "a route can have at most %d checkpoints", MaxCheckpoints)
 	}
 	sort.SliceStable(r.Checkpoints, func(i, j int) bool {
 		return r.Checkpoints[i].OrderIndex < r.Checkpoints[j].OrderIndex
@@ -43,6 +52,10 @@ func NormalizeRoute(r *model.Route) error {
 		}
 		if cp.Name == "" {
 			return BadRequest("checkpoint_name_required", "checkpoint %d has no name", i+1)
+		}
+		if err := CheckLengths(S("checkpoints.name", cp.Name, MaxName), S("checkpoints.qr_code", cp.QRCode, MaxName),
+			S("checkpoints.id", cp.ID, MaxIdentifier)); err != nil {
+			return err
 		}
 		if ids[cp.ID] {
 			return BadRequest("duplicate_checkpoint", "duplicate checkpoint id %q", cp.ID)
@@ -190,8 +203,8 @@ func StartSession(ctx context.Context, pool *pgxpool.Pool, in StartSessionInput)
 	if err != nil {
 		return nil, false, err
 	}
-	if !created && s.SiteID != in.Site.ID {
-		return nil, false, Conflict("id_conflict", "session id already used")
+	if err := CheckReplay(s, created, in.Site.ID, in.Guard.ID); err != nil {
+		return nil, false, err
 	}
 	return s, created, nil
 }
@@ -263,11 +276,18 @@ func RecordScan(ctx context.Context, pool *pgxpool.Pool, in ScanInput) (*model.C
 	}
 
 	sessionID := s.ID
-	return repository.InsertScan(ctx, pool, model.CheckpointScan{
+	scan, created, err := repository.InsertScan(ctx, pool, model.CheckpointScan{
 		SessionID: &sessionID, RouteID: route.ID, CheckpointID: cp.ID, GuardID: in.Guard.ID,
 		DeviceID: in.DeviceID, ScannedAt: at, Method: in.Method, PhotoObjectKey: in.PhotoObjectKey,
 		GPSLat: in.GPSLat, GPSLng: in.GPSLng,
 	}, in.ID)
+	if err != nil {
+		return nil, false, err
+	}
+	if err := CheckReplay(scan, created, s.ID, in.Guard.ID); err != nil {
+		return nil, false, err
+	}
+	return scan, created, nil
 }
 
 // EndSession completes a session (or marks it abandoned).

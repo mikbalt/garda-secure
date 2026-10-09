@@ -116,6 +116,11 @@ func (h *Handler) createIncident(c *fiber.Ctx) error {
 	if b.Type == "" {
 		return h.fail(c, service.BadRequest("type_required", "type (category) is required"))
 	}
+	if err := service.CheckLengths(service.S("type", b.Type, service.MaxShortText),
+		service.F("description", b.Description, service.MaxDescription),
+		service.F("location", b.Location, service.MaxLocation)); err != nil {
+		return h.fail(c, err)
+	}
 	if b.Severity == "" {
 		b.Severity = "low"
 	}
@@ -146,6 +151,9 @@ func (h *Handler) createIncident(c *fiber.Ctx) error {
 		PhotoObjectKeys: b.PhotoObjectKeys, OccurredAt: at,
 	}, nilIfEmpty(b.ID))
 	if err != nil {
+		return h.fail(c, err)
+	}
+	if err := service.CheckReplay(inc, isNew, site.ID, guard.ID); err != nil {
 		return h.fail(c, err)
 	}
 	if isNew && (inc.Severity == "high" || inc.Severity == "critical") {
@@ -209,7 +217,16 @@ func (h *Handler) amendIncident(c *fiber.Ctx) error {
 	if len(b.Changes) == 0 {
 		return h.fail(c, service.BadRequest("changes_required", "no changes given"))
 	}
+	if err := service.CheckLengths(service.S("reason", b.Reason, service.MaxReason)); err != nil {
+		return h.fail(c, err)
+	}
+	amendMax := map[string]int{"type": service.MaxShortText, "description": service.MaxDescription, "location": service.MaxLocation}
 	for k, v := range b.Changes {
+		if max, ok := amendMax[k]; ok {
+			if err := service.CheckLengths(service.S("changes."+k, v, max)); err != nil {
+				return h.fail(c, err)
+			}
+		}
 		switch k {
 		case "type", "description", "location":
 		case "severity":
@@ -266,10 +283,20 @@ func (h *Handler) createSos(c *fiber.Ctx) error {
 		return h.fail(c, err)
 	}
 	guard := middleware.GetGuard(c)
+	// Retries of a known alert are never throttled; new alerts are limited
+	// per tablet (RATE_LIMIT_SOS_PER_MIN) against flooding.
+	if b.ID == nil || *b.ID == "" || !h.sosExists(c, *b.ID) {
+		if ok, retry := h.limiter.Allow(c.Context(), "sos:"+*deviceID(c), h.Cfg.RateLimitSOS); !ok {
+			return middleware.TooManyRequests(c, retry)
+		}
+	}
 	alert, isNew, err := repository.CreateSosAlert(c.Context(), h.DB, model.SosAlert{
 		GuardID: guard.ID, SiteID: site.ID, DeviceID: deviceID(c), FiredAt: at, GPSLat: b.GPSLat, GPSLng: b.GPSLng,
 	}, nilIfEmpty(b.ID))
 	if err != nil {
+		return h.fail(c, err)
+	}
+	if err := service.CheckReplay(alert, isNew, site.ID, guard.ID); err != nil {
 		return h.fail(c, err)
 	}
 	if isNew {
@@ -282,6 +309,12 @@ func (h *Handler) createSos(c *fiber.Ctx) error {
 		})
 	}
 	return created(c, isNew, alert)
+}
+
+// sosExists reports whether an SOS alert with this ID is already stored.
+func (h *Handler) sosExists(c *fiber.Ctx, id string) bool {
+	_, err := repository.GetSosAlert(c.Context(), h.DB, id)
+	return err == nil
 }
 
 // POST /sos/:id/acknowledge — supervisors/admins on the web, or a supervisor
@@ -337,6 +370,11 @@ func (h *Handler) createDefect(c *fiber.Ctx) error {
 	if deref(b.DefectType) == "" {
 		return h.fail(c, service.BadRequest("defect_type_required", "defect_type is required"))
 	}
+	if err := service.CheckLengths(service.F("defect_type", b.DefectType, service.MaxShortText),
+		service.F("location", b.Location, service.MaxLocation),
+		service.F("description", b.Description, service.MaxDescription)); err != nil {
+		return h.fail(c, err)
+	}
 	site, err := h.deviceSite(c)
 	if err != nil {
 		return h.fail(c, err)
@@ -355,6 +393,9 @@ func (h *Handler) createDefect(c *fiber.Ctx) error {
 		PhotoObjectKey: nilIfEmpty(b.PhotoObjectKey), CreatedAt: at,
 	}, nilIfEmpty(b.ID))
 	if err != nil {
+		return h.fail(c, err)
+	}
+	if err := service.CheckReplay(d, isNew, site.ID, guard.ID); err != nil {
 		return h.fail(c, err)
 	}
 	if isNew {
@@ -435,6 +476,12 @@ func (h *Handler) createVisitor(c *fiber.Ctx) error {
 	if b.VisitorName == "" {
 		return h.fail(c, service.BadRequest("visitor_name_required", "visitor_name is required"))
 	}
+	if err := service.CheckLengths(service.S("visitor_name", b.VisitorName, service.MaxName),
+		service.F("id_type", b.IDType, service.MaxShortText), service.F("id_number", b.IDNumber, service.MaxIdentifier),
+		service.F("plate", b.Plate, service.MaxIdentifier), service.F("host_name", b.HostName, service.MaxName),
+		service.F("purpose", b.Purpose, service.MaxReason)); err != nil {
+		return h.fail(c, err)
+	}
 	site, err := h.deviceSite(c)
 	if err != nil {
 		return h.fail(c, err)
@@ -446,13 +493,17 @@ func (h *Handler) createVisitor(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	guard := middleware.GetGuard(c)
 	v, isNew, err := repository.CreateVisitor(c.Context(), h.DB, model.VisitorLog{
-		SiteID: site.ID, GuardID: middleware.GetGuard(c).ID, DeviceID: deviceID(c), VisitorName: b.VisitorName,
+		SiteID: site.ID, GuardID: guard.ID, DeviceID: deviceID(c), VisitorName: b.VisitorName,
 		IDType: nilIfEmpty(b.IDType), IDNumber: nilIfEmpty(b.IDNumber), Plate: nilIfEmpty(b.Plate),
 		HostName: nilIfEmpty(b.HostName), EntryAt: &entry, Purpose: nilIfEmpty(b.Purpose),
 		PhotoObjectKey: nilIfEmpty(b.PhotoObjectKey),
 	}, nilIfEmpty(b.ID))
 	if err != nil {
+		return h.fail(c, err)
+	}
+	if err := service.CheckReplay(v, isNew, site.ID, guard.ID); err != nil {
 		return h.fail(c, err)
 	}
 	return created(c, isNew, v)

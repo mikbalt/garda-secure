@@ -5,7 +5,6 @@ package service
 import (
 	"fmt"
 	"net/http"
-	"strings"
 	"unicode/utf8"
 )
 
@@ -41,6 +40,29 @@ func NotFound(code, format string, args ...any) *Error {
 // Forbidden reports an action the caller may not perform.
 func Forbidden(code, format string, args ...any) *Error {
 	return newErr(http.StatusForbidden, code, format, args...)
+}
+
+// Owned is a record created through idempotent tablet sync.
+type Owned interface {
+	// Owner returns the scope (site, or session for scans) and the guard
+	// that created the record.
+	Owner() (scope, guardID string)
+}
+
+// CheckReplay guards idempotent creates (ON CONFLICT (id) DO NOTHING, then
+// load the existing row): a repeat is only answered with the stored record
+// when it was created in the same scope by the same guard. Otherwise the
+// client reused an ID it does not own (e.g. another site's or realm's
+// record) and gets 409 id_conflict instead of that record.
+func CheckReplay(rec Owned, created bool, scope, guardID string) error {
+	if created {
+		return nil
+	}
+	s, g := rec.Owner()
+	if s != scope || g != guardID {
+		return Conflict("id_conflict", "this id is already used by another record")
+	}
+	return nil
 }
 
 // WithField records which input field the error is about.
@@ -92,6 +114,3 @@ const (
 	MaxAddress     = 500
 	MaxIdentifier  = 64 // employee IDs, ID card numbers, plates
 )
-
-// TrimmedLen is the rune length of a trimmed string.
-func TrimmedLen(s string) int { return utf8.RuneCountInString(strings.TrimSpace(s)) }
