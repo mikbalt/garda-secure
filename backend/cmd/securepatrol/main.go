@@ -100,8 +100,12 @@ func main() {
 	if err := stg.EnsureBuckets(ctx, []string{cfg.MinioBucketPhotos, cfg.MinioBucketBackups}); err != nil {
 		logger.Fatal().Err(err).Msg("minio bucket setup failed")
 	}
-	if err := stg.EnableVersioning(ctx, cfg.MinioBucketBackups); err != nil {
-		logger.Warn().Err(err).Msg("could not enable versioning on backups bucket")
+	// Photos are write-once through the API (BE-S4); versioning keeps any
+	// out-of-band overwrite recoverable.
+	for _, b := range []string{cfg.MinioBucketBackups, cfg.MinioBucketPhotos} {
+		if err := stg.EnableVersioning(ctx, b); err != nil {
+			logger.Warn().Err(err).Str("bucket", b).Msg("could not enable bucket versioning")
+		}
 	}
 
 	settingsStore, err := settings.NewStore(pool, cfg)

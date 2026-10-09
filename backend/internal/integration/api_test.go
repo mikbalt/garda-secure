@@ -126,7 +126,10 @@ func newEnv(t *testing.T, opts ...func(*config.Config)) *env {
 	for _, o := range opts {
 		o(cfg)
 	}
-	stg, err := storage.New(storage.Options{Endpoint: "127.0.0.1:1", AccessKey: "x", SecretKey: "y"})
+	if cfg.MinioEndpoint == "" {
+		cfg.MinioEndpoint = "127.0.0.1:1" // no object store: photos stay "not uploaded"
+	}
+	stg, err := storage.New(storage.Options{Endpoint: cfg.MinioEndpoint, AccessKey: "x", SecretKey: "y"})
 	if err != nil {
 		t.Fatal(err)
 	}

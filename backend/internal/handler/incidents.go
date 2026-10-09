@@ -1,17 +1,13 @@
 package handler
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
 
 	"github.com/securepatrol/backend/internal/middleware"
 	"github.com/securepatrol/backend/internal/model"
@@ -538,74 +534,4 @@ func (h *Handler) visitorExit(c *fiber.Ctx) error {
 		return h.fail(c, err)
 	}
 	return c.JSON(out)
-}
-
-// ── Media ────────────────────────────────────────────────────────────────────
-
-// GET /media/url?key= — pre-signed URL for any stored photo (selfies, defects,
-// visitors, scans) of a site the caller can read.
-func (h *Handler) mediaURL(c *fiber.Ctx) error {
-	key := c.Query("key")
-	parts := strings.SplitN(key, "/", 3)
-	if len(parts) < 3 || parts[0] != "sites" {
-		return h.fail(c, service.BadRequest("invalid_object_key", "invalid photo key"))
-	}
-	if err := service.CheckObjectKey(&key, parts[1]); err != nil {
-		return h.fail(c, err)
-	}
-	if _, err := h.siteFor(c, parts[1]); err != nil {
-		return h.fail(c, err)
-	}
-	return c.JSON(h.photos(c.Context(), key)[0])
-}
-
-// MaxPhotoBytes caps a single photo upload.
-const MaxPhotoBytes = 10 << 20
-
-var imageExt = map[string]string{"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
-
-// POST /media (tablet, multipart) fields: file, kind, id? — returns the object
-// key to reference from records. Re-uploading the same id overwrites, so
-// retries are safe.
-func (h *Handler) uploadMedia(c *fiber.Ctx) error {
-	site, err := h.deviceSite(c)
-	if err != nil {
-		return h.fail(c, err)
-	}
-	kind := c.FormValue("kind")
-	if !slices.Contains(service.MediaKinds, kind) {
-		return h.fail(c, service.BadRequest("invalid_kind", "kind must be one of %s", strings.Join(service.MediaKinds, ", ")))
-	}
-	id := c.FormValue("id")
-	if id == "" {
-		id = uuid.NewString()
-	} else if err := optionalUUID(&id); err != nil {
-		return h.fail(c, err)
-	}
-	fh, err := c.FormFile("file")
-	if err != nil {
-		return h.fail(c, service.BadRequest("file_required", "multipart field 'file' is required"))
-	}
-	if fh.Size > MaxPhotoBytes {
-		return h.fail(c, service.BadRequest("file_too_large", "photo exceeds %d MB", MaxPhotoBytes>>20))
-	}
-	f, err := fh.Open()
-	if err != nil {
-		return h.fail(c, err)
-	}
-	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, MaxPhotoBytes+1))
-	if err != nil {
-		return h.fail(c, err)
-	}
-	ct := http.DetectContentType(data)
-	ext, ok := imageExt[ct]
-	if !ok {
-		return h.fail(c, service.BadRequest("invalid_file_type", "only JPEG, PNG or WebP images are accepted"))
-	}
-	key := service.ObjectKey(site.ID, kind, id, ext)
-	if _, err := h.Storage.Put(c.Context(), h.Cfg.MinioBucketPhotos, key, bytes.NewReader(data), int64(len(data)), ct); err != nil {
-		return h.fail(c, err)
-	}
-	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"object_key": key, "content_type": ct, "size": len(data)})
 }
