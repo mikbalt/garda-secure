@@ -9,7 +9,7 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
-| *(nothing claimed)* | | | |
+| Web UX/design overhaul: new design system, onboarding "getting started" flow, clearer navigation and page flows | `muhamhad-pc1/claude` | 2026-10-09 | Please don't edit `web/` until pushed. |
 
 ## Migration numbers
 
