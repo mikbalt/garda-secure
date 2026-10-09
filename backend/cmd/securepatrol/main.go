@@ -129,15 +129,7 @@ func main() {
 	validator.BindClients(cfg.KeycloakWebClient, cfg.KeycloakTabletClient)
 
 	// ── Fiber app ────────────────────────────────────────────────────────────
-	app := fiber.New(fiber.Config{
-		AppName:      "SecurePatrol API v1",
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 60 * time.Second,
-		IdleTimeout:  120 * time.Second,
-		BodyLimit:    handler.MaxPhotoBytes + 1<<20, // photo + multipart overhead
-		// Behind nginx: trust X-Forwarded-For for audit IPs.
-		ProxyHeader: fiber.HeaderXForwardedFor,
-	})
+	app := fiber.New(handler.AppConfig(cfg, logger))
 
 	app.Use(requestid.New())
 	app.Use(middleware.Logger(logger))
@@ -156,12 +148,7 @@ func main() {
 	h := &handler.Handler{
 		DB: pool, Redis: rdb, Storage: stg, Notifier: notifier, Settings: settingsStore, Cfg: cfg, Log: logger,
 	}
-	api := app.Group("/api/v1",
-		middleware.JWT(validator),
-		middleware.LoadDevice(pool),
-		middleware.Audit(pool),
-	)
-	h.Register(api)
+	h.Mount(app, validator)
 
 	// ── Graceful shutdown ────────────────────────────────────────────────────
 	go func() {

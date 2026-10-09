@@ -34,6 +34,8 @@ type Handler struct {
 	Settings *settings.Store
 	Cfg      *config.Config
 	Log      zerolog.Logger
+
+	limiter *middleware.Limiter // set by Mount
 }
 
 // Role groups used in route registration.
@@ -45,8 +47,8 @@ var (
 	rolesAdmin  = []string{middleware.RoleAdmin}
 )
 
-// Register mounts every /api/v1 route. The group must already run the JWT,
-// LoadDevice and Audit middleware.
+// Register mounts every /api/v1 route. The group must already run the
+// middleware chain set up by Mount.
 func (h *Handler) Register(api fiber.Router) {
 	web := func(roles ...string) fiber.Handler { return middleware.RequireRoles(roles...) }
 	device := middleware.RequireActiveDevice()

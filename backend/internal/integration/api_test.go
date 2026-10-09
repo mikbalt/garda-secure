@@ -137,9 +137,8 @@ func newEnv(t *testing.T) *env {
 	}, []string{"securepatrol-web", "securepatrol-tablet"}, log)
 
 	h := &handler.Handler{DB: pool, Redis: rdb, Storage: stg, Notifier: notifier, Settings: st, Cfg: cfg, Log: log}
-	app := fiber.New(fiber.Config{BodyLimit: handler.MaxPhotoBytes + 1<<20})
-	api := app.Group("/api/v1", middleware.JWT(validator), middleware.LoadDevice(pool), middleware.Audit(pool))
-	h.Register(api)
+	app := fiber.New(handler.AppConfig(cfg, log))
+	h.Mount(app, validator)
 
 	return &env{t: t, app: app, pool: pool, mr: mr, key: key, settings: st,
 		sched: jobs.NewScheduler(pool, rdb, notifier, stg, cfg, log)}
