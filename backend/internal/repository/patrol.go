@@ -221,3 +221,15 @@ func InsertSLABreach(ctx context.Context, db DBTX, sessionID, checkpointID strin
 	}
 	return tag.RowsAffected() > 0, nil
 }
+
+// GetActiveSessionForGuard returns the guard's in-progress session at a site.
+func GetActiveSessionForGuard(ctx context.Context, db DBTX, guardID, siteID string) (*model.PatrolSession, error) {
+	s, err := scanSession(db.QueryRow(ctx, `
+		SELECT `+sessionColumns+` FROM patrol_sessions
+		WHERE guard_id = $1 AND site_id = $2 AND status = 'in_progress'
+		ORDER BY started_at DESC LIMIT 1`, guardID, siteID))
+	if err != nil {
+		return nil, mapNoRows(err)
+	}
+	return &s, nil
+}

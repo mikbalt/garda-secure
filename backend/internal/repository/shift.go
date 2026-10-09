@@ -210,3 +210,17 @@ func FindShiftForClockIn(ctx context.Context, db DBTX, guardID, siteID string, t
 	}
 	return &s, nil
 }
+
+// CurrentOrNextShift returns the guard's shift at a site that has not ended
+// yet (the running one, else the next one), or ErrNotFound.
+func CurrentOrNextShift(ctx context.Context, db DBTX, guardID, siteID string, now time.Time) (*model.Shift, error) {
+	s, err := scanShift(db.QueryRow(ctx, `
+		SELECT `+shiftColumns+` FROM shifts
+		WHERE guard_id = $1 AND site_id = $2 AND end_time > $3
+		ORDER BY start_time
+		LIMIT 1`, guardID, siteID, now))
+	if err != nil {
+		return nil, mapNoRows(err)
+	}
+	return &s, nil
+}

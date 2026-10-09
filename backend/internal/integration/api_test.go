@@ -448,6 +448,13 @@ func TestAPIEndToEnd(t *testing.T) {
 		"id": sessID, "route_id": routeID, "started_at": rfc(now.Add(-10 * time.Minute)),
 	}), 201, "start session")
 	e.expect(e.do("POST", "/api/v1/patrol/sessions", tablet, budi, map[string]any{"id": sessID, "route_id": routeID}), 200, "start retry")
+	st := e.expect(e.do("GET", "/api/v1/device/status", tablet, budi, nil), 200, "device status").obj()
+	if st["session"] == nil || st["shift"] == nil {
+		t.Fatalf("device status lacks session/shift: %v", st)
+	}
+	if sess := st["session"].(map[string]any)["session"].(map[string]any); sess["id"] != sessID {
+		t.Fatalf("device status session = %v", sess["id"])
+	}
 	e.expect(e.do("POST", "/api/v1/patrol/sessions/"+sessID+"/scans", tablet, budi, map[string]any{
 		"qr_code": "QR-GATE", "scanned_at": rfc(now.Add(-8 * time.Minute)),
 	}), 201, "scan gate")
@@ -532,6 +539,9 @@ func TestAPIEndToEnd(t *testing.T) {
 	sosID := uuid.NewString()
 	e.expect(e.do("POST", "/api/v1/sos", tablet, budi, map[string]any{"id": sosID, "gps_lat": -6.2, "gps_lng": 106.8}), 201, "sos")
 	e.expect(e.do("POST", "/api/v1/sos", tablet, budi, map[string]any{"id": sosID}), 200, "sos retry")
+	if l := e.expect(e.do("GET", "/api/v1/device/sos", tablet, "", nil), 200, "device sos").list(); len(l) != 1 {
+		t.Fatalf("device sos = %d", len(l))
+	}
 	if n := e.count(`SELECT COUNT(*) FROM sos_alerts`); n != 1 {
 		t.Fatalf("sos alerts = %d", n)
 	}

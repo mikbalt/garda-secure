@@ -33,6 +33,8 @@ Reports accept `format=csv` (UTF-8 with BOM, opens in Excel).
 | GET | `/device/roster` | active device: `{site_id, guards:[{id,name,employee_id,role,pin_hash}], generated_at}` — bcrypt PIN hashes for offline unlock |
 | GET | `/device/routes` | active routes of the site (cache for offline QR scanning) |
 | GET | `/device/shifts` | field: acting guard's shifts −1 day … +7 days |
+| GET | `/device/status` | field: `{server_time, config, guard, shift? (running or next), shift_attendance?, open_attendance?, session? (progress of the guard's running patrol)}` — call after unlock/restart |
+| GET | `/device/sos` | active device: unacknowledged SOS alerts of the site (any tablet), for supervisors on duty |
 
 Denials: `403 {code: device_unregistered | device_pending | device_revoked | guard_unknown | guard_not_allowed}`, `400 {code: guard_required}`.
 

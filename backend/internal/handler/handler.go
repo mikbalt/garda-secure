@@ -68,6 +68,8 @@ func (h *Handler) Register(api fiber.Router) {
 	dev.Get("/roster", device, h.deviceRoster)
 	dev.Get("/routes", device, h.deviceRoutes)
 	dev.Get("/shifts", append(field, h.deviceShifts)...)
+	dev.Get("/status", append(field, h.deviceStatus)...)
+	dev.Get("/sos", device, h.deviceSos)
 
 	sites := api.Group("/sites")
 	sites.Get("/", web(rolesWeb...), h.listSites)

@@ -416,3 +416,67 @@ func (h *Handler) deviceShifts(c *fiber.Ctx) error {
 	}
 	return c.JSON(shifts)
 }
+
+// deviceStatus tells the tablet where the acting guard stands right now: the
+// running (or next) shift and its attendance, any open clock-in, and a
+// running patrol — so the app is correct after a restart or a guard switch.
+func (h *Handler) deviceStatus(c *fiber.Ctx) error {
+	site, err := h.deviceSite(c)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	g := middleware.GetGuard(c)
+	ctx := c.Context()
+	now := service.Now()
+	out := fiber.Map{"server_time": now, "config": site.Config(), "guard": g}
+
+	opt := func(v any, err error) (any, error) {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, nil
+		}
+		return v, err
+	}
+	shift, err := repository.CurrentOrNextShift(ctx, h.DB, g.ID, site.ID, now)
+	if v, err := opt(shift, err); err != nil {
+		return h.fail(c, err)
+	} else if v != nil {
+		out["shift"] = shift
+		rec, err := repository.GetAttendanceByShift(ctx, h.DB, shift.ID)
+		if v, err := opt(rec, err); err != nil {
+			return h.fail(c, err)
+		} else if v != nil {
+			out["shift_attendance"] = rec
+		}
+	}
+	open, err := repository.GetOpenAttendance(ctx, h.DB, g.ID, site.ID)
+	if v, err := opt(open, err); err != nil {
+		return h.fail(c, err)
+	} else if v != nil {
+		out["open_attendance"] = open
+	}
+	sess, err := repository.GetActiveSessionForGuard(ctx, h.DB, g.ID, site.ID)
+	if v, err := opt(sess, err); err != nil {
+		return h.fail(c, err)
+	} else if v != nil {
+		p, err := service.LoadProgress(ctx, h.DB, *sess)
+		if err != nil {
+			return h.fail(c, err)
+		}
+		out["session"] = p
+	}
+	return c.JSON(out)
+}
+
+// deviceSos lists the site's unacknowledged SOS alerts for every tablet
+// there, so supervisors on duty see alerts raised on other tablets.
+func (h *Handler) deviceSos(c *fiber.Ctx) error {
+	site, err := h.deviceSite(c)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	alerts, err := repository.ListSosAlerts(c.Context(), h.DB, site.ID, true)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	return c.JSON(alerts)
+}
