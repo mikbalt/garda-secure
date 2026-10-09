@@ -1,0 +1,242 @@
+# docker-compose.ops.yml — operations: monitoring/alerting and the off-site
+# backup. Included through COMPOSE_FILE in .env. Nothing here is reachable
+# from the LAN: Grafana/Prometheus/Alertmanager bind to 127.0.0.1 (use an SSH
+# tunnel), exporters are internal only. See docs/runbook.md §8 and §5.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+x-hardening: &hardening
+  security_opt:
+    - no-new-privileges:true
+
+# Exporters need no privileges and no writable root fs.
+x-exporter: &exporter
+  restart: always
+  read_only: true
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  networks:
+    - securepatrol
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.13.4
+    restart: always
+    <<: *hardening
+    logging: *logging
+    mem_limit: ${PROMETHEUS_MEM_LIMIT:-1g}
+    # The config is a template (SERVER_HOST for the blackbox probes); it is
+    # rendered at start without putting values on any command line.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        awk -f /etc/sp/render.awk /etc/prometheus/prometheus.yml.tmpl > /prometheus/prometheus.yml &&
+        exec /bin/prometheus
+        --config.file=/prometheus/prometheus.yml
+        --storage.tsdb.path=/prometheus
+        --storage.tsdb.retention.time=30d
+        --storage.tsdb.retention.size=8GB
+    environment:
+      SERVER_HOST: ${SERVER_HOST}
+    volumes:
+      - ./prometheus/prometheus.yml.tmpl:/etc/prometheus/prometheus.yml.tmpl:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ./scripts/render.awk:/etc/sp/render.awk:ro
+      - prometheusdata:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/-/ready"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - securepatrol
+
+  alertmanager:
+    image: prom/alertmanager:v0.34.1
+    restart: always
+    <<: *hardening
+    logging: *logging
+    entrypoint: ["/bin/sh", "/etc/alertmanager/entrypoint.sh"]
+    environment:
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
+      ALERT_SMTP_HOST: ${ALERT_SMTP_HOST:-}
+      ALERT_SMTP_PORT: ${ALERT_SMTP_PORT:-587}
+      ALERT_SMTP_USER: ${ALERT_SMTP_USER:-}
+      ALERT_SMTP_PASSWORD: ${ALERT_SMTP_PASSWORD:-}
+      ALERT_SMTP_FROM: ${ALERT_SMTP_FROM:-}
+      ALERT_SMTP_REQUIRE_TLS: ${ALERT_SMTP_REQUIRE_TLS:-true}
+      SERVER_HOST: ${SERVER_HOST}
+    volumes:
+      - ./alertmanager:/etc/alertmanager:ro
+      - ./scripts/render.awk:/etc/sp/render.awk:ro
+      - alertmanagerdata:/alertmanager
+    ports:
+      - "127.0.0.1:9093:9093"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9093/-/ready"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - securepatrol
+
+  grafana:
+    image: grafana/grafana:12.4.12
+    restart: always
+    <<: *hardening
+    logging: *logging
+    mem_limit: ${GRAFANA_MEM_LIMIT:-512m}
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_SERVER_ROOT_URL: http://127.0.0.1:3001/
+    volumes:
+      - grafanadata:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana-dashboards:ro
+    ports:
+      - "127.0.0.1:3001:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - securepatrol
+
+  node-exporter:
+    <<: *exporter
+    image: prom/node-exporter:v1.12.1
+    logging: *logging
+    pid: host
+    command:
+      - --path.rootfs=/host
+      - --collector.textfile.directory=/textfile
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/docker/.+)($$|/)
+    volumes:
+      - /:/host:ro,rslave
+      # Status files written by backup-offsite (sp_offsite_backup_*).
+      - offsite-status:/textfile:ro
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.55.1
+    restart: always
+    logging: *logging
+    # cAdvisor needs host access (read-only mounts + /dev/kmsg); it is the
+    # source of the container restart / memory alerts.
+    privileged: true
+    devices:
+      - /dev/kmsg
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=30s
+      - --store_container_labels=false
+      - --whitelisted_container_labels=com.docker.compose.service,com.docker.compose.project
+      - --disable_metrics=advtcp,cpu_topology,disk,hugetlb,memory_numa,percpu,referenced_memory,resctrl,sched,tcp,udp
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks:
+      - securepatrol
+
+  postgres-exporter:
+    <<: *exporter
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
+    logging: *logging
+    environment:
+      # Separate fields: no password escaping problems, nothing in argv.
+      DATA_SOURCE_URI: postgres:5432/${POSTGRES_DB}?sslmode=disable
+      DATA_SOURCE_USER: sp_monitor
+      DATA_SOURCE_PASS: ${PG_MONITOR_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  redis-exporter:
+    <<: *exporter
+    image: oliver006/redis_exporter:v1.93.0
+    logging: *logging
+    environment:
+      REDIS_ADDR: redis://redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  blackbox-exporter:
+    <<: *exporter
+    image: prom/blackbox-exporter:v0.29.0
+    logging: *logging
+    command: ["--config.file=/etc/blackbox/blackbox.yml"]
+    volumes:
+      - ./blackbox/blackbox.yml:/etc/blackbox/blackbox.yml:ro
+      # Probes verify the server certificate against the private CA (ca.pem).
+      - ./nginx/certs:/etc/blackbox/certs:ro
+    # Reach SERVER_HOST via the Docker host, independent of LAN DNS.
+    extra_hosts:
+      - "${SERVER_HOST}:host-gateway"
+
+  # Nightly encrypted off-site copy (restic): backups bucket (DB dumps),
+  # photos bucket and the config bundle (.env, certs, realm files).
+  backup-offsite:
+    build:
+      context: ./backup-offsite
+    image: ${IMAGE_REPO:-securepatrol}/backup-offsite:${VERSION:-dev}
+    restart: always
+    <<: *hardening
+    logging: *logging
+    environment:
+      TZ: ${BACKUP_TZ:-Asia/Jakarta}
+      OFFSITE_SCHEDULE: ${OFFSITE_SCHEDULE:-30 3 * * *}
+      RESTIC_REPOSITORY: /repo
+      RESTIC_PASSWORD: ${OFFSITE_RESTIC_PASSWORD}
+      RESTIC_CACHE_DIR: /cache/restic
+      # Read-only key when configured (minio-init), else root.
+      MC_HOST_sp: http://${MINIO_OFFSITE_ACCESS_KEY:-${MINIO_ROOT_USER}}:${MINIO_OFFSITE_SECRET_KEY:-${MINIO_ROOT_PASSWORD}}@minio:9000
+      MINIO_BUCKET_PHOTOS: ${MINIO_BUCKET_PHOTOS}
+      MINIO_BUCKET_BACKUPS: ${MINIO_BUCKET_BACKUPS}
+      SERVER_HOST: ${SERVER_HOST}
+    volumes:
+      - ${OFFSITE_BACKUP_REPO:-/mnt/securepatrol-offsite}:/repo
+      - offsite-staging:/cache
+      - offsite-status:/status
+      # Config bundle (read-only): secrets, TLS/CA keys, realm files.
+      - ./.env:/config/infra.env:ro
+      - ./nginx/certs:/config/certs:ro
+      - ./keycloak/realms:/config/realms:ro
+    depends_on:
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/offsite-health"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - securepatrol
+
+volumes:
+  grafanadata:
+  prometheusdata:
+  alertmanagerdata:
+  offsite-staging:
+  offsite-status:
