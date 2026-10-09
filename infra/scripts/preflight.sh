@@ -178,7 +178,7 @@ elif [ ! -d "$OFFSITE_BACKUP_REPO" ]; then
 fi
 
 # ── tools used by make keycloak-config / new-realm ──────────────────────────
-command -v jq >/dev/null || warnp "jq is not installed (needed by make keycloak-config / new-realm): apt install jq"
+command -v jq >/dev/null || fail "jq is not installed (make up / deploy run keycloak-config, which needs it): apt install jq"
 
 echo
 if [ "$fails" -gt 0 ]; then
