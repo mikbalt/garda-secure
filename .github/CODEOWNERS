@@ -1,0 +1,10 @@
+# Reviews required by branch protection on `init` (Settings → Branches →
+# "Require review from Code Owners"). One maintainer today; add people per
+# area as the team grows.
+*                 @mikbalt
+
+# Production-impacting areas: deploy pipeline, infrastructure, migrations, auth.
+/.github/         @mikbalt
+/infra/           @mikbalt
+/backend/migrations/ @mikbalt
+/infra/keycloak/  @mikbalt

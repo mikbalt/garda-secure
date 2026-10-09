@@ -1,18 +1,24 @@
-name: CD — Deploy to Production
+name: CD — Release & Deploy
 
-# Deploys are deliberate: push a version tag (git tag v1.0.0 && git push --tags)
-# or run the workflow manually with a branch/tag. Deploying on every push to
-# the integration branch would ship unfinished work to the client sites.
+# Deploys are deliberate (D-021) and gated (INF-C1/C2/C5):
+#   1. verify  — the version is a vX.Y.Z tag on the integration branch and
+#                every required CI workflow is green for that exact commit;
+#   2. build   — images are built once here and pushed to GHCR, tagged with
+#                the version (never on the production host);
+#   3. deploy  — environment "production" (required reviewers), SSH with a
+#                pinned host key, the server pulls the images by tag and
+#                verifies their digests (infra/scripts/deploy.sh).
+# Trigger: push a tag (git tag v1.2.3 && git push origin v1.2.3), or run the
+# workflow manually with an existing tag (also how you roll back).
 on:
   push:
     tags:
       - 'v*'
   workflow_dispatch:
     inputs:
-      ref:
-        description: 'Branch or tag to deploy'
+      version:
+        description: 'Release tag to deploy, e.g. v1.2.3 (must already exist)'
         required: true
-        default: 'init'
 
 permissions:
   contents: read
@@ -21,77 +27,226 @@ concurrency:
   group: deploy-production
   cancel-in-progress: false
 
+env:
+  VERSION: ${{ github.event.inputs.version || github.ref_name }}
+  # Workflows that must have succeeded for the release commit.
+  REQUIRED_WORKFLOWS: 'CI — Backend|CI — Web|CI — Infra|CI — E2E stack'
+  INTEGRATION_BRANCH: init
+
 jobs:
-  deploy:
-    name: Deploy
+  verify:
+    name: Verify tag + CI status
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+    steps:
+      - name: Validate version format (no "/" or shell characters)
+        run: |
+          printf '%s' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' \
+            || { echo "::error::VERSION '$VERSION' is not vMAJOR.MINOR.PATCH[-pre]"; exit 1; }
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ env.VERSION }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve commit; must be on the integration branch
+        id: sha
+        run: |
+          sha=$(git rev-parse HEAD)
+          git merge-base --is-ancestor "$sha" "origin/$INTEGRATION_BRANCH" \
+            || { echo "::error::$VERSION ($sha) is not on $INTEGRATION_BRANCH"; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for required CI workflows to be green on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.sha.outputs.sha }}
+        run: |
+          IFS='|' read -r -a required <<< "$REQUIRED_WORKFLOWS"
+          deadline=$((SECONDS + 75 * 60))
+          while :; do
+            runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$SHA&per_page=100")
+            pending=0; failed=0
+            for wf in "${required[@]}"; do
+              latest=$(jq -c --arg wf "$wf" '[.workflow_runs[] | select(.name == $wf)] | sort_by(.created_at) | last' <<< "$runs")
+              if [ "$latest" = null ]; then echo "$wf: not started"; pending=1; continue; fi
+              status=$(jq -r .status <<< "$latest"); conclusion=$(jq -r .conclusion <<< "$latest")
+              if [ "$status" != completed ]; then echo "$wf: $status"; pending=1
+              elif [ "$conclusion" != success ]; then echo "::error::$wf concluded '$conclusion' for $SHA"; failed=1
+              else echo "$wf: success"; fi
+            done
+            [ "$failed" = 0 ] || exit 1
+            [ "$pending" = 1 ] || break
+            [ "$SECONDS" -lt "$deadline" ] || { echo "::error::timed out waiting for CI"; exit 1; }
+            sleep 30
+          done
+
+  build:
+    name: Build + push images (GHCR)
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_repo: ${{ steps.repo.outputs.image_repo }}
+      api_digest: ${{ steps.api.outputs.digest }}
+      web_digest: ${{ steps.web.outputs.digest }}
+      offsite_digest: ${{ steps.offsite.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+          persist-credentials: false
+      - name: Image repository (lower-case owner)
+        id: repo
+        run: echo "image_repo=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/securepatrol" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: api / worker image
+        id: api
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: backend
+          push: true
+          provenance: mode=max
+          sbom: true
+          tags: ${{ steps.repo.outputs.image_repo }}/api:${{ env.VERSION }}
+          labels: |
+            org.opencontainers.image.revision=${{ needs.verify.outputs.sha }}
+            org.opencontainers.image.version=${{ env.VERSION }}
+      - name: web image
+        id: web
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: web
+          push: true
+          provenance: mode=max
+          sbom: true
+          tags: ${{ steps.repo.outputs.image_repo }}/web:${{ env.VERSION }}
+          labels: |
+            org.opencontainers.image.revision=${{ needs.verify.outputs.sha }}
+            org.opencontainers.image.version=${{ env.VERSION }}
+      - name: backup-offsite image
+        id: offsite
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: infra/backup-offsite
+          push: true
+          provenance: mode=max
+          sbom: true
+          tags: ${{ steps.repo.outputs.image_repo }}/backup-offsite:${{ env.VERSION }}
+          labels: |
+            org.opencontainers.image.revision=${{ needs.verify.outputs.sha }}
+            org.opencontainers.image.version=${{ env.VERSION }}
+      - name: Trivy scan of the released images (fixable CRITICAL blocks the release)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.repo.outputs.image_repo }}/api:${{ env.VERSION }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+      - name: Trivy scan (web)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.repo.outputs.image_repo }}/web:${{ env.VERSION }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+  deploy:
+    name: Deploy to production
+    needs: [verify, build]
+    runs-on: ubuntu-latest
+    # Settings → Environments → production: required reviewers, deployment
+    # branches/tags = "v*" (see docs/runbook.md §7).
     environment: production
+    permissions:
+      contents: read
+      packages: read
     env:
-      DEPLOY_REF: ${{ github.event.inputs.ref || github.ref_name }}
       # Secrets cannot be used in `if:` directly; expose whether mail is set up.
       NOTIFY: ${{ secrets.SMTP_HOST != '' && secrets.DEPLOY_NOTIFY_EMAIL != '' }}
     steps:
+      - name: Require the SSH host key fingerprint
+        env:
+          FINGERPRINT: ${{ secrets.DEPLOY_HOST_FINGERPRINT }}
+        run: |
+          [ -n "$FINGERPRINT" ] || { echo "::error::secret DEPLOY_HOST_FINGERPRINT is not set (ssh-keyscan host | ssh-keygen -lf -)"; exit 1; }
+
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         env:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          IMAGE_REPO: ${{ needs.build.outputs.image_repo }}
+          API_DIGEST: ${{ needs.build.outputs.api_digest }}
+          WEB_DIGEST: ${{ needs.build.outputs.web_digest }}
+          OFFSITE_DIGEST: ${{ needs.build.outputs.offsite_digest }}
+          # Short-lived (this job only), packages:read — pulls private images.
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_KEY }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
-          envs: DEPLOY_REF,DEPLOY_PATH
-          command_timeout: 30m
+          fingerprint: ${{ secrets.DEPLOY_HOST_FINGERPRINT }}
+          envs: VERSION,DEPLOY_PATH,IMAGE_REPO,API_DIGEST,WEB_DIGEST,OFFSITE_DIGEST,GHCR_TOKEN,GHCR_USER
+          command_timeout: 45m
           script: |
             set -eu
             cd "${DEPLOY_PATH:-/opt/securepatrol}"
-            git fetch --tags --prune --force origin
-            # Branch names resolve via origin/<branch>; tags resolve directly.
-            if git rev-parse --verify --quiet "origin/${DEPLOY_REF}" >/dev/null; then
-              git checkout --force --detach "origin/${DEPLOY_REF}"
-            else
-              git checkout --force --detach "${DEPLOY_REF}"
+            # VERSION was validated in the verify job (vX.Y.Z only).
+            if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+              echo "The server's work tree has local changes; refusing to deploy:" >&2
+              git status --short >&2
+              exit 1
             fi
-            echo "Deploying $(git rev-parse --short HEAD) (${DEPLOY_REF})"
-            cd infra
-            test -f .env || { echo "infra/.env is missing on the server" >&2; exit 1; }
-            test -f nginx/certs/cert.pem || { echo "TLS cert missing in infra/nginx/certs" >&2; exit 1; }
-            # --wait fails the deploy if a service does not become healthy.
-            VERSION="${DEPLOY_REF}" docker compose -f docker-compose.yml -f docker-compose.app.yml \
-              up -d --build --remove-orphans --wait --wait-timeout 600
-            docker image prune -f
-            echo "Deploy complete: $(date)"
+            # No --force: a tag that was moved upstream makes this fetch fail.
+            git fetch --prune origin "+refs/heads/*:refs/remotes/origin/*"
+            git fetch origin "refs/tags/${VERSION}:refs/tags/${VERSION}"
+            git -c advice.detachedHead=false checkout --detach "refs/tags/${VERSION}"
+            sh infra/scripts/deploy.sh "${VERSION}"
 
       - name: Notify on success
         if: success() && env.NOTIFY == 'true'
-        uses: dawidd6/action-send-mail@v3
+        uses: dawidd6/action-send-mail@67ce3558d613188179559c61d3565140cf389968 # v22
         with:
           server_address: ${{ secrets.SMTP_HOST }}
           server_port: ${{ secrets.SMTP_PORT || 587 }}
           username: ${{ secrets.SMTP_USER }}
           password: ${{ secrets.SMTP_PASSWORD }}
-          subject: "SecurePatrol deployed: ${{ env.DEPLOY_REF }}"
+          subject: "SecurePatrol deployed: ${{ env.VERSION }}"
           to: ${{ secrets.DEPLOY_NOTIFY_EMAIL }}
           from: ${{ secrets.SMTP_FROM }}
           body: |
             Deploy succeeded.
-            Ref: ${{ env.DEPLOY_REF }} (${{ github.sha }})
+            Version: ${{ env.VERSION }} (${{ needs.verify.outputs.sha }})
             By: ${{ github.actor }}
             Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
       - name: Notify on failure
         if: failure() && env.NOTIFY == 'true'
-        uses: dawidd6/action-send-mail@v3
+        uses: dawidd6/action-send-mail@67ce3558d613188179559c61d3565140cf389968 # v22
         with:
           server_address: ${{ secrets.SMTP_HOST }}
           server_port: ${{ secrets.SMTP_PORT || 587 }}
           username: ${{ secrets.SMTP_USER }}
           password: ${{ secrets.SMTP_PASSWORD }}
-          subject: "SecurePatrol deploy FAILED: ${{ env.DEPLOY_REF }}"
+          subject: "SecurePatrol deploy FAILED: ${{ env.VERSION }}"
           to: ${{ secrets.DEPLOY_NOTIFY_EMAIL }}
           from: ${{ secrets.SMTP_FROM }}
           body: |
-            Deploy failed. Check the run for details:
+            Deploy failed. Check the run for details (rollback: docs/runbook.md §7):
             ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-            Ref: ${{ env.DEPLOY_REF }}
+            Version: ${{ env.VERSION }}
             By: ${{ github.actor }}
