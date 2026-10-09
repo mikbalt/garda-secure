@@ -71,6 +71,7 @@ export const uxId: Record<keyof typeof uxEn, string> = {
   'today.subtitle': '{site} · {date}',
   'today.live': 'Langsung',
   'today.needsAction': 'Perlu tindakan',
+  'today.highlights': 'Sorotan',
   'today.allClear': 'Semua aman — tidak ada yang perlu ditangani saat ini.',
   'today.act.sos': '{guard} menekan tombol SOS',
   'today.act.sosHint': '{time} · tanggapi setelah ditangani',

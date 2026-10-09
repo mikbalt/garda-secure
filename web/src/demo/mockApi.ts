@@ -391,7 +391,11 @@ on('GET', '/reports/patrol/sessions', ({ query }) => ({
   site_id: query.site_id,
   rows: w.sessions.filter((s) => s.site_id === query.site_id && inRange(s.started_at, dateRange(query.from, query.to))).map(summary),
 }))
-on('GET', '/reports/incidents', ({ query }) => w.incidents.filter((i) => i.site_id === query.site_id))
+on('GET', '/reports/incidents', ({ query }) =>
+  w.incidents
+    .filter((i) => i.site_id === query.site_id && (!query.type || i.type === query.type) && (!query.severity || i.severity === query.severity) && (!query.status || i.status === query.status) && (!query.from || inRange(i.occurred_at, dateRange(query.from, query.to))))
+    .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at)),
+)
 on('GET', '/reports/guards/kpi', ({ query }): { site_id?: string; rows: GuardKpiRow[] } => ({
   site_id: query.site_id,
   rows: monthly(siteOf(query).id, dateRange(query.from, query.to)).map((m) => {
@@ -402,7 +406,9 @@ on('GET', '/reports/guards/kpi', ({ query }): { site_id?: string; rows: GuardKpi
       on_time_rate_pct: m.present + m.late ? Math.round((m.present / (m.present + m.late)) * 1000) / 10 : 0,
       patrol_completion_pct: m.patrol_completion_pct,
       incidents_filed: w.incidents.filter((i) => i.guard_id === m.guard_id).length,
-      sla_breaches: 0,
+      sla_breaches: w.sessions
+        .filter((s) => s.guard_id === m.guard_id && s.site_id === query.site_id)
+        .reduce((n, s) => n + progress(s).checkpoints.filter((c) => c.status === 'late' || c.status === 'overdue').length, 0),
     }
   }),
 }))

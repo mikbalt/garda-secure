@@ -4,6 +4,8 @@ export interface TabItem<K extends string> {
   key: K
   label: string
   badge?: number
+  /** `alert` (red, default) for things needing action; `neutral` for plain counts. */
+  badgeTone?: 'alert' | 'neutral'
 }
 
 interface TabsProps<K extends string> {
@@ -58,7 +60,11 @@ export function Tabs<K extends string>({ tabs, active, onChange, label }: TabsPr
           >
             {tab.label}
             {tab.badge ? (
-              <span className="ml-2 min-w-[1.25rem] rounded-full bg-red-500 px-1.5 py-px text-center text-[11px] font-semibold text-white">
+              <span
+                className={`ml-2 min-w-[1.25rem] rounded-full px-1.5 py-px text-center text-[11px] font-semibold ${
+                  tab.badgeTone === 'neutral' ? 'bg-gray-200 text-gray-700' : 'bg-red-500 text-white'
+                }`}
+              >
                 {tab.badge}
               </span>
             ) : null}

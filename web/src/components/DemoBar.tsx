@@ -18,7 +18,8 @@ export function DemoBar() {
     <div className="no-print flex flex-wrap items-center gap-x-4 gap-y-1.5 bg-gradient-to-r from-violet-600 to-primary-600 px-4 py-1.5 text-xs text-white sm:px-6">
       <span className="inline-flex items-center gap-1.5 font-medium">
         <FlaskConical className="h-3.5 w-3.5" aria-hidden="true" />
-        {t('demo.banner')}
+        <span className="hidden md:inline">{t('demo.banner')}</span>
+        <span className="md:hidden">Demo</span>
       </span>
       <label className="inline-flex items-center gap-1.5">
         <span className="text-white/80">{t('demo.viewAs')}</span>

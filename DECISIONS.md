@@ -169,3 +169,28 @@ in PRD §9 (OQ-x). New entries go at the bottom with the next free number.
 - `gosec` is pinned to v2.20.0 (newer versions need Go ≥ 1.25; the repo
   targets Go 1.22).
 - Mobile CI is manual-only while the app is deferred (D-017).
+
+### D-022 — Web UX: design system, setup guide, demo mode
+- **Date:** 2026-10-09 · **Status:** Accepted
+- Product owner found the first web version confusing. The web app now has a
+  documented design system (`web/DESIGN.md`): Inter (self-hosted for
+  on-prem), slate neutrals, brand blue, dark navy shell, shared UI kit.
+- Information architecture: grouped navigation (Today · Operations · People ·
+  Insights · Administration); a location picker in the top bar.
+- "Where do I start?" is answered by a **setup guide** (`/setup`) whose six
+  steps (location → guards & PINs → schedule → routes & QR → tablet → alerts)
+  complete themselves from live data, a first-run welcome screen, and a
+  progress card in the sidebar/dashboard. Pages open their create form from
+  `?new=1` deep links.
+- The dashboard is "Today": needs-attention list first, then KPIs, live
+  patrols, guards on duty, recent incidents.
+- **Demo mode** (`npm run dev:demo`, or `DEMO=true` on the web container):
+  sample data answered in the browser by `src/demo/mockApi.ts`, role switcher,
+  empty-workspace mode. Used for design review, training and client demos; the
+  mock must be kept in sync with docs/api.md. It is a lazily loaded chunk and
+  never active unless configured.
+
+### D-023 — WhatsApp recipients stored in international format
+- **Date:** 2026-10-09 · **Status:** Accepted
+- Numbers entered as Indonesian local format (`08…`) are stored as `628…`
+  (API and web both normalise); WhatsApp requires the country code.

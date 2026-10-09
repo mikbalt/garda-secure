@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ImageOff } from 'lucide-react'
+import { FilePen, FileText, ImageOff, Plus } from 'lucide-react'
 import apiClient, { apiGet } from '../../api/client'
 import { TableSkeleton } from '../../components/LoadingSkeleton'
 import { SeverityBadge, StatusBadge } from '../../components/ui/Badge'
@@ -10,25 +10,45 @@ import { Modal } from '../../components/ui/Modal'
 import { ErrorState } from '../../components/ui/States'
 import { useErrorToast, useToast } from '../../components/toast/context'
 import { useAuth } from '../../hooks/useAuth'
-import { useI18n, translateMaybe } from '../../i18n/context'
+import { incidentTypeLabel, translateMaybe, useI18n } from '../../i18n/context'
 import { errorText } from '../../i18n/errors'
 import { formatDateTime } from '../../lib/time'
+import { relTime, useNow } from '../patrol/format'
+import { Avatar, Segmented } from '../patrol/kit'
+import { KNOWN_TYPES, SEVERITIES, WORKFLOW, sevBar } from './constants'
 import type { IncidentDetail, Photo, Severity, Site, WorkflowStatus } from '../../types'
+
+function SectionTitle({ id, children, action }: { id: string; children: string; action?: ReactNode }) {
+  return (
+    <div className="mb-3 flex items-center justify-between gap-2">
+      <h3 id={id} className="text-sm font-semibold text-gray-900">
+        {children}
+      </h3>
+      {action}
+    </div>
+  )
+}
 
 function PhotoGrid({ photos }: { photos: Photo[] }) {
   const { t } = useI18n()
-  if (photos.length === 0) return <p className="text-sm text-gray-600">{t('inc.noPhotos')}</p>
+  if (photos.length === 0) return <p className="rounded-xl border border-dashed border-gray-300 px-4 py-5 text-center text-sm text-gray-500">{t('ops.inc.noPhotos')}</p>
   return (
-    <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+    <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4">
       {photos.map((p, i) => (
-        <li key={p.key} className="aspect-square overflow-hidden rounded-lg border border-gray-200 bg-gray-100">
+        <li key={p.key} className="aspect-square overflow-hidden rounded-xl border border-gray-200 bg-gray-100">
           {p.uploaded && p.url ? (
-            <a href={p.url} target="_blank" rel="noreferrer" className="block h-full focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600">
-              <img src={p.url} alt={`${t('common.photo')} ${i + 1}`} className="h-full w-full object-cover" loading="lazy" />
+            <a
+              href={p.url}
+              target="_blank"
+              rel="noreferrer"
+              className="group block h-full focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500"
+              aria-label={`${t('ops.inc.photoAlt', { n: i + 1 })} — ${t('common.openFull')}`}
+            >
+              <img src={p.url} alt="" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" loading="lazy" />
             </a>
           ) : (
-            <div className="flex h-full flex-col items-center justify-center gap-1 p-2 text-center text-xs text-gray-700">
-              <ImageOff className="h-6 w-6" aria-hidden="true" />
+            <div className="flex h-full flex-col items-center justify-center gap-1.5 p-2 text-center text-xs text-gray-500">
+              <ImageOff className="h-6 w-6 text-gray-400" aria-hidden="true" />
               {t('common.pendingUpload')}
             </div>
           )}
@@ -74,17 +94,24 @@ function AmendForm({ site, id, onDone }: { site: Site; id: string; onDone: () =>
   }
 
   return (
-    <form onSubmit={submit} className="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4" noValidate>
+    <form onSubmit={submit} className="mt-4 space-y-3 rounded-xl border border-primary-100 bg-primary-50/40 p-4" noValidate aria-label={t('inc.addAmendment')}>
       <p className="text-sm text-gray-700">{t('inc.amendHint')}</p>
       <FormError message={formError || (save.error ? errorText(save.error, lang) : null)} />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label={t('inc.category')} optional>
-          <Input value={type} onChange={(e) => setType(e.target.value)} />
+          <Select value={type} onChange={(e) => setType(e.target.value)}>
+            <option value="">{t('ops.inc.noChange')}</option>
+            {KNOWN_TYPES.map((x) => (
+              <option key={x} value={x}>
+                {incidentTypeLabel(lang, x)}
+              </option>
+            ))}
+          </Select>
         </Field>
         <Field label={t('severity.label')} optional>
           <Select value={severity} onChange={(e) => setSeverity(e.target.value as Severity | '')}>
-            <option value="">—</option>
-            {(['low', 'medium', 'high', 'critical'] as const).map((s) => (
+            <option value="">{t('ops.inc.noChange')}</option>
+            {SEVERITIES.map((s) => (
               <option key={s} value={s}>
                 {t(`severity.${s}`)}
               </option>
@@ -97,23 +124,23 @@ function AmendForm({ site, id, onDone }: { site: Site; id: string; onDone: () =>
         <Field label={t('common.description')} optional className="sm:col-span-2">
           <Textarea value={description} onChange={(e) => setDescription(e.target.value)} />
         </Field>
-        <Field label={t('common.reason')} required className="sm:col-span-2">
-          <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} />
+        <Field label={t('common.reason')} required className="sm:col-span-2" hint={t('ops.inc.reasonHint')}>
+          <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} placeholder={t('ops.inc.reasonPh')} />
         </Field>
       </div>
       <div className="flex justify-end gap-2">
-        <Button variant="secondary" onClick={onDone}>
+        <Button variant="ghost" onClick={onDone}>
           {t('common.cancel')}
         </Button>
         <Button type="submit" loading={save.isPending}>
-          {t('common.save')}
+          {t('ops.inc.saveAmendment')}
         </Button>
       </div>
     </form>
   )
 }
 
-/** Incident detail drawer: original report, photos, amendments, actions. */
+/** Incident detail drawer: report, photos, history (amendments) and actions. */
 export function IncidentDrawer({ site, id, onClose }: { site: Site; id: string; onClose: () => void }) {
   const { t, lang } = useI18n()
   const { can } = useAuth()
@@ -121,6 +148,7 @@ export function IncidentDrawer({ site, id, onClose }: { site: Site; id: string; 
   const toast = useToast()
   const onError = useErrorToast()
   const tz = site.timezone
+  const now = useNow(60_000)
   const manage = can('manageIncidents')
   const [amending, setAmending] = useState(false)
 
@@ -143,6 +171,7 @@ export function IncidentDrawer({ site, id, onClose }: { site: Site; id: string; 
   const inc = data?.incident
   const fieldLabel = (k: string) =>
     ({ type: t('inc.category'), severity: t('severity.label'), description: t('common.description'), location: t('common.location') })[k] ?? k
+  const fieldValue = (k: string, v: string) => (k === 'severity' ? translateMaybe(lang, `severity.${v}`, v) : k === 'type' ? incidentTypeLabel(lang, v) : v)
 
   return (
     <Modal open onClose={onClose} variant="drawer" title={t('inc.detail')}>
@@ -151,95 +180,114 @@ export function IncidentDrawer({ site, id, onClose }: { site: Site; id: string; 
       ) : error ? (
         <ErrorState error={error} onRetry={() => refetch()} />
       ) : inc && data ? (
-        <div className="space-y-6">
-          <section aria-labelledby="inc-original">
-            <h3 id="inc-original" className="mb-2 text-sm font-semibold text-gray-900">
-              {t('inc.original')}
-            </h3>
-            <dl className="grid grid-cols-3 gap-x-4 gap-y-2 text-sm">
-              <dt className="text-gray-600">{t('inc.occurred')}</dt>
-              <dd className="col-span-2">{formatDateTime(inc.occurred_at, tz, lang)}</dd>
-              <dt className="text-gray-600">{t('inc.category')}</dt>
-              <dd className="col-span-2 capitalize">{inc.type}</dd>
-              <dt className="text-gray-600">{t('severity.label')}</dt>
-              <dd className="col-span-2">
-                <SeverityBadge severity={inc.severity} />
-              </dd>
-              <dt className="text-gray-600">{t('common.status')}</dt>
-              <dd className="col-span-2">
-                <StatusBadge status={inc.status} />
-              </dd>
-              <dt className="text-gray-600">{t('inc.reportedBy')}</dt>
-              <dd className="col-span-2">{data.guard_name || '—'}</dd>
-              <dt className="text-gray-600">{t('common.location')}</dt>
-              <dd className="col-span-2">{inc.location ?? '—'}</dd>
-              <dt className="text-gray-600">{t('common.description')}</dt>
-              <dd className="col-span-2 whitespace-pre-wrap">{inc.description ?? '—'}</dd>
-            </dl>
-          </section>
+        <div className="space-y-7">
+          {/* Header */}
+          <div className="relative overflow-hidden rounded-2xl border border-gray-200/80 bg-white p-4 pl-5 shadow-card">
+            <span className={`absolute inset-y-0 left-0 w-1.5 ${sevBar[inc.severity] ?? sevBar.low}`} aria-hidden="true" />
+            <div className="flex flex-wrap items-center gap-2">
+              <SeverityBadge severity={inc.severity} />
+              <StatusBadge status={inc.status} />
+            </div>
+            <p className="mt-2 text-lg font-semibold tracking-tight text-gray-900">{incidentTypeLabel(lang, inc.type)}</p>
+            <p className="text-sm text-gray-500">
+              {formatDateTime(inc.occurred_at, tz, lang)} · {relTime(inc.occurred_at, lang, now)}
+            </p>
+          </div>
 
           {manage && (
             <section aria-labelledby="inc-status">
-              <h3 id="inc-status" className="sr-only">
-                {t('inc.changeStatus')}
-              </h3>
-              <div className="flex flex-wrap items-end gap-2">
-                <Field label={t('inc.changeStatus')}>
-                  <Select value={inc.status} onChange={(e) => status.mutate(e.target.value as WorkflowStatus)} disabled={status.isPending}>
-                    {(['open', 'in_progress', 'resolved'] as const).map((s) => (
-                      <option key={s} value={s}>
-                        {t(`status.${s}`)}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-              </div>
+              <Segmented
+                label={t('ops.inc.statusLabel')}
+                value={inc.status}
+                disabled={status.isPending}
+                onChange={(s) => s !== inc.status && status.mutate(s)}
+                options={WORKFLOW.map((s) => ({ value: s, label: t(`status.${s}`), tone: ({ open: 'orange', in_progress: 'blue', resolved: 'green' } as const)[s] }))}
+              />
+              <p id="inc-status" className="mt-1.5 text-xs text-gray-500">
+                {t('ops.inc.statusHint')}
+              </p>
             </section>
           )}
 
+          <section aria-labelledby="inc-desc">
+            <SectionTitle id="inc-desc">{t('common.description')}</SectionTitle>
+            <p className="whitespace-pre-wrap rounded-xl bg-gray-50 px-4 py-3 text-sm leading-relaxed text-gray-800">{inc.description || t('ops.inc.noDesc')}</p>
+            <dl className="mt-4 grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+              <div>
+                <dt className="text-xs font-medium text-gray-500">{t('common.location')}</dt>
+                <dd className="mt-0.5 text-gray-900">{inc.location || '—'}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium text-gray-500">{t('inc.reportedBy')}</dt>
+                <dd className="mt-0.5 flex items-center gap-2 text-gray-900">
+                  <Avatar name={data.guard_name} className="!h-6 !w-6 !text-[10px]" />
+                  {data.guard_name || '—'}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium text-gray-500">{t('inc.occurred')}</dt>
+                <dd className="mt-0.5 text-gray-900">{formatDateTime(inc.occurred_at, tz, lang)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium text-gray-500">{t('ops.inc.receivedAt')}</dt>
+                <dd className="mt-0.5 text-gray-900">{formatDateTime(inc.created_at, tz, lang)}</dd>
+              </div>
+            </dl>
+          </section>
+
           <section aria-labelledby="inc-photos">
-            <h3 id="inc-photos" className="mb-2 text-sm font-semibold text-gray-900">
-              {t('inc.photos')}
-            </h3>
+            <SectionTitle id="inc-photos">{`${t('inc.photos')} (${data.photos.length})`}</SectionTitle>
             <PhotoGrid photos={data.photos} />
           </section>
 
-          <section aria-labelledby="inc-amend">
-            <div className="mb-2 flex items-center justify-between">
-              <h3 id="inc-amend" className="text-sm font-semibold text-gray-900">
-                {t('inc.amendments')}
-              </h3>
-              {manage && !amending && (
-                <Button size="sm" variant="secondary" onClick={() => setAmending(true)}>
-                  {t('inc.addAmendment')}
-                </Button>
-              )}
-            </div>
+          <section aria-labelledby="inc-history">
+            <SectionTitle
+              id="inc-history"
+              action={
+                manage && !amending ? (
+                  <Button size="sm" variant="soft" onClick={() => setAmending(true)}>
+                    <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                    {t('inc.addAmendment')}
+                  </Button>
+                ) : undefined
+              }
+            >
+              {t('ops.inc.history')}
+            </SectionTitle>
+            <p className="mb-4 text-xs text-gray-500">{t('ops.inc.immutable')}</p>
+            <ol>
+              <li className="relative pb-5 pl-11">
+                {data.amendments.length > 0 && <span className="absolute bottom-0 left-[15px] top-8 w-px bg-gray-200" aria-hidden="true" />}
+                <span className="absolute left-0 top-0 flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-gray-500 ring-1 ring-gray-200" aria-hidden="true">
+                  <FileText className="h-4 w-4" />
+                </span>
+                <p className="pt-1 text-sm font-medium text-gray-900">{t('ops.inc.createdBy', { who: data.guard_name || '—' })}</p>
+                <p className="text-xs text-gray-500">{formatDateTime(inc.created_at, tz, lang)}</p>
+              </li>
+              {data.amendments.map((a, i) => (
+                <li key={a.id} className="relative pb-5 pl-11">
+                  {i < data.amendments.length - 1 && <span className="absolute bottom-0 left-[15px] top-8 w-px bg-gray-200" aria-hidden="true" />}
+                  <span className="absolute left-0 top-0 flex h-8 w-8 items-center justify-center rounded-full bg-primary-50 text-primary-600 ring-1 ring-primary-200" aria-hidden="true">
+                    <FilePen className="h-4 w-4" />
+                  </span>
+                  <p className="pt-1 text-sm font-medium text-gray-900">{t('ops.inc.amendedBy', { who: a.amended_by })}</p>
+                  <p className="text-xs text-gray-500">{formatDateTime(a.created_at, tz, lang)}</p>
+                  <dl className="mt-2 space-y-1 rounded-xl border border-gray-200/80 bg-white p-3 text-sm">
+                    {Object.entries(a.changes ?? {}).map(([k, v]) => (
+                      <div key={k} className="flex gap-2">
+                        <dt className="w-32 shrink-0 text-gray-500">{fieldLabel(k)}</dt>
+                        <dd className="min-w-0 font-medium text-gray-900">{fieldValue(k, v)}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  <p className="mt-2 border-l-2 border-gray-200 pl-3 text-sm italic text-gray-600">
+                    <span className="sr-only">{t('common.reason')}: </span>
+                    {a.reason}
+                  </p>
+                </li>
+              ))}
+            </ol>
             {amending && <AmendForm site={site} id={id} onDone={() => setAmending(false)} />}
-            {data.amendments.length === 0 ? (
-              <p className="mt-2 text-sm text-gray-600">{t('inc.noAmendments')}</p>
-            ) : (
-              <ol className="mt-3 space-y-3">
-                {data.amendments.map((a) => (
-                  <li key={a.id} className="rounded-lg border border-gray-200 p-3 text-sm">
-                    <div className="mb-1 text-xs text-gray-600">
-                      {formatDateTime(a.created_at, tz, lang)} · {t('inc.by', { who: a.amended_by })}
-                    </div>
-                    <dl className="grid grid-cols-3 gap-x-3 gap-y-1">
-                      {Object.entries(a.changes ?? {}).map(([k, v]) => (
-                        <div key={k} className="contents">
-                          <dt className="text-gray-600">{fieldLabel(k)}</dt>
-                          <dd className="col-span-2">{k === 'severity' ? translateMaybe(lang, `severity.${v}`, v) : v}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                    <p className="mt-1 text-gray-800">
-                      <span className="text-gray-600">{t('common.reason')}:</span> {a.reason}
-                    </p>
-                  </li>
-                ))}
-              </ol>
-            )}
           </section>
         </div>
       ) : null}

@@ -8,6 +8,7 @@
 #   KEYCLOAK_URL        Keycloak base URL              (default /auth)
 #   KEYCLOAK_CLIENT_ID  public web client              (default securepatrol-web)
 #   KEYCLOAK_REALMS     comma list "realm:Label,..."   (default securepatrol)
+#   DEMO                "true" = run on built-in sample data, no backend/Keycloak
 set -eu
 
 OUT="${SP_CONFIG_PATH:-/usr/share/nginx/html/config.js}"
@@ -44,7 +45,8 @@ window.__SP_CONFIG__ = {
   "apiUrl": "$(esc "${API_URL:-/api/v1}")",
   "keycloakUrl": "$(esc "${KEYCLOAK_URL:-/auth}")",
   "keycloakClientId": "$(esc "${KEYCLOAK_CLIENT_ID:-securepatrol-web}")",
-  "realms": [$realms]
+  "realms": [$realms],
+  "demo": $( [ "${DEMO:-false}" = "true" ] && echo true || echo false )
 };
 EOF
 

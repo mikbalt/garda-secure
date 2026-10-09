@@ -316,6 +316,12 @@ func TestAPIEndToEnd(t *testing.T) {
 	e.expect(e.do("POST", "/api/v1/notifications/rules", admin, "", map[string]any{
 		"site_id": siteA, "event_type": "sos", "channel": "whatsapp", "recipient": "+62 812-3456-7890",
 	}), 201, "rule sos")
+	local := e.expect(e.do("POST", "/api/v1/notifications/rules", admin, "", map[string]any{
+		"site_id": siteA, "event_type": "defect_opened", "channel": "whatsapp", "recipient": "0812-1111-2222",
+	}), 201, "rule with local phone number")
+	if local.str("recipient") != "6281211112222" {
+		t.Fatalf("local number not normalised: %s", local.raw)
+	}
 
 	clockID := uuid.NewString()
 	rec := e.expect(e.do("POST", "/api/v1/attendance/clock-in", tablet, budi, map[string]any{"id": clockID}), 201, "clock in")

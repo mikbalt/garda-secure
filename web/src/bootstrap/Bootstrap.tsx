@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { App } from '../App'
+import apiClient from '../api/client'
 import { initKeycloak, rememberRealm, resolveRealm } from '../keycloak'
 import { config } from '../config'
 import { useT } from '../i18n/context'
-import { FullScreenMessage, RealmPicker } from './RealmPicker'
+import { FullScreenMessage, LoadingScreen, RealmPicker } from './RealmPicker'
 
 type Phase = { kind: 'pick' } | { kind: 'auth'; realm: string } | { kind: 'ready' } | { kind: 'error'; message: string }
 
@@ -26,10 +27,7 @@ export function Bootstrap() {
       .then(async (ok) => {
         if (config.demo) {
           // Demo mode answers the API from sample data in the browser.
-          const [{ installDemoApi }, { default: apiClient }] = await Promise.all([
-            import('../demo/mockApi'),
-            import('../api/client'),
-          ])
+          const { installDemoApi } = await import('../demo/mockApi')
           installDemoApi(apiClient)
         }
         if (!cancelled && ok) setPhase({ kind: 'ready' })
@@ -51,11 +49,7 @@ export function Bootstrap() {
     case 'pick':
       return <RealmPicker onChoose={choose} />
     case 'auth':
-      return (
-        <div role="status" aria-live="polite" className="flex min-h-full items-center justify-center text-sm text-gray-700">
-          {t('app.loading')}
-        </div>
-      )
+      return <LoadingScreen label={t('app.loading')} />
     case 'error': {
       const actions = [{ label: t('app.retry'), onClick: () => window.location.reload() }]
       if (config.realms.length > 1) {

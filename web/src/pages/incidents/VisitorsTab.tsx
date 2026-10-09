@@ -1,60 +1,153 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { DoorOpen } from 'lucide-react'
 import { apiGet } from '../../api/client'
 import { Badge } from '../../components/ui/Badge'
 import { MediaPhotoButton } from '../../components/MediaPhoto'
-import { Field, Input } from '../../components/ui/Form'
-import { Toolbar } from '../../components/ui/States'
+import { EmptyState, Notice, Toolbar } from '../../components/ui/States'
 import { Table, type Column } from '../../components/ui/Table'
 import { useI18n } from '../../i18n/context'
-import { addDays, daysBetween, formatDateTime, todayIn } from '../../lib/time'
+import { addDays, daysBetween, formatDay, formatTime, localDateOf, todayIn } from '../../lib/time'
+import { fmtDuration, presetRange, useNow } from '../patrol/format'
+import { Avatar, DateRangeFilter, Segmented } from '../patrol/kit'
 import type { Site, VisitorLog } from '../../types'
 
-export function VisitorsTab({ site }: { site: Site }) {
+const MAX_DAYS = 92
+type Filter = 'all' | 'inside'
+
+function When({ iso, tz }: { iso?: string; tz: string }) {
   const { t, lang } = useI18n()
+  if (!iso) return <span className="text-gray-400">—</span>
+  const d = localDateOf(iso, tz)
+  const today = todayIn(tz)
+  const day = d === today ? t('ops.day.today') : d === addDays(today, -1) ? t('ops.day.yesterday') : formatDay(d, lang, false)
+  return (
+    <div className="whitespace-nowrap">
+      <div className="font-medium tabular-nums text-gray-900">{formatTime(iso, tz)}</div>
+      <div className="text-xs text-gray-500">{day}</div>
+    </div>
+  )
+}
+
+export function VisitorsTab({ site }: { site: Site }) {
+  const { t } = useI18n()
   const tz = site.timezone
-  const [from, setFrom] = useState(() => addDays(todayIn(tz), -6))
-  const [to, setTo] = useState(() => todayIn(tz))
-  const valid = from && to && from <= to && daysBetween(from, to) <= 92
+  const now = useNow(60_000)
+  const [range, setRange] = useState(() => presetRange('7d', tz))
+  const [filter, setFilter] = useState<Filter>('all')
+  const { from, to } = range
+  const valid = !!from && !!to && from <= to && daysBetween(from, to) <= MAX_DAYS
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['visitors', site.id, from, to],
     queryFn: () => apiGet<VisitorLog[]>('/visitors', { site_id: site.id, from, to }),
-    enabled: !!valid,
+    enabled: valid,
   })
 
+  const all = [...(data ?? [])].sort((a, b) => (b.entry_at ?? b.created_at).localeCompare(a.entry_at ?? a.created_at))
+  const inside = all.filter((v) => !v.exit_at)
+  const rows = filter === 'inside' ? inside : all
+
   const columns: Column<VisitorLog>[] = [
-    { key: 'entry', header: t('vis.entry'), cell: (r) => <span className="whitespace-nowrap">{formatDateTime(r.entry_at, tz, lang)}</span> },
+    {
+      key: 'name',
+      header: t('vis.name'),
+      cell: (r) => (
+        <div className="flex min-w-[12rem] items-center gap-3">
+          <Avatar name={r.visitor_name} />
+          <div className="min-w-0">
+            <p className="truncate font-medium text-gray-900">{r.visitor_name}</p>
+            <p className="truncate text-xs text-gray-500">{[r.id_type, r.id_number].filter(Boolean).join(' ') || '—'}</p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'purpose',
+      header: t('vis.purpose'),
+      cell: (r) => (
+        <div className="min-w-[10rem]">
+          <p className="text-gray-800">{r.purpose || '—'}</p>
+          {r.host_name && <p className="text-xs text-gray-500">{t('ops.vis.meeting', { host: r.host_name })}</p>}
+        </div>
+      ),
+    },
+    {
+      key: 'plate',
+      header: t('vis.plate'),
+      cell: (r) =>
+        r.plate ? (
+          <span className="whitespace-nowrap rounded-md bg-gray-900 px-1.5 py-0.5 font-mono text-xs font-medium tracking-wide text-white">{r.plate}</span>
+        ) : (
+          <span className="text-gray-400">—</span>
+        ),
+    },
+    { key: 'entry', header: t('vis.entry'), cell: (r) => <When iso={r.entry_at} tz={tz} /> },
     {
       key: 'exit',
       header: t('vis.exit'),
-      cell: (r) => (r.exit_at ? <span className="whitespace-nowrap">{formatDateTime(r.exit_at, tz, lang)}</span> : <Badge tone="blue">{t('vis.onSite')}</Badge>),
+      cell: (r) =>
+        r.exit_at ? (
+          <When iso={r.exit_at} tz={tz} />
+        ) : (
+          <Badge tone="blue" dot>
+            {t('ops.vis.inside')}
+          </Badge>
+        ),
     },
-    { key: 'name', header: t('vis.name'), cell: (r) => <span className="font-medium">{r.visitor_name}</span> },
-    { key: 'id', header: t('vis.id'), cell: (r) => [r.id_type, r.id_number].filter(Boolean).join(' ') || '—' },
-    { key: 'plate', header: t('vis.plate'), cell: (r) => r.plate ?? '—' },
-    { key: 'host', header: t('vis.host'), cell: (r) => r.host_name ?? '—' },
-    { key: 'purpose', header: t('vis.purpose'), cell: (r) => r.purpose ?? '—' },
-    { key: 'guard', header: t('common.guard'), cell: (r) => (r.guard_name || '—') },
-    { key: 'photo', header: t('common.photo'), cell: (r) => <MediaPhotoButton objectKey={r.photo_object_key} title={`${t('vis.name')}: ${r.visitor_name}`} /> },
+    {
+      key: 'dur',
+      header: t('ops.vis.duration'),
+      cell: (r) =>
+        r.entry_at ? (
+          <span className={`whitespace-nowrap tabular-nums ${r.exit_at ? 'text-gray-700' : 'text-primary-700'}`}>
+            {fmtDuration((r.exit_at ? Date.parse(r.exit_at) : now) - Date.parse(r.entry_at), t)}
+          </span>
+        ) : (
+          '—'
+        ),
+    },
+    { key: 'guard', header: t('ops.vis.loggedBy'), cell: (r) => <span className="whitespace-nowrap text-gray-600">{r.guard_name || '—'}</span> },
+    {
+      key: 'photo',
+      header: <span className="relative block"><span className="sr-only">{t('common.photo')}</span></span>,
+      cell: (r) => (
+        <div className="relative [&_span]:whitespace-nowrap">
+          <MediaPhotoButton objectKey={r.photo_object_key} title={`${t('vis.name')}: ${r.visitor_name}`} />
+        </div>
+      ),
+    },
   ]
 
   return (
     <>
       <Toolbar>
-        <Field label={t('common.from')}>
-          <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-        </Field>
-        <Field label={t('common.to')}>
-          <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-        </Field>
+        <DateRangeFilter from={from} to={to} tz={tz} onChange={setRange} />
+        <Segmented<Filter>
+          label={t('common.status')}
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { value: 'all', label: t('common.all'), count: all.length },
+            { value: 'inside', label: t('ops.vis.inside'), count: inside.length, tone: 'blue' },
+          ]}
+        />
       </Toolbar>
       {!valid ? (
-        <p role="alert" className="text-sm text-red-700">
-          {t('rep.rangeTooLong', { n: 92 })}
-        </p>
+        <Notice tone="warn">{t('ops.range.invalid', { n: MAX_DAYS })}</Notice>
+      ) : !isLoading && !error && all.length === 0 ? (
+        <EmptyState icon={DoorOpen} title={t('ops.vis.emptyTitle')} message={t('ops.vis.emptyBody')} />
       ) : (
-        <Table columns={columns} rows={data} rowKey={(r) => r.id} isLoading={isLoading} error={error} onRetry={() => refetch()} empty={t('vis.empty')} />
+        <Table
+          columns={columns}
+          rows={rows}
+          rowKey={(r) => r.id}
+          isLoading={isLoading}
+          error={error}
+          onRetry={() => refetch()}
+          empty={t('ops.filterEmpty')}
+          caption={t('inc.tabVisitors')}
+        />
       )}
     </>
   )

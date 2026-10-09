@@ -1,56 +1,116 @@
-import { Shield, Building2 } from 'lucide-react'
+import { ArrowRight, Building2, ClipboardCheck, Loader2, Route, ShieldCheck, Siren } from 'lucide-react'
 import { config } from '../config'
 import { useI18n } from '../i18n/context'
 import type { Lang } from '../lib/time'
 
-function LangToggle() {
+function LangToggle({ dark = false }: { dark?: boolean }) {
   const { lang, setLang, t } = useI18n()
   return (
-    <div className="absolute right-4 top-4">
-      <label htmlFor="picker-lang" className="sr-only">
-        {t('lang.label')}
-      </label>
-      <select
-        id="picker-lang"
-        value={lang}
-        onChange={(e) => setLang(e.target.value as Lang)}
-        className="rounded-md border border-gray-300 bg-white py-1.5 pl-2 pr-7 text-sm"
-      >
-        <option value="id">{t('lang.id')}</option>
-        <option value="en">{t('lang.en')}</option>
-      </select>
+    <div role="group" aria-label={t('lang.label')} className={`inline-flex rounded-lg p-0.5 ${dark ? 'bg-white/10' : 'bg-gray-100'}`}>
+      {(['id', 'en'] as Lang[]).map((l) => (
+        <button
+          key={l}
+          type="button"
+          aria-pressed={lang === l}
+          onClick={() => setLang(l)}
+          className={`rounded-md px-2.5 py-1 text-xs font-semibold uppercase transition-colors ${
+            lang === l ? (dark ? 'bg-white text-gray-900' : 'bg-white text-gray-900 shadow-card') : dark ? 'text-gray-300 hover:text-white' : 'text-gray-500 hover:text-gray-800'
+          }`}
+        >
+          {l}
+        </button>
+      ))}
     </div>
   )
 }
 
+export function BrandMark({ size = 'md' }: { size?: 'md' | 'lg' }) {
+  const box = size === 'lg' ? 'h-12 w-12 rounded-2xl' : 'h-9 w-9 rounded-xl'
+  return (
+    <div className={`flex items-center justify-center bg-gradient-to-br from-primary-400 to-primary-700 shadow-lg shadow-primary-900/40 ring-1 ring-white/20 ${box}`}>
+      <ShieldCheck className={size === 'lg' ? 'h-6 w-6 text-white' : 'h-5 w-5 text-white'} aria-hidden="true" />
+    </div>
+  )
+}
+
+const FEATURES = [
+  { icon: Route, id: 'Patroli dengan QR & batas waktu per titik', en: 'QR patrols with per-checkpoint time limits' },
+  { icon: ClipboardCheck, id: 'Kehadiran & rekap bulanan untuk penggajian', en: 'Attendance and monthly payroll recap' },
+  { icon: Siren, id: 'SOS & insiden langsung ke supervisor', en: 'SOS and incidents straight to supervisors' },
+]
+
 /** "Choose organisation" screen shown before Keycloak when several realms exist. */
 export function RealmPicker({ onChoose }: { onChoose: (realm: string) => void }) {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   return (
-    <main className="relative flex min-h-full items-center justify-center bg-primary-800 p-4">
-      <LangToggle />
-      <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-xl">
-        <div className="mb-6 flex items-center gap-2 text-primary-800">
-          <Shield className="h-7 w-7" aria-hidden="true" />
-          <span className="text-xl font-bold">{t('app.name')}</span>
+    <main className="grid min-h-full bg-white lg:grid-cols-[1fr_minmax(28rem,36rem)]">
+      <section className="relative hidden overflow-hidden bg-ink-900 p-12 text-white lg:flex lg:flex-col">
+        <div className="pointer-events-none absolute -left-24 -top-24 h-96 w-96 rounded-full bg-primary-500/25 blur-3xl" aria-hidden="true" />
+        <div className="pointer-events-none absolute -bottom-40 right-0 h-96 w-96 rounded-full bg-emerald-500/10 blur-3xl" aria-hidden="true" />
+        <div className="relative flex items-center gap-3">
+          <BrandMark />
+          <span className="text-lg font-semibold tracking-tight">{t('app.name')}</span>
         </div>
-        <h1 className="text-lg font-semibold text-gray-900">{t('org.choose')}</h1>
-        <p className="mb-5 mt-1 text-sm text-gray-700">{t('org.chooseHint')}</p>
-        <ul className="space-y-2">
-          {config.realms.map((r) => (
-            <li key={r.id}>
-              <button
-                type="button"
-                onClick={() => onChoose(r.id)}
-                className="flex w-full items-center gap-3 rounded-lg border border-gray-300 px-4 py-3 text-left hover:border-primary-600 hover:bg-primary-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
-              >
-                <Building2 className="h-5 w-5 text-primary-700" aria-hidden="true" />
-                <span className="font-medium text-gray-900">{r.label}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </div>
+        <div className="relative mt-auto max-w-lg">
+          <h2 className="text-4xl font-semibold leading-tight tracking-tight">
+            {lang === 'id' ? 'Operasional keamanan, dalam satu layar.' : 'Security operations, on one screen.'}
+          </h2>
+          <ul className="mt-8 space-y-4">
+            {FEATURES.map(({ icon: Icon, id, en }) => (
+              <li key={id} className="flex items-center gap-3 text-gray-300">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.06] text-primary-200 ring-1 ring-white/10">
+                  <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
+                </span>
+                {lang === 'id' ? id : en}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+
+      <section className="flex flex-col p-6 sm:p-10">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5 lg:invisible">
+            <BrandMark />
+            <span className="text-base font-semibold tracking-tight text-gray-900">{t('app.name')}</span>
+          </div>
+          <LangToggle />
+        </div>
+        <div className="mx-auto my-auto w-full max-w-sm py-10">
+          <h1 className="text-2xl font-semibold tracking-tight text-gray-900">{t('org.choose')}</h1>
+          <p className="mb-6 mt-2 text-sm text-gray-500">{t('org.chooseHint')}</p>
+          <ul className="space-y-2.5">
+            {config.realms.map((r) => (
+              <li key={r.id}>
+                <button
+                  type="button"
+                  onClick={() => onChoose(r.id)}
+                  className="group flex w-full items-center gap-3.5 rounded-xl border border-gray-200 bg-white px-4 py-3.5 text-left shadow-card transition-all hover:border-primary-300 hover:shadow-raised focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                >
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-50 text-primary-600 ring-1 ring-primary-100">
+                    <Building2 className="h-5 w-5" aria-hidden="true" />
+                  </span>
+                  <span className="flex-1 font-medium text-gray-900">{r.label}</span>
+                  <ArrowRight className="h-4 w-4 text-gray-300 transition-transform group-hover:translate-x-0.5 group-hover:text-primary-500" aria-hidden="true" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+    </main>
+  )
+}
+
+/** Centered brand + spinner while Keycloak initialises. */
+export function LoadingScreen({ label }: { label: string }) {
+  return (
+    <main role="status" aria-live="polite" className="flex min-h-full flex-col items-center justify-center gap-5 bg-gray-50">
+      <BrandMark size="lg" />
+      <span className="inline-flex items-center gap-2 text-sm text-gray-500">
+        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+        {label}
+      </span>
     </main>
   )
 }
@@ -65,17 +125,20 @@ export function FullScreenMessage({
   actions?: { label: string; onClick: () => void }[]
 }) {
   return (
-    <main className="flex min-h-full flex-col items-center justify-center p-8 text-center">
-      <h1 className="text-xl font-semibold text-gray-900">{title}</h1>
-      {body && <p className="mt-2 max-w-md text-sm text-gray-700">{body}</p>}
+    <main className="flex min-h-full flex-col items-center justify-center bg-gray-50 p-8 text-center">
+      <BrandMark size="lg" />
+      <h1 className="mt-6 text-xl font-semibold tracking-tight text-gray-900">{title}</h1>
+      {body && <p className="mt-2 max-w-md text-sm text-gray-600">{body}</p>}
       {actions && (
-        <div className="mt-4 flex gap-2">
-          {actions.map((a) => (
+        <div className="mt-6 flex gap-2">
+          {actions.map((a, i) => (
             <button
               key={a.label}
               type="button"
               onClick={a.onClick}
-              className="rounded-md bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2"
+              className={`h-9 rounded-lg px-4 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 ${
+                i === 0 ? 'bg-primary-600 text-white hover:bg-primary-700' : 'bg-white text-gray-800 ring-1 ring-inset ring-gray-300 hover:bg-gray-50'
+              }`}
             >
               {a.label}
             </button>

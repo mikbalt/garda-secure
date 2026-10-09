@@ -42,6 +42,9 @@ go test ./... && go test -tags integration ./internal/integration/   # embedded 
 
 # 3. Web — env vars from web/.env.example
 cd web && npm install && npm run dev
+
+# Web without any backend (sample data, role switcher) — for design review & demos
+cd web && npm run dev:demo
 ```
 The Flutter tablet app (`mobile/`) is deferred until backend/web v1 is done.
 

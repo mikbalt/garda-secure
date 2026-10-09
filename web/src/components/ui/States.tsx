@@ -97,8 +97,8 @@ interface PageHeaderProps {
 
 export function PageHeader({ title, actions, subtitle, eyebrow, icon: Icon }: PageHeaderProps) {
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-      <div className="flex min-w-0 items-center gap-3.5">
+    <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex min-w-0 flex-1 items-center gap-3.5">
         {Icon && (
           <div className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-primary-600 shadow-card ring-1 ring-gray-200/80 sm:flex">
             <Icon className="h-5 w-5" aria-hidden="true" />
@@ -110,7 +110,7 @@ export function PageHeader({ title, actions, subtitle, eyebrow, icon: Icon }: Pa
           {subtitle && <p className="mt-1 max-w-3xl text-sm text-gray-500">{subtitle}</p>}
         </div>
       </div>
-      {actions && <div className="no-print flex flex-wrap items-center gap-2">{actions}</div>}
+      {actions && <div className="no-print flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
     </div>
   )
 }

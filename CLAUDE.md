@@ -87,6 +87,9 @@ Infra (from `infra/`): `cp .env.example .env`, then
 
 ## Web conventions
 
+- **Read [web/DESIGN.md](web/DESIGN.md) before touching UI** (principles, UI kit, tokens).
+- **Demo mode:** `npm run dev:demo` runs the app on sample data without backend or
+  Keycloak (`src/demo/mockApi.ts`). Keep the mock in sync when you change the API.
 - API client base URL is `VITE_API_URL` and **already includes `/api/v1`**; call
   paths like `/sites`, `/attendance/daily`.
 - All UI strings go through i18n (English + Bahasa Indonesia).

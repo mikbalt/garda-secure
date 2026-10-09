@@ -75,6 +75,7 @@ export const uxEn = {
   'today.subtitle': '{site} · {date}',
   'today.live': 'Live',
   'today.needsAction': 'Needs your attention',
+  'today.highlights': 'Highlights',
   'today.allClear': 'All clear — nothing needs your attention right now.',
   'today.act.sos': '{guard} pressed SOS',
   'today.act.sosHint': '{time} · tap to acknowledge once handled',

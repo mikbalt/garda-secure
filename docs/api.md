@@ -156,7 +156,7 @@ List rows of `/incidents`, `/sos`, `/defects`, `/visitors` and attendance record
 |---|---|---|
 | GET | `/notifications/event-types` | `{event_types, channels}` |
 | GET | `/notifications/rules?site_id=` | |
-| POST | `/notifications/rules` | `{site_id, event_type, channel: email\|whatsapp, recipient}` |
+| POST | `/notifications/rules` | `{site_id, event_type, channel: email\|whatsapp, recipient}` — WhatsApp numbers are stored as digits in international format (`08…` → `628…`) |
 | PUT | `/notifications/rules/:id` | `{enabled}` |
 | DELETE | `/notifications/rules/:id` | |
 | GET | `/notifications/log?site_id=&status=queued\|sent\|failed&limit=` | |

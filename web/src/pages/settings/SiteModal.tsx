@@ -21,11 +21,11 @@ const DEFAULTS: SiteConfig = {
 
 type NumKey = Exclude<keyof SiteConfig, 'language'>
 const NUM_FIELDS: { key: NumKey; label: Key; hint?: Key }[] = [
-  { key: 'clock_window_minutes', label: 'site.clockWindow', hint: 'site.clockWindowHint' },
-  { key: 'late_grace_minutes', label: 'site.lateGrace' },
-  { key: 'early_out_grace_minutes', label: 'site.earlyOutGrace' },
-  { key: 'absent_after_minutes', label: 'site.absentAfter' },
-  { key: 'idle_lock_minutes', label: 'site.idleLock' },
+  { key: 'clock_window_minutes', label: 'site.clockWindow', hint: 'adm.site.hint.window' },
+  { key: 'late_grace_minutes', label: 'site.lateGrace', hint: 'adm.site.hint.late' },
+  { key: 'early_out_grace_minutes', label: 'site.earlyOutGrace', hint: 'adm.site.hint.early' },
+  { key: 'absent_after_minutes', label: 'site.absentAfter', hint: 'adm.site.hint.absent' },
+  { key: 'idle_lock_minutes', label: 'site.idleLock', hint: 'adm.site.hint.lock' },
 ]
 
 function timeZones(): string[] {
@@ -114,10 +114,10 @@ export function SiteModal({ site, onClose, onSaved }: { site: Site | null; onClo
           <Field label={t('site.name')} required className="sm:col-span-2">
             <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={200} />
           </Field>
-          <Field label={t('site.clientId')} optional>
+          <Field label={t('site.clientId')} optional hint={t('adm.site.hint.client')}>
             <Input value={clientId} onChange={(e) => setClientId(e.target.value)} />
           </Field>
-          <Field label={t('common.timezone')} required>
+          <Field label={t('common.timezone')} required hint={t('adm.site.hint.tz')}>
             <Input list="tz-list" value={timezone} onChange={(e) => setTimezone(e.target.value)} />
           </Field>
           <datalist id="tz-list">
@@ -129,8 +129,9 @@ export function SiteModal({ site, onClose, onSaved }: { site: Site | null; onClo
             <Input value={address} onChange={(e) => setAddress(e.target.value)} />
           </Field>
         </div>
-        <fieldset className="rounded-lg border border-gray-200 p-4">
+        <fieldset className="rounded-xl border border-gray-200 p-4">
           <legend className="px-1 text-sm font-semibold text-gray-900">{t('site.operational')}</legend>
+          <p className="mb-4 text-xs text-gray-500">{t('adm.site.hint.operational')}</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {NUM_FIELDS.map((f) => (
               <Field key={f.key} label={t(f.label)} hint={f.hint ? t(f.hint) : undefined} required>
@@ -144,7 +145,7 @@ export function SiteModal({ site, onClose, onSaved }: { site: Site | null; onClo
                 />
               </Field>
             ))}
-            <Field label={t('site.notifLanguage')} required>
+            <Field label={t('site.notifLanguage')} required hint={t('adm.site.hint.lang')}>
               <Select value={language} onChange={(e) => setLanguage(e.target.value as SiteConfig['language'])}>
                 <option value="id">{t('lang.id')}</option>
                 <option value="en">{t('lang.en')}</option>

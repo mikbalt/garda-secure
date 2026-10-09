@@ -58,21 +58,21 @@ const kpiTone = {
 
 function Kpi({ label, value, sub, icon: Icon, tone, to, progress }: KpiProps) {
   const body = (
-    <div className="group flex h-full flex-col rounded-2xl border border-gray-200/80 bg-white p-5 shadow-card transition-shadow hover:shadow-raised">
+    <div className="group flex h-full flex-col rounded-2xl border border-gray-200/80 bg-white p-4 shadow-card transition-shadow hover:shadow-raised sm:p-5">
       <div className="flex items-center justify-between">
         <span className={`flex h-9 w-9 items-center justify-center rounded-xl ring-1 ${kpiTone[tone]}`}>
           <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
         </span>
         {to && <ArrowRight className="h-4 w-4 text-gray-300 transition-colors group-hover:text-gray-500" aria-hidden="true" />}
       </div>
-      <p className="mt-4 text-sm font-medium text-gray-500">{label}</p>
-      <p className="mt-1 text-3xl font-semibold tabular-nums tracking-tight text-gray-900">{value}</p>
+      <p className="mt-3 text-sm font-medium text-gray-500 sm:mt-4">{label}</p>
+      <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight text-gray-900 sm:text-3xl">{value}</p>
       {progress !== undefined && (
         <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-gray-100">
           <div className="h-full rounded-full bg-emerald-500 transition-[width] duration-700" style={{ width: `${Math.min(100, progress)}%` }} />
         </div>
       )}
-      <p className="mt-2 text-xs text-gray-500">{sub}</p>
+      <p className="mt-2 hidden text-xs text-gray-500 sm:block">{sub}</p>
     </div>
   )
   return to ? (
@@ -208,6 +208,8 @@ function Today({ site }: { site: Site }) {
   const highOpen = (s?.incidents_by_severity?.high ?? 0) + (s?.incidents_by_severity?.critical ?? 0)
   const weekly = (s?.weekly_attendance ?? []).map((d) => ({ ...d, label: formatDay(d.date, lang, false).replace(/ \d{4}$/, '') }))
   const loadingTop = summary.isLoading || !s
+  const kpiCount = 1 + Number(can('viewPatrol')) + Number(can('viewIncidents')) + Number(can('viewDefects'))
+  const canAct = can('manageIncidents') || can('reviewAttendance') || can('viewSettings')
 
   if (summary.error) return <ErrorState error={summary.error} onRetry={() => summary.refetch()} />
 
@@ -228,7 +230,7 @@ function Today({ site }: { site: Site }) {
       <SetupCallout />
 
       {/* KPIs */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className={`grid grid-cols-2 gap-3 sm:gap-4 ${kpiCount >= 4 ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`}>
         {loadingTop ? (
           Array.from({ length: 4 }).map((_, i) => <CardSkeleton key={i} />)
         ) : (
@@ -265,7 +267,7 @@ function Today({ site }: { site: Site }) {
       <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-3">
         <div className="space-y-6 xl:col-span-2">
           {/* Needs attention */}
-          <Card title={t('today.needsAction')} flush>
+          <Card title={t(canAct ? 'today.needsAction' : 'today.highlights')} flush>
             {actions.length === 0 ? (
               <div className="flex items-center gap-3 px-5 py-6 text-sm text-gray-600">
                 <CheckCircle2 className="h-5 w-5 text-emerald-500" aria-hidden="true" />

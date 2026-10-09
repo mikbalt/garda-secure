@@ -1,4 +1,7 @@
 import { uxId } from './ux.id'
+import { peopleId } from './people.id'
+import { opsId } from './ops.id'
+import { adminId } from './admin.id'
 import type { Dict } from './en'
 
 /** Kamus Bahasa Indonesia (bahasa bawaan). */
@@ -408,4 +411,7 @@ export const id: Dict = {
   'bk.finished': 'Selesai',
   'bk.empty': 'Belum ada cadangan.',
   ...uxId,
+  ...peopleId,
+  ...opsId,
+  ...adminId,
 }

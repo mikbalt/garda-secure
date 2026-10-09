@@ -87,7 +87,7 @@ function Brand() {
   const { t } = useI18n()
   const { user } = useAuth()
   return (
-    <div className="flex items-center gap-3 px-5 pb-5 pt-6">
+    <div className="flex min-w-0 flex-1 items-center gap-3 px-5 pb-5 pt-6">
       <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary-400 to-primary-700 shadow-lg shadow-primary-900/40 ring-1 ring-white/20">
         <ShieldCheck className="h-5 w-5 text-white" aria-hidden="true" />
       </div>
@@ -210,7 +210,7 @@ function Sidebar({ onClose }: { onClose: () => void }) {
         <Brand />
         <button
           type="button"
-          className="ml-auto mr-3 mt-6 rounded-lg p-1.5 text-gray-400 hover:bg-white/10 hover:text-white lg:hidden"
+          className="mr-3 mt-6 shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-white/10 hover:text-white lg:hidden"
           onClick={onClose}
           aria-label={t('nav.closeMenu')}
         >
@@ -369,7 +369,7 @@ export function Layout() {
       </a>
 
       <aside
-        className={`no-print fixed inset-y-0 left-0 z-40 w-64 shrink-0 transition-transform duration-200 lg:static lg:translate-x-0 ${
+        className={`no-print fixed inset-y-0 left-0 z-40 w-64 shrink-0 overflow-hidden transition-transform duration-200 lg:static lg:translate-x-0 ${
           menuOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -397,7 +397,7 @@ export function Layout() {
           </div>
         </header>
         <SosBanner />
-        <main id="main" tabIndex={-1} className="scroll-thin flex-1 overflow-auto focus:outline-none">
+        <main id="main" tabIndex={-1} className="scroll-thin relative flex-1 overflow-auto focus:outline-none">
           <div className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
             <Outlet />
           </div>

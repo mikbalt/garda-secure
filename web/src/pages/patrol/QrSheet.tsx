@@ -4,6 +4,7 @@ import QRCode from 'qrcode'
 import { Printer } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { Modal } from '../../components/ui/Modal'
+import { Notice } from '../../components/ui/States'
 import { useI18n } from '../../i18n/context'
 import type { PatrolRoute } from '../../types'
 
@@ -26,7 +27,7 @@ function Grid({ route, size }: { route: PatrolRoute; size: number }) {
   return (
     <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
       {route.checkpoints.map((cp) => (
-        <figure key={cp.id} className="flex break-inside-avoid flex-col items-center rounded-lg border border-gray-300 p-3 text-center">
+        <figure key={cp.id} className="flex break-inside-avoid flex-col items-center rounded-xl border border-gray-200 bg-white p-3 text-center">
           <QrImage value={cp.qr_code} size={size} alt={`${t('pat.qrCode')}: ${cp.name}`} />
           <figcaption className="mt-2">
             <div className="text-sm font-semibold text-gray-900">
@@ -75,6 +76,7 @@ export function QrSheet({ route, onClose }: { route: PatrolRoute; onClose: () =>
           </>
         }
       >
+        <Notice>{t('ops.pat.qrHint')}</Notice>
         <Grid route={route} size={160} />
       </Modal>
       {createPortal(

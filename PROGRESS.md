@@ -9,7 +9,7 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
-| Web UX/design overhaul: new design system, onboarding "getting started" flow, clearer navigation and page flows | `muhamhad-pc1/claude` | 2026-10-09 | Please don't edit `web/` until pushed. |
+| *(nothing claimed)* | | | |
 
 ## Migration numbers
 
@@ -28,7 +28,7 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 | M2 Core Attendance | 🟢 backend + web done |
 | M3 Patrol | 🟢 backend + web done (live view by polling) |
 | M4 Incident & Field Reports | 🟢 backend done; ⚪ mobile deferred |
-| M5 Web Dashboard & Reports | 🟢 all pages built (lint/typecheck/build green); ⚠️ not yet exercised against a running stack |
+| M5 Web Dashboard & Reports | 🟢 redesigned (D-022): setup guide, Today dashboard, all pages; verified in demo mode (all roles, desktop + 390 px); ⚠️ not yet exercised against a running stack |
 | M6 Notifications & Email | 🟢 backend done (rules, log, retry, SMTP/WhatsApp, monthly recap); needs real SMTP/WA test |
 | M7 Hardening & Go-Live | ⚪ not started |
 
@@ -48,6 +48,9 @@ Backend
 
 Web
 - [ ] Manual UI pass against a running stack (all roles, both languages)
+- [ ] Promote page-local kits to `components/ui`: Avatar/PersonCell, FilterChips/ChipGroup, Segmented, PeriodStepper/DateRangeFilter, ConfirmDialog, Switch, Stat tiles, LiveIndicator (see `pages/guards/PeopleKit.tsx`, `pages/patrol/kit.tsx`, `pages/reports/ReportKit.tsx`, `pages/settings/kit.tsx`)
+- [ ] `Table`: optional row-click prop (Patrol history uses its own table markup)
+- [ ] Attendance "Perlu ditinjau" chip counts only the selected day while the tab counts all days — align or label
 - [ ] Device dialog: "set back to pending" action
 - [ ] Web unit tests (no test runner yet — add Vitest)
 - [ ] Live patrol map (needs checkpoint lat/lng in routes)
@@ -74,5 +77,6 @@ Mobile (deferred — D-017)
 | Infra: Alpine API image with pg_dump, compose fixes (worker command, Keycloak DB/path/proxy, healthchecks), nginx fixes (/api prefix, web:80, /auth, MinIO :9443, 12 MB uploads), two realm files + generator, env examples, Makefile, CI (integration tests, nginx/realm validation) | `muhamhad-pc1/claude` | 2026-10-07 | ace9df5 |
 | Web v1: runtime `/config.js`, multi-realm org picker, role-aware nav, site selector, EN/ID i18n, Dashboard + SOS banner, Attendance (+override, review queue), Schedules, Guards (+PIN), Patrol (route editor + QR print, live, sessions), Incidents/SOS/Defects/Visitors, 5 reports + CSV + print, Settings (sites, devices, rules, channels, log, backups) | `muhamhad-pc1/claude` | 2026-10-07 | 7d851f8 |
 | Backend: `guard_name` on list rows, `GET /media/url` | `muhamhad-pc1/claude` | 2026-10-07 | 8cfc11a |
-| CI/CD fixes: gosec pinned, web Docker image job, mobile CI manual-only, tag/manual deploy from `infra/` with health wait; actionlint clean | `muhamhad-pc1/claude` | 2026-10-08 | this push |
+| CI/CD fixes: gosec pinned, web Docker image job, mobile CI manual-only, tag/manual deploy from `infra/` with health wait; actionlint clean | `muhamhad-pc1/claude` | 2026-10-08 | c3ffc59 |
+| Web UX overhaul (D-022): design system + `web/DESIGN.md`, new shell & navigation, setup guide + welcome flow, Today dashboard, redesigned attendance/roster/guards, patrol/incidents, reports/settings, organisation picker, demo mode, code-split pages; WhatsApp `08…` normalisation (D-023) | `muhamhad-pc1/claude` | 2026-10-09 | this push |
 | Docs: `docs/api.md` (API contract), `docs/runbook.md` (install, users, tablets, backups/restore) | `muhamhad-pc1/claude` | 2026-10-07 | ace9df5 |
