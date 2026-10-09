@@ -1,6 +1,12 @@
 package handler
 
 import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
+	"net"
+	"net/textproto"
 	"slices"
 	"strconv"
 	"strings"
@@ -9,6 +15,7 @@ import (
 
 	"github.com/securepatrol/backend/internal/middleware"
 	"github.com/securepatrol/backend/internal/model"
+	"github.com/securepatrol/backend/internal/netguard"
 	"github.com/securepatrol/backend/internal/notification"
 	"github.com/securepatrol/backend/internal/repository"
 	"github.com/securepatrol/backend/internal/service"
@@ -211,10 +218,61 @@ func (h *Handler) testChannel(c *fiber.Ctx) error {
 	if err := parse(c, &b); err != nil {
 		return h.fail(c, err)
 	}
+	if err := service.CheckLengths(service.S("recipient", b.Recipient, 320)); err != nil {
+		return h.fail(c, err)
+	}
 	if err := notification.SendTest(c.Context(), h.Settings, b.Channel, strings.TrimSpace(b.Recipient)); err != nil {
-		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": err.Error(), "code": "delivery_failed"})
+		// Never echo the raw error: it may contain server banners or API
+		// response bodies. The detail goes to the server log only.
+		reason := deliveryFailureReason(err)
+		h.Log.Warn().Err(err).Str("channel", b.Channel).Str("reason", reason).Msg("test notification failed")
+		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{
+			"error": "test delivery failed: " + reason, "code": "delivery_failed", "reason": reason,
+		})
 	}
 	return c.JSON(fiber.Map{"sent": true})
+}
+
+// deliveryFailureReason maps a channel error to a short machine reason:
+// not_configured, invalid_recipient, destination_not_allowed, timeout,
+// connection_failed, tls_failed, auth_failed, rejected or failed.
+func deliveryFailureReason(err error) string {
+	var (
+		netErr  net.Error
+		opErr   *net.OpError
+		dnsErr  *net.DNSError
+		tpErr   *textproto.Error
+		stErr   *notification.StatusError
+		certErr *tls.CertificateVerificationError
+		hostErr x509.HostnameError
+		authErr x509.UnknownAuthorityError
+		recErr  tls.RecordHeaderError
+	)
+	switch {
+	case errors.Is(err, notification.ErrNotConfigured):
+		return "not_configured"
+	case errors.Is(err, notification.ErrInvalidRecipient):
+		return "invalid_recipient"
+	case errors.Is(err, netguard.ErrBlocked):
+		return "destination_not_allowed"
+	case errors.Is(err, context.DeadlineExceeded), errors.As(err, &netErr) && netErr.Timeout():
+		return "timeout"
+	case errors.As(err, &certErr), errors.As(err, &hostErr), errors.As(err, &authErr), errors.As(err, &recErr):
+		return "tls_failed"
+	case errors.As(err, &tpErr):
+		if tpErr.Code == 530 || tpErr.Code == 534 || tpErr.Code == 535 {
+			return "auth_failed"
+		}
+		return "rejected"
+	case errors.As(err, &stErr):
+		if stErr.Status == fiber.StatusUnauthorized || stErr.Status == fiber.StatusForbidden {
+			return "auth_failed"
+		}
+		return "rejected"
+	case errors.As(err, &dnsErr), errors.As(err, &opErr):
+		return "connection_failed"
+	}
+	return "failed"
 }
 
 // ── Backups (NFR-07) ─────────────────────────────────────────────────────────

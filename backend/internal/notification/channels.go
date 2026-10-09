@@ -19,6 +19,22 @@ import (
 	"github.com/securepatrol/backend/internal/settings"
 )
 
+// Errors callers can classify (e.g. the settings test endpoint).
+var (
+	ErrNotConfigured    = errors.New("channel is not configured")
+	ErrInvalidRecipient = errors.New("invalid recipient")
+)
+
+// StatusError is a non-2xx answer of an HTTP channel API.
+type StatusError struct {
+	Status int
+	Detail string // response excerpt, for the delivery log only
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("API status %d: %s", e.Status, e.Detail)
+}
+
 // Channel delivers one message to one recipient. New channels (LINE,
 // Telegram in v2) implement this and register in Worker.channels.
 type Channel interface {
@@ -32,11 +48,11 @@ type emailChannel struct{}
 func (emailChannel) Send(ctx context.Context, cfg settings.Channels, to, subject, body string) error {
 	s := cfg.SMTP
 	if s.Host == "" {
-		return errors.New("SMTP is not configured")
+		return fmt.Errorf("%w: SMTP host missing", ErrNotConfigured)
 	}
 	toAddr, err := mail.ParseAddress(to)
 	if err != nil {
-		return fmt.Errorf("invalid e-mail recipient %q", to)
+		return fmt.Errorf("%w: e-mail %q", ErrInvalidRecipient, to)
 	}
 	from := s.From
 	if from == "" {
@@ -69,25 +85,38 @@ func (emailChannel) Send(ctx context.Context, cfg settings.Channels, to, subject
 		auth = smtp.PlainAuth("", s.User, s.Password, s.Host)
 	}
 
-	if port != "465" {
-		// smtp.SendMail upgrades with STARTTLS when the server offers it.
-		return smtp.SendMail(addr, auth, fromAddr.Address, []string{toAddr.Address}, msg.Bytes())
-	}
-
-	// Port 465: implicit TLS.
-	dialer := &net.Dialer{Timeout: 15 * time.Second}
-	conn, err := tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{ServerName: s.Host, MinVersion: tls.VersionTLS12})
+	// Dial through the settings guard: relays entered in the UI may not
+	// resolve to internal addresses (checked on the connected IP, so DNS
+	// rebinding cannot bypass the check made when the settings were saved).
+	conn, err := s.Guard.Dialer(15*time.Second).DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return fmt.Errorf("smtp dial: %w", err)
 	}
+	if dl, ok := ctx.Deadline(); ok {
+		_ = conn.SetDeadline(dl)
+	}
+	tlsCfg := &tls.Config{ServerName: s.Host, MinVersion: tls.VersionTLS12}
+	if port == "465" { // implicit TLS
+		conn = tls.Client(conn, tlsCfg)
+	}
 	c, err := smtp.NewClient(conn, s.Host)
 	if err != nil {
+		_ = conn.Close()
 		return fmt.Errorf("smtp client: %w", err)
 	}
 	defer c.Close()
+	if port != "465" {
+		if ok, _ := c.Extension("STARTTLS"); ok {
+			if err := c.StartTLS(tlsCfg); err != nil {
+				return fmt.Errorf("smtp starttls: %w", err)
+			}
+		}
+	}
 	if auth != nil {
-		if err := c.Auth(auth); err != nil {
-			return fmt.Errorf("smtp auth: %w", err)
+		if ok, _ := c.Extension("AUTH"); ok {
+			if err := c.Auth(auth); err != nil {
+				return fmt.Errorf("smtp auth: %w", err)
+			}
 		}
 	}
 	if err := c.Mail(fromAddr.Address); err != nil {
@@ -118,11 +147,11 @@ type whatsAppChannel struct {
 func (w whatsAppChannel) Send(ctx context.Context, cfg settings.Channels, to, subject, body string) error {
 	s := cfg.WhatsApp
 	if s.Token == "" || s.PhoneNumberID == "" {
-		return errors.New("WhatsApp is not configured (token and phone number ID are required)")
+		return fmt.Errorf("%w: WhatsApp token and phone number ID are required", ErrNotConfigured)
 	}
 	phone := digitsOnly(to)
 	if len(phone) < 8 {
-		return fmt.Errorf("invalid WhatsApp recipient %q", to)
+		return fmt.Errorf("%w: WhatsApp %q", ErrInvalidRecipient, to)
 	}
 	text := subject
 	if body != "" && !strings.HasPrefix(strings.TrimSpace(body), "<") {
@@ -170,7 +199,7 @@ func (w whatsAppChannel) Send(ctx context.Context, cfg settings.Channels, to, su
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
 		detail, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Errorf("whatsapp API status %d: %s", resp.StatusCode, strings.TrimSpace(string(detail)))
+		return &StatusError{Status: resp.StatusCode, Detail: strings.TrimSpace(string(detail))}
 	}
 	return nil
 }

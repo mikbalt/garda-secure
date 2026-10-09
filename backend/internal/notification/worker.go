@@ -3,6 +3,7 @@ package notification
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -46,7 +47,12 @@ func NewWorker(db repository.DBTX, rdb *redis.Client, st *settings.Store, log ze
 func defaultChannels() map[string]Channel {
 	return map[string]Channel{
 		"email":    emailChannel{},
-		"whatsapp": whatsAppChannel{client: &http.Client{Timeout: sendTimeout}},
+		"whatsapp": whatsAppChannel{client: &http.Client{
+			Timeout: sendTimeout,
+			// Never follow redirects: the token must only go to the
+			// allow-listed API URL.
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		}},
 	}
 }
 
@@ -55,7 +61,7 @@ func defaultChannels() map[string]Channel {
 func SendTest(ctx context.Context, st *settings.Store, channel, recipient string) error {
 	ch, ok := defaultChannels()[channel]
 	if !ok {
-		return errors.New("unsupported channel " + channel)
+		return fmt.Errorf("%w: unsupported channel %q", ErrNotConfigured, channel)
 	}
 	cfg, err := st.Channels(ctx)
 	if err != nil {

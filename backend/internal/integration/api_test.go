@@ -119,7 +119,7 @@ func newEnv(t *testing.T) *env {
 	cfg := &config.Config{
 		DatabaseURL: dsn, MinioBucketPhotos: "photos", MinioBucketBackups: "backups",
 		SettingsEncryptionKey: "test-key", SMTPPort: "587", WhatsAppAPIURL: "https://graph.example",
-		KeycloakRealms: []string{realm1, realm2},
+		KeycloakRealms: []string{realm1, realm2}, PlatformAdminRealms: []string{realm1},
 	}
 	stg, err := storage.New(storage.Options{Endpoint: "127.0.0.1:1", AccessKey: "x", SecretKey: "y"})
 	if err != nil {
@@ -599,23 +599,52 @@ func TestAPIEndToEnd(t *testing.T) {
 		t.Fatalf("monthly recap notifications = %d", n)
 	}
 
-	// ── Settings, notification log, backups ──────────────────────────────────
-	e.expect(e.do("PUT", "/api/v1/settings/channels", admin, "", map[string]any{
-		"smtp": map[string]any{"host": "smtp.example.com", "port": "587", "password": "s3cret", "from": "SP <sp@example.com>"},
+	// ── Settings, notification log, backups (platform-admin only) ───────────
+	platform := e.web(realm1, "ops1", "platform-admin")
+	if r := e.do("GET", "/api/v1/settings/channels", admin, "", nil); r.status != 403 || r.str("code") != "platform_admin_required" {
+		t.Fatalf("realm admin reads install-wide settings: %d %s", r.status, r.raw)
+	}
+	e.expect(e.do("PUT", "/api/v1/settings/channels", admin, "", map[string]any{"smtp": map[string]any{"host": "8.8.8.8"}}), 403, "realm admin changes settings")
+	e.expect(e.do("GET", "/api/v1/settings/channels", e.web(realm2, "ops2", "platform-admin"), "", nil), 403, "platform-admin of a realm not in PLATFORM_ADMIN_REALMS")
+	e.expect(e.do("GET", "/api/v1/settings/channels", e.token(realm1, "ops1", "securepatrol-tablet", "platform-admin"), "", nil), 403, "platform-admin role via tablet client")
+	e.expect(e.do("PUT", "/api/v1/settings/channels", platform, "", map[string]any{
+		"smtp": map[string]any{"host": "8.8.8.8", "port": "587", "user": "sp", "password": "s3cret", "from": "SP <sp@example.com>"},
 	}), 200, "save channels")
-	got := e.expect(e.do("GET", "/api/v1/settings/channels", admin, "", nil), 200, "get channels").obj()
+	got := e.expect(e.do("GET", "/api/v1/settings/channels", platform, "", nil), 200, "get channels").obj()
 	if got["smtp"].(map[string]any)["password"] != "********" {
 		t.Fatalf("secret not masked: %v", got)
 	}
 	if n := e.count(`SELECT COUNT(*) FROM system_settings WHERE value->'smtp'->>'password' LIKE 'enc:v1:%'`); n != 1 {
 		t.Fatal("secret not encrypted at rest")
 	}
-	e.expect(e.do("PUT", "/api/v1/settings/channels", admin, "", map[string]any{
-		"smtp": map[string]any{"host": "smtp2.example.com", "password": "********"},
+	e.expect(e.do("PUT", "/api/v1/settings/channels", platform, "", map[string]any{
+		"smtp": map[string]any{"host": "8.8.8.8", "port": "587", "user": "sp", "password": "********", "from": "Ops <ops@example.com>"},
 	}), 200, "save channels keeping secret")
-	if ch, err := e.settings.Channels(ctx); err != nil || ch.SMTP.Password != "s3cret" || ch.SMTP.Host != "smtp2.example.com" {
+	if ch, err := e.settings.Channels(ctx); err != nil || ch.SMTP.Password != "s3cret" || ch.SMTP.From != "Ops <ops@example.com>" {
 		t.Fatalf("channels after placeholder save = %+v, %v", ch.SMTP, err)
 	}
+	for name, smtp := range map[string]map[string]any{
+		"new host keeps secret": {"host": "1.1.1.1", "port": "587", "user": "sp", "password": "********"},
+		"new port keeps secret": {"host": "8.8.8.8", "port": "465", "user": "sp", "password": "********"},
+		"new user keeps secret": {"host": "8.8.8.8", "port": "587", "user": "attacker", "password": "********"},
+	} {
+		if r := e.do("PUT", "/api/v1/settings/channels", platform, "", map[string]any{"smtp": smtp}); r.status != 400 || r.str("code") != "secret_required" {
+			t.Fatalf("%s: %d %s", name, r.status, r.raw)
+		}
+	}
+	for name, body := range map[string]map[string]any{
+		"smtp_host_not_allowed":    {"smtp": map[string]any{"host": "127.0.0.1", "password": "x"}},
+		"invalid_smtp_port":        {"smtp": map[string]any{"host": "8.8.8.8", "port": "6379", "password": "x"}},
+		"whatsapp_url_not_allowed": {"whatsapp": map[string]any{"api_url": "https://graph.facebook.com.evil.example/v1", "token": "t"}},
+	} {
+		if r := e.do("PUT", "/api/v1/settings/channels", platform, "", body); r.status != 400 || r.str("code") != name {
+			t.Fatalf("%s: %d %s", name, r.status, r.raw)
+		}
+	}
+	if r := e.do("POST", "/api/v1/settings/channels/test", platform, "", map[string]any{"channel": "whatsapp", "recipient": "628123456789"}); r.status != 502 || r.str("reason") != "not_configured" || strings.Contains(string(r.raw), "token") {
+		t.Fatalf("test unconfigured WhatsApp: %d %s", r.status, r.raw)
+	}
+	e.expect(e.do("POST", "/api/v1/settings/channels/test", admin, "", map[string]any{"channel": "email", "recipient": "a@b.c"}), 403, "realm admin sends test")
 	e.expect(e.do("GET", "/api/v1/settings/channels", sup, "", nil), 403, "supervisor reads settings")
 
 	logRows := e.expect(e.do("GET", "/api/v1/notifications/log?site_id="+siteA, admin, "", nil), 200, "notification log").list()
@@ -629,8 +658,9 @@ func TestAPIEndToEnd(t *testing.T) {
 	}
 	e.expect(e.do("POST", "/api/v1/notifications/log/"+failedID+"/retry", admin, "", nil), 200, "retry failed")
 
-	e.expect(e.do("POST", "/api/v1/backups", admin, "", nil), 202, "request backup")
-	if l := e.do("GET", "/api/v1/backups", admin, "", nil).list(); len(l) != 1 || l[0].(map[string]any)["status"] != "pending" {
+	e.expect(e.do("POST", "/api/v1/backups", admin, "", nil), 403, "realm admin requests backup")
+	e.expect(e.do("POST", "/api/v1/backups", platform, "", nil), 202, "request backup")
+	if l := e.do("GET", "/api/v1/backups", platform, "", nil).list(); len(l) != 1 || l[0].(map[string]any)["status"] != "pending" {
 		t.Fatalf("backups = %v", l)
 	}
 

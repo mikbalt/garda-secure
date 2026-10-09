@@ -165,12 +165,14 @@ func (h *Handler) Register(api fiber.Router) {
 	notif.Get("/log", h.listNotificationLog)
 	notif.Post("/log/:id/retry", h.retryNotification)
 
-	set := api.Group("/settings", web(rolesAdmin...))
+	// Install-wide settings and backups: platform-admin only (BE-S3).
+	platform := middleware.RequirePlatformAdmin(h.Cfg.PlatformAdminRealms)
+	set := api.Group("/settings", platform)
 	set.Get("/channels", h.getChannels)
 	set.Put("/channels", h.putChannels)
 	set.Post("/channels/test", h.testChannel)
 
-	bk := api.Group("/backups", web(rolesAdmin...))
+	bk := api.Group("/backups", platform)
 	bk.Get("/", h.listBackups)
 	bk.Post("/", h.createBackup)
 }
@@ -186,6 +188,9 @@ func (h *Handler) fail(c *fiber.Ctx, err error) error {
 		if se.Code != "" {
 			body["code"] = se.Code
 		}
+		if se.Field != "" {
+			body["field"] = se.Field
+		}
 		return c.Status(se.Status).JSON(body)
 	case errors.Is(err, repository.ErrNotFound), repository.IsInvalidInput(err):
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not found", "code": "not_found"})
@@ -197,7 +202,7 @@ func (h *Handler) fail(c *fiber.Ctx, err error) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid value", "code": "invalid_value"})
 	}
 	h.Log.Error().Err(err).Str("path", c.Path()).Str("method", c.Method()).Msg("request failed")
-	return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
+	return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error", "code": "internal"})
 }
 
 // parse decodes a JSON body.

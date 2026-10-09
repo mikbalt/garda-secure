@@ -5,6 +5,8 @@ package service
 import (
 	"fmt"
 	"net/http"
+	"strings"
+	"unicode/utf8"
 )
 
 // Error is a business-rule failure that maps to an HTTP status.
@@ -12,6 +14,7 @@ type Error struct {
 	Status int
 	Code   string
 	Msg    string
+	Field  string // offending input field, when known
 }
 
 func (e *Error) Error() string { return e.Msg }
@@ -39,3 +42,56 @@ func NotFound(code, format string, args ...any) *Error {
 func Forbidden(code, format string, args ...any) *Error {
 	return newErr(http.StatusForbidden, code, format, args...)
 }
+
+// WithField records which input field the error is about.
+func (e *Error) WithField(field string) *Error {
+	e.Field = field
+	return e
+}
+
+// TooLong reports a free-text field over its length limit.
+func TooLong(field string, max int) *Error {
+	return BadRequest("field_too_long", "%s is too long (max %d characters)", field, max).WithField(field)
+}
+
+// Field is one free-text input to length-check.
+type Field struct {
+	Name  string
+	Value string
+	Max   int // characters (runes)
+}
+
+// F is shorthand for a Field from an optional value.
+func F(name string, v *string, max int) Field {
+	if v == nil {
+		return Field{Name: name, Max: max}
+	}
+	return Field{Name: name, Value: *v, Max: max}
+}
+
+// S is shorthand for a Field from a plain string.
+func S(name, v string, max int) Field { return Field{Name: name, Value: v, Max: max} }
+
+// CheckLengths fails with field_too_long on the first field over its limit.
+func CheckLengths(fields ...Field) error {
+	for _, f := range fields {
+		if len(f.Value) > f.Max && utf8.RuneCountInString(f.Value) > f.Max {
+			return TooLong(f.Name, f.Max)
+		}
+	}
+	return nil
+}
+
+// Length limits shared by the handlers (characters).
+const (
+	MaxName        = 200  // people, sites, routes, checkpoints, devices
+	MaxShortText   = 100  // categories, types, ID types, codes
+	MaxLocation    = 300  // free-text locations
+	MaxDescription = 4000 // incident/defect descriptions
+	MaxReason      = 1000 // override/amendment reasons, notes, purposes
+	MaxAddress     = 500
+	MaxIdentifier  = 64 // employee IDs, ID card numbers, plates
+)
+
+// TrimmedLen is the rune length of a trimmed string.
+func TrimmedLen(s string) int { return utf8.RuneCountInString(strings.TrimSpace(s)) }
