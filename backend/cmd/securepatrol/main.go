@@ -2,18 +2,26 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
+	"sync"
 	"syscall"
 	"time"
 	_ "time/tzdata" // site time zones must resolve in the minimal runtime image
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/adaptor"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/fiber/v2/middleware/requestid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -22,6 +30,7 @@ import (
 	"github.com/securepatrol/backend/internal/db"
 	"github.com/securepatrol/backend/internal/handler"
 	"github.com/securepatrol/backend/internal/jobs"
+	"github.com/securepatrol/backend/internal/metrics"
 	"github.com/securepatrol/backend/internal/middleware"
 	"github.com/securepatrol/backend/internal/notification"
 	"github.com/securepatrol/backend/internal/settings"
@@ -54,7 +63,9 @@ func main() {
 	var pool *pgxpool.Pool
 	for attempt := 0; attempt < 5; attempt++ {
 		wait := time.Duration(1<<attempt) * time.Second
-		p, connErr := db.New(ctx, cfg.DatabaseURL)
+		p, connErr := db.New(ctx, cfg.DatabaseURL, db.Options{
+			MaxConns: cfg.DBMaxConns, StatementTimeout: cfg.DBStatementTimeout,
+		})
 		if connErr != nil {
 			logger.Warn().Err(connErr).Int("attempt", attempt+1).
 				Dur("retry_in", wait).Msg("postgres unavailable, retrying")
@@ -85,7 +96,11 @@ func main() {
 	rdb := redis.NewClient(opt)
 	defer rdb.Close()
 	if err := rdb.Ping(ctx).Err(); err != nil {
-		logger.Fatal().Err(err).Msg("redis ping failed")
+		if mode == "api" {
+			logger.Fatal().Err(err).Msg("redis ping failed")
+		}
+		// The worker dispatches from Postgres; Redis only shortens latency.
+		logger.Warn().Err(err).Msg("redis ping failed; worker continues and polls postgres")
 	}
 
 	// ── MinIO ────────────────────────────────────────────────────────────────
@@ -112,11 +127,7 @@ func main() {
 
 	// ── Worker mode: notification dispatch + scheduled jobs ─────────────────
 	if mode == "worker" {
-		logger.Info().Msg("starting notification worker and scheduler")
-		go notification.NewWorker(pool, rdb, settingsStore, logger).Run(ctx)
-		go jobs.NewScheduler(pool, rdb, notifier, stg, cfg, logger).Run(ctx)
-		<-ctx.Done()
-		logger.Info().Msg("worker shutting down")
+		runWorker(ctx, cfg, pool, rdb, settingsStore, notifier, stg, logger)
 		return
 	}
 
@@ -138,9 +149,18 @@ func main() {
 		ProxyHeader: fiber.HeaderXForwardedFor,
 	})
 
+	metrics.RegisterAPI(prometheus.DefaultRegisterer)
 	app.Use(requestid.New())
+	app.Use(metrics.Fiber())
 	app.Use(middleware.Logger(logger))
-	app.Use(recover.New())
+	app.Use(recover.New(recover.Config{
+		EnableStackTrace: true,
+		StackTraceHandler: func(c *fiber.Ctx, e any) {
+			rid, _ := c.Locals("requestid").(string)
+			logger.Error().Str("request_id", rid).Str("path", c.Path()).Str("method", c.Method()).
+				Interface("panic", e).Str("stack", string(debug.Stack())).Msg("panic recovered")
+		},
+	}))
 	if cfg.CORSAllowedOrigins != "" {
 		app.Use(cors.New(cors.Config{
 			AllowOrigins: cfg.CORSAllowedOrigins,
@@ -149,8 +169,12 @@ func main() {
 		}))
 	}
 
-	// Public routes
+	// Public routes. /metrics and /ready are for Prometheus and the
+	// orchestrator on the internal network; nginx only proxies /api/ and
+	// /health, so they are not reachable from outside.
 	app.Get("/health", handler.Health(pool, rdb))
+	app.Get("/ready", handler.Ready(pool, rdb, stg, cfg.MinioBucketPhotos))
+	app.Get("/metrics", adaptor.HTTPHandler(promhttp.Handler()))
 
 	h := &handler.Handler{
 		DB: pool, Redis: rdb, Storage: stg, Notifier: notifier, Settings: settingsStore, Cfg: cfg, Log: logger,
@@ -178,3 +202,90 @@ func main() {
 	}
 	logger.Info().Msg("server stopped")
 }
+
+// runWorker runs the notification dispatcher and the scheduler, serves
+// /health and /metrics on WORKER_HTTP_ADDR and shuts down gracefully:
+// in-flight sends and jobs get WORKER_SHUTDOWN_TIMEOUT to finish, then
+// running jobs (e.g. a backup) are cancelled.
+func runWorker(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client,
+	st *settings.Store, notifier *notification.Notifier, stg *storage.Client, logger zerolog.Logger) {
+	logger.Info().Int("senders", cfg.NotifyWorkers).Msg("starting notification worker and scheduler")
+	metrics.RegisterWorker(prometheus.DefaultRegisterer)
+
+	dispatcher := notification.NewWorker(pool, rdb, st, notifier, cfg.NotifyWorkers, logger)
+	scheduler := jobs.NewScheduler(pool, rdb, notifier, stg, cfg, logger)
+	abortCtx, abort := context.WithCancel(context.Background())
+	defer abort()
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); dispatcher.Run(ctx) }()
+	go func() { defer wg.Done(); scheduler.Run(ctx, abortCtx) }()
+
+	healthy := func() bool {
+		now := time.Now()
+		return now.Sub(dispatcher.Heartbeat()) <= workerStaleAfter && now.Sub(scheduler.Heartbeat()) <= workerStaleAfter
+	}
+	go func() {
+		t := time.NewTicker(5 * time.Second)
+		defer t.Stop()
+		for {
+			if healthy() {
+				metrics.WorkerHeartbeat.SetToCurrentTime()
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
+		}
+	}()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
+		body := map[string]any{
+			"dispatcher_last_tick": dispatcher.Heartbeat().UTC().Format(time.RFC3339),
+			"scheduler_last_tick":  scheduler.Heartbeat().UTC().Format(time.RFC3339),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if healthy() {
+			body["status"] = "ok"
+		} else {
+			body["status"] = "stalled"
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
+		_ = json.NewEncoder(w).Encode(body)
+	})
+	mux.Handle("/metrics", promhttp.Handler())
+	srv := &http.Server{Addr: cfg.WorkerHTTPAddr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	go func() {
+		logger.Info().Str("addr", cfg.WorkerHTTPAddr).Msg("worker health/metrics server starting")
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Error().Err(err).Msg("worker health/metrics server failed")
+		}
+	}()
+
+	<-ctx.Done()
+	logger.Info().Dur("timeout", cfg.WorkerShutdownTimeout).Msg("worker shutting down; finishing in-flight work")
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(cfg.WorkerShutdownTimeout):
+		logger.Warn().Msg("shutdown timeout reached; cancelling running jobs")
+		abort()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			logger.Error().Msg("worker did not stop in time")
+		}
+	}
+	sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = srv.Shutdown(sctx)
+	logger.Info().Msg("worker stopped")
+}
+
+// workerStaleAfter is how long the dispatcher or the scheduler may go
+// without a tick before the worker reports itself unhealthy.
+const workerStaleAfter = 60 * time.Second

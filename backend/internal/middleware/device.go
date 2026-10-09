@@ -3,6 +3,8 @@ package middleware
 import (
 	"context"
 	"errors"
+	"sync"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -61,16 +63,34 @@ func LoadDevice(pool *pgxpool.Pool) fiber.Handler {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "device lookup failed"})
 		}
 		c.Locals("device", d)
-		if d.Status == "active" {
+		if d.Status == "active" && touchDue(d.ID, time.Now()) {
 			id := d.ID
 			go func() {
-				if err := repository.TouchDevice(context.Background(), pool, id); err != nil {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				if err := repository.TouchDevice(ctx, pool, id); err != nil {
 					log.Warn().Err(err).Str("device_id", id).Msg("touch device failed")
 				}
 			}()
 		}
 		return c.Next()
 	}
+}
+
+// touchInterval throttles last-seen updates per device and process, so a
+// busy tablet causes at most one background write a minute (audit BE-R6).
+const touchInterval = time.Minute
+
+var lastTouch sync.Map // device ID → time.Time of the last touch
+
+// touchDue reports whether the device's last-seen time should be written now
+// and, if so, records the attempt.
+func touchDue(deviceID string, now time.Time) bool {
+	if v, ok := lastTouch.Load(deviceID); ok && now.Sub(v.(time.Time)) < touchInterval {
+		return false
+	}
+	lastTouch.Store(deviceID, now)
+	return true
 }
 
 // CheckActiveDevice verifies the caller is an approved device with a site.
