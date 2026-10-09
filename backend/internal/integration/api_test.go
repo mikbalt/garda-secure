@@ -147,7 +147,7 @@ func newEnv(t *testing.T) *env {
 
 func (e *env) token(realm, sub, client string, roles ...string) string {
 	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"iss": issuer + realm, "sub": sub, "preferred_username": sub, "azp": client,
+		"iss": issuer + realm, "sub": sub, "preferred_username": sub, "azp": client, "typ": "Bearer",
 		"exp": time.Now().Add(time.Hour).Unix(), "roles": roles,
 	})
 	tok.Header["kid"] = "k1"

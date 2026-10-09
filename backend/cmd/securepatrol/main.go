@@ -126,6 +126,7 @@ func main() {
 		realms = append(realms, middleware.RealmKeys{Realm: r, Issuer: cfg.IssuerFor(r), JWKSURL: cfg.JWKSURLFor(r)})
 	}
 	validator := middleware.NewValidator(realms, cfg.KeycloakAllowedClients, logger)
+	validator.BindClients(cfg.KeycloakWebClient, cfg.KeycloakTabletClient)
 
 	// ── Fiber app ────────────────────────────────────────────────────────────
 	app := fiber.New(fiber.Config{
