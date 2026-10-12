@@ -64,10 +64,37 @@ ensure_user() { # $1 access key, $2 secret key, $3 policy name
 
 if [ -n "${MINIO_APP_ACCESS_KEY:-}" ] && [ -n "${MINIO_APP_SECRET_KEY:-}" ]; then
   # The API creates/versions the buckets on start (EnsureBuckets), uploads
-  # photos and dumps, and pre-signs reads. No delete permission.
-  policy_file securepatrol-app \
-    '["s3:GetBucketLocation", "s3:ListBucket", "s3:ListBucketMultipartUploads", "s3:GetBucketVersioning", "s3:PutBucketVersioning", "s3:CreateBucket"]' \
-    '["s3:GetObject", "s3:PutObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"]'
+  # photos and dumps, and pre-signs reads. Deletes only on the photos bucket
+  # (retention job and floor-plan removal delete every version, BE-S9/F3);
+  # backups can never be deleted by the app.
+  # Written in full (the image has no sed/awk to extend policy_file output).
+  cat > /tmp/securepatrol-app.json <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["s3:GetBucketLocation", "s3:ListBucket", "s3:ListBucketMultipartUploads", "s3:GetBucketVersioning", "s3:PutBucketVersioning", "s3:CreateBucket"],
+      "Resource": ["arn:aws:s3:::$MINIO_BUCKET_PHOTOS", "arn:aws:s3:::$MINIO_BUCKET_BACKUPS"]
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"],
+      "Resource": ["arn:aws:s3:::$MINIO_BUCKET_PHOTOS/*", "arn:aws:s3:::$MINIO_BUCKET_BACKUPS/*"]
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["s3:ListBucketVersions"],
+      "Resource": ["arn:aws:s3:::$MINIO_BUCKET_PHOTOS"]
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["s3:DeleteObject", "s3:DeleteObjectVersion"],
+      "Resource": ["arn:aws:s3:::$MINIO_BUCKET_PHOTOS/*"]
+    }
+  ]
+}
+EOF
   mc admin policy create sp securepatrol-app /tmp/securepatrol-app.json
   ensure_user "$MINIO_APP_ACCESS_KEY" "$MINIO_APP_SECRET_KEY" securepatrol-app
 fi

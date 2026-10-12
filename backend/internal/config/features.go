@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -31,6 +32,10 @@ type KeycloakAdmin struct {
 	// ("realm1=secret1,realm2=secret2"). A realm without a secret answers
 	// 503 kc_unavailable on user-management endpoints.
 	Secrets map[string]string
+	// SecretsFile is KEYCLOAK_ADMIN_CLIENT_SECRETS_FILE; the client re-reads
+	// it for realms without a (valid) secret, so no restart is needed after
+	// keycloak-config.sh wrote it.
+	SecretsFile string
 	// Timeout bounds every Keycloak call (KEYCLOAK_ADMIN_TIMEOUT, 10s).
 	Timeout time.Duration
 }
@@ -63,8 +68,9 @@ func (c *Config) loadFeatures() error {
 	}
 	c.KeycloakAdmin.Secrets = map[string]string{}
 	if path := os.Getenv("KEYCLOAK_ADMIN_CLIENT_SECRETS_FILE"); path != "" {
+		c.KeycloakAdmin.SecretsFile = path
 		data, err := os.ReadFile(path) // #nosec G304 G703 -- operator-configured secrets file
-		if err != nil {
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("KEYCLOAK_ADMIN_CLIENT_SECRETS_FILE: %w", err)
 		}
 		if err := parseSecrets(string(data), "\n", c.KeycloakAdmin.Secrets); err != nil {

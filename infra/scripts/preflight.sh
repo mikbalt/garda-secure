@@ -184,6 +184,19 @@ elif [ ! -d "$OFFSITE_BACKUP_REPO" ]; then
   warnp "OFFSITE_BACKUP_REPO $OFFSITE_BACKUP_REPO does not exist (mount the backup disk/NAS there)"
 fi
 
+# ── Keycloak admin-client secrets (F1): the file must exist for the compose
+#    secret; keycloak-config.sh fills it. Directory private, file readable by
+#    the API container user (bind mount). ───────────────────────────────────
+mkdir -p "$INFRA_DIR/secrets" && chmod 700 "$INFRA_DIR/secrets"
+if [ ! -f "$INFRA_DIR/secrets/keycloak-admin-clients" ]; then
+  : > "$INFRA_DIR/secrets/keycloak-admin-clients" && chmod 644 "$INFRA_DIR/secrets/keycloak-admin-clients"
+  warnp "secrets/keycloak-admin-clients created empty — make keycloak-config fills it (user management until then: 503 kc_unavailable)"
+elif [ ! -s "$INFRA_DIR/secrets/keycloak-admin-clients" ]; then
+  warnp "secrets/keycloak-admin-clients is empty — run make keycloak-config (web user management needs it)"
+else
+  ok "keycloak admin-client secrets present"
+fi
+
 # ── tools used by make keycloak-config / new-realm ──────────────────────────
 command -v jq >/dev/null || fail "jq is not installed (make up / deploy run keycloak-config, which needs it): apt install jq"
 

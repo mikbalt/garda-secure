@@ -35,7 +35,8 @@ func (h *Handler) kc() *kcadmin.Client {
 		return v.(*kcadmin.Client)
 	}
 	k := h.Cfg.KeycloakAdmin
-	c := kcadmin.New(kcadmin.Options{BaseURL: k.InternalURL, ClientID: k.ClientID, Secrets: k.Secrets, Timeout: k.Timeout})
+	c := kcadmin.New(kcadmin.Options{BaseURL: k.InternalURL, ClientID: k.ClientID, Secrets: k.Secrets,
+		SecretsFile: k.SecretsFile, Timeout: k.Timeout})
 	v, _ := kcClients.LoadOrStore(h.Cfg, c)
 	return v.(*kcadmin.Client)
 }

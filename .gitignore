@@ -10,6 +10,7 @@ infra/nginx/certs/
 mobile/android/key.properties
 # Operational state on the server (pre-deploy dumps, deploy history)
 infra/backups/
+infra/secrets/
 infra/.deploy/
 
 # Go

@@ -10,6 +10,14 @@
 #       role `mfa-required` + browser flow `browser-mfa` (cookie | username/
 #       password -> OTP if the user has mfa-required; first login enrols OTP)
 #     - brute-force protection on, CONFIGURE_TOTP required action enabled
+#     - user-profile attribute `sites` (multi-valued, admin-only) and the
+#       securepatrol-web mapper "allowed sites" -> access-token claim `sites`
+#       (per-site scoping, D-035 / F4)
+#     - confidential client securepatrol-admin-api (KEYCLOAK_ADMIN_CLIENT_ID)
+#       whose service account holds realm-management view-users, query-users,
+#       manage-users, view-realm; its secret is written to
+#       infra/secrets/keycloak-admin-clients ("realm=secret", read by the API
+#       through KEYCLOAK_ADMIN_CLIENT_SECRETS_FILE; never printed) — F1
 #   master realm: brute-force protection on.
 # Needs docker compose (keycloak running) and jq on the host.
 # Auth: KEYCLOAK_AUTOMATION_CLIENT_ID/SECRET (service account) when set, else
@@ -95,6 +103,62 @@ configure_mfa() { # realm
   kc update "realms/$r" -s "browserFlow=$FLOW" -s bruteForceProtected=true >/dev/null
 }
 
+ADMIN_CLIENT=${KEYCLOAK_ADMIN_CLIENT_ID:-securepatrol-admin-api}
+SECRETS_DIR=$INFRA_DIR/secrets
+SECRETS_FILE=$SECRETS_DIR/keycloak-admin-clients
+
+configure_sites() { # realm, web client id — allowed sites attribute + claim (F4)
+  r=$1 cid=$2
+  profile=$(kc get users/profile -r "$r")
+  if ! printf '%s' "$profile" | jq -e 'any(.attributes[]; .name == "sites")' >/dev/null; then
+    printf '%s' "$profile" | jq -c '.attributes += [{
+        "name": "sites", "displayName": "Allowed sites", "multivalued": true,
+        "permissions": {"view": ["admin"], "edit": ["admin"]},
+        "validations": {"length": {"max": 36}}}]' \
+      | kc update users/profile -r "$r" -f - >/dev/null
+    info "  user profile: attribute sites added"
+  fi
+  [ -n "$cid" ] || return 0
+  if ! kc get "clients/$cid/protocol-mappers/models" -r "$r" | jq -e 'any(.[]; .name == "allowed sites")' >/dev/null; then
+    printf '%s' '{"name":"allowed sites","protocol":"openid-connect","protocolMapper":"oidc-usermodel-attribute-mapper",
+      "config":{"user.attribute":"sites","claim.name":"sites","jsonType.label":"String","multivalued":"true",
+      "access.token.claim":"true","id.token.claim":"false","userinfo.token.claim":"false"}}' \
+      | kc create "clients/$cid/protocol-mappers/models" -r "$r" -f - >/dev/null
+    info "  securepatrol-web: claim sites mapped from the user attribute"
+  fi
+}
+
+configure_admin_client() { # realm — confidential client for the API's user management (F1)
+  r=$1
+  id=$(kc get clients -r "$r" -q "clientId=$ADMIN_CLIENT" --fields id | jq -r '.[0].id // empty')
+  if [ -z "$id" ]; then
+    kc create clients -r "$r" -s "clientId=$ADMIN_CLIENT" -s enabled=true -s publicClient=false \
+      -s serviceAccountsEnabled=true -s standardFlowEnabled=false -s implicitFlowEnabled=false \
+      -s directAccessGrantsEnabled=false -s 'description=SecurePatrol API: user and tablet-account management' >/dev/null
+    id=$(kc get clients -r "$r" -q "clientId=$ADMIN_CLIENT" --fields id | jq -r '.[0].id // empty')
+    info "  client $ADMIN_CLIENT created"
+  else
+    kc update "clients/$id" -r "$r" -s enabled=true -s publicClient=false -s serviceAccountsEnabled=true \
+      -s standardFlowEnabled=false -s implicitFlowEnabled=false -s directAccessGrantsEnabled=false >/dev/null
+  fi
+  [ -n "$id" ] || die "client $ADMIN_CLIENT could not be created in $r"
+  sa=$(kc get "clients/$id/service-account-user" -r "$r" | jq -r '.username')
+  kc add-roles -r "$r" --uusername "$sa" --cclientid realm-management \
+    --rolename view-users --rolename query-users --rolename manage-users --rolename view-realm >/dev/null
+  secret=$(kc get "clients/$id/client-secret" -r "$r" | jq -r '.value // empty')
+  if [ -z "$secret" ]; then
+    secret=$(kc create "clients/$id/client-secret" -r "$r" -o | jq -r '.value // empty')
+  fi
+  [ -n "$secret" ] || die "no secret for client $ADMIN_CLIENT in $r"
+  # The directory is private to the operator; the file itself is readable so
+  # the API container (non-root user) can read its bind-mounted copy.
+  mkdir -p "$SECRETS_DIR" && chmod 700 "$SECRETS_DIR"
+  tmp=$(mktemp "$SECRETS_DIR/.kc-admin.XXXXXX")
+  { [ -f "$SECRETS_FILE" ] && grep -v "^$r=" "$SECRETS_FILE" || true; printf '%s=%s\n' "$r" "$secret"; } > "$tmp"
+  chmod 644 "$tmp" && mv "$tmp" "$SECRETS_FILE"
+  info "  $ADMIN_CLIENT: service account roles set, secret stored in secrets/keycloak-admin-clients"
+}
+
 if [ $# -gt 0 ]; then realms=$*; else realms=$(printf '%s' "$KEYCLOAK_REALMS" | tr ',' ' '); fi
 for r in $realms; do
   info "realm $r"
@@ -112,6 +176,8 @@ for r in $realms; do
   fi
   configure_mfa "$r"
   info "  OTP enforced for: $MFA_ROLES (via role $MFA_ROLE, flow $FLOW)"
+  configure_sites "$r" "$cid"
+  configure_admin_client "$r"
 done
 
 info "realm master: brute-force protection"

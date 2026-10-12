@@ -17,6 +17,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -43,7 +44,11 @@ type Options struct {
 	BaseURL  string            // e.g. http://keycloak:8080/auth
 	ClientID string            // confidential client in every realm
 	Secrets  map[string]string // realm -> client secret
-	Timeout  time.Duration     // per request
+	// SecretsFile ("realm=secret" lines) is re-read when a realm has no
+	// secret or its secret is rejected (at most every 30 s), so secrets
+	// written by keycloak-config.sh apply without restarting the API.
+	SecretsFile string
+	Timeout     time.Duration // per request
 }
 
 type token struct {
@@ -58,8 +63,45 @@ type Client struct {
 	secrets  map[string]string
 	http     *http.Client
 
-	mu     sync.Mutex
-	tokens map[string]token
+	mu          sync.Mutex
+	tokens      map[string]token
+	secretsFile string
+	loadedAt    time.Time
+}
+
+// secretReload bounds how often the secrets file is re-read.
+const secretReload = 30 * time.Second
+
+// secretFor returns a realm's client secret, re-reading the secrets file
+// when it is unknown.
+func (c *Client) secretFor(realm string) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if s := c.secrets[realm]; s != "" {
+		return s
+	}
+	if c.secretsFile != "" && time.Since(c.loadedAt) >= secretReload {
+		c.loadedAt = time.Now()
+		if data, err := os.ReadFile(c.secretsFile); err == nil {
+			for _, line := range strings.Split(string(data), "\n") {
+				r, s, ok := strings.Cut(strings.TrimSpace(line), "=")
+				if ok && !strings.HasPrefix(r, "#") && strings.TrimSpace(r) != "" && strings.TrimSpace(s) != "" {
+					c.secrets[strings.TrimSpace(r)] = strings.TrimSpace(s)
+				}
+			}
+		}
+	}
+	return c.secrets[realm]
+}
+
+// forgetSecret drops a rejected secret so the file is consulted again.
+func (c *Client) forgetSecret(realm string) {
+	if c.secretsFile == "" {
+		return
+	}
+	c.mu.Lock()
+	delete(c.secrets, realm)
+	c.mu.Unlock()
 }
 
 // New creates a client.
@@ -67,20 +109,24 @@ func New(o Options) *Client {
 	if o.Timeout <= 0 {
 		o.Timeout = 10 * time.Second
 	}
+	secrets := map[string]string{}
+	for k, v := range o.Secrets {
+		secrets[k] = v
+	}
 	return &Client{
-		base: strings.TrimRight(o.BaseURL, "/"), clientID: o.ClientID, secrets: o.Secrets,
+		base: strings.TrimRight(o.BaseURL, "/"), clientID: o.ClientID, secrets: secrets,
 		http: &http.Client{
 			Timeout: o.Timeout,
 			// The bearer token must only go to the configured Keycloak.
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
-		tokens: map[string]token{},
+		tokens: map[string]token{}, secretsFile: o.SecretsFile,
 	}
 }
 
 // Configured reports whether user management is set up for a realm.
 func (c *Client) Configured(realm string) bool {
-	return c != nil && c.base != "" && c.secrets[realm] != ""
+	return c != nil && c.base != "" && c.secretFor(realm) != ""
 }
 
 func (c *Client) token(ctx context.Context, realm string) (string, error) {
@@ -90,7 +136,7 @@ func (c *Client) token(ctx context.Context, realm string) (string, error) {
 	if ok && time.Now().Before(t.exp) {
 		return t.access, nil
 	}
-	secret := c.secrets[realm]
+	secret := c.secretFor(realm)
 	if c.base == "" || secret == "" {
 		return "", fmt.Errorf("%w: no admin client secret for realm %q", ErrUnavailable, realm)
 	}
@@ -108,6 +154,9 @@ func (c *Client) token(ctx context.Context, realm string) (string, error) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusBadRequest {
+			c.forgetSecret(realm) // rotated by keycloak-config.sh? re-read the file next time
+		}
 		return "", fmt.Errorf("%w: token request for realm %q answered %d", ErrUnavailable, realm, resp.StatusCode)
 	}
 	var body struct {
