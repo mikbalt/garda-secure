@@ -28,6 +28,9 @@ const (
 	EventAbsent       = "absent"
 	EventLateClockIn  = "late_clock_in"
 	EventIncidentHigh = "incident_high"
+	// EventIncidentFiled fires for every new incident, whatever its severity
+	// (F8, D-035); incident_high is staged next to it for high/critical.
+	EventIncidentFiled = "incident_filed"
 	EventDefectOpened = "defect_opened"
 	EventMonthlyRecap = "monthly_recap"
 )
@@ -35,7 +38,7 @@ const (
 // EventTypes lists every site event a rule can subscribe to.
 var EventTypes = []string{
 	EventSOS, EventSLAMissed, EventAbsent, EventLateClockIn,
-	EventIncidentHigh, EventDefectOpened, EventMonthlyRecap,
+	EventIncidentHigh, EventIncidentFiled, EventDefectOpened, EventMonthlyRecap,
 }
 
 // Install-wide operations events. Their recipients are ops_alert_rules, not
@@ -276,6 +279,8 @@ var templates = map[string]map[string]template{
 			"{guard} clock-in terlambat {minutes} menit untuk shift {shift} di {site}."},
 		EventIncidentHigh: {"[Insiden {severity}] {type} di {site}",
 			"Insiden {severity} dilaporkan oleh {guard} di {site} pada {time}.\nKategori: {type}\nLokasi: {location}\n{description}"},
+		EventIncidentFiled: {"[Insiden] {type} di {site}",
+			"Insiden baru ({severity}) dilaporkan oleh {guard} di {site} pada {time}.\nKategori: {type}\nLokasi: {location}\n{description}"},
 		EventDefectOpened: {"[Kerusakan] {defect} di {site}",
 			"Laporan kerusakan baru dari {guard} di {site}.\nJenis: {defect}\nLokasi: {location}\n{description}"},
 		EventMonthlyRecap: {"Rekap absensi bulanan {month} — {site}", "Rekap absensi {month} untuk {site}."},
@@ -299,6 +304,8 @@ var templates = map[string]map[string]template{
 			"{guard} clocked in {minutes} minutes late for the {shift} shift at {site}."},
 		EventIncidentHigh: {"[{severity} incident] {type} at {site}",
 			"{severity} incident reported by {guard} at {site} at {time}.\nCategory: {type}\nLocation: {location}\n{description}"},
+		EventIncidentFiled: {"[Incident] {type} at {site}",
+			"New incident ({severity}) reported by {guard} at {site} at {time}.\nCategory: {type}\nLocation: {location}\n{description}"},
 		EventDefectOpened: {"[Defect] {defect} at {site}",
 			"New defect report from {guard} at {site}.\nType: {defect}\nLocation: {location}\n{description}"},
 		EventMonthlyRecap: {"Monthly attendance recap {month} — {site}", "Attendance recap {month} for {site}."},

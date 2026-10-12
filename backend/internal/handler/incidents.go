@@ -157,17 +157,25 @@ func (h *Handler) createIncident(c *fiber.Ctx) error {
 		if err := service.CheckReplay(inc, isNew, site.ID, guard.ID); err != nil {
 			return nil, err
 		}
-		if (inc.Severity != "high" && inc.Severity != "critical") || (!isNew && !replayFresh(inc.CreatedAt)) {
+		if !isNew && !replayFresh(inc.CreatedAt) {
 			return nil, nil
 		}
-		return []notification.Event{{
-			Type: notification.EventIncidentHigh, Site: site, DedupeKey: "incident:" + inc.ID,
-			Params: map[string]string{
-				"guard": inc.GuardName, "severity": strings.ToUpper(inc.Severity), "type": inc.Type,
-				"location": deref(inc.Location), "description": deref(inc.Description),
-				"time": inc.OccurredAt.In(site.Location()).Format("02 Jan 15:04"),
-			},
-		}}, nil
+		params := map[string]string{
+			"guard": inc.GuardName, "severity": strings.ToUpper(inc.Severity), "type": inc.Type,
+			"location": deref(inc.Location), "description": deref(inc.Description),
+			"time": inc.OccurredAt.In(site.Location()).Format("02 Jan 15:04"),
+		}
+		// Every incident notifies its incident_filed recipients (F8); high and
+		// critical ones also incident_high. Both are staged with the row.
+		events := []notification.Event{{
+			Type: notification.EventIncidentFiled, Site: site, DedupeKey: "incident_filed:" + inc.ID, Params: params,
+		}}
+		if inc.Severity == "high" || inc.Severity == "critical" {
+			events = append(events, notification.Event{
+				Type: notification.EventIncidentHigh, Site: site, DedupeKey: "incident:" + inc.ID, Params: params,
+			})
+		}
+		return events, nil
 	})
 	if err != nil {
 		return h.fail(c, err)
