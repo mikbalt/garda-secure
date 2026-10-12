@@ -62,10 +62,25 @@ func (h *Handler) listIncidents(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
-	rows, err := repository.ListIncidents(c.Context(), h.DB, f)
+	return h.listIncidentsPage(c, f)
+}
+
+// listIncidentsPage answers one page (?limit= default/max 1000, ?offset=) of
+// incidents with X-Total-Count / X-Truncated.
+func (h *Handler) listIncidentsPage(c *fiber.Ctx, f repository.IncidentFilter) error {
+	page, err := pageParams(c, 1000, 1000)
 	if err != nil {
 		return h.fail(c, err)
 	}
+	total, err := repository.CountIncidents(c.Context(), h.DB, f)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	rows, err := repository.ListIncidents(c.Context(), h.DB, f, page)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	setPageHeaders(c, total, page.Offset, len(rows))
 	return c.JSON(rows)
 }
 
@@ -266,10 +281,15 @@ func (h *Handler) listSos(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
-	rows, err := repository.ListSosAlerts(c.Context(), h.DB, site.ID, c.Query("unack_only") == "true")
+	page, err := pageParams(c, 200, 500)
 	if err != nil {
 		return h.fail(c, err)
 	}
+	rows, total, err := repository.ListSosAlertsPage(c.Context(), h.DB, site.ID, c.Query("unack_only") == "true", page)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	setPageHeaders(c, total, page.Offset, len(rows))
 	return c.JSON(rows)
 }
 
@@ -371,10 +391,15 @@ func (h *Handler) listDefects(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
-	rows, err := repository.ListDefects(c.Context(), h.DB, site.ID, c.Query("status"))
+	page, err := pageParams(c, 500, 1000)
 	if err != nil {
 		return h.fail(c, err)
 	}
+	rows, total, err := repository.ListDefects(c.Context(), h.DB, site.ID, c.Query("status"), page)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	setPageHeaders(c, total, page.Offset, len(rows))
 	return c.JSON(rows)
 }
 
@@ -482,10 +507,15 @@ func (h *Handler) listVisitors(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
-	rows, err := repository.ListVisitors(c.Context(), h.DB, site.ID, from, to)
+	page, err := pageParams(c, 1000, 1000)
 	if err != nil {
 		return h.fail(c, err)
 	}
+	rows, total, err := repository.ListVisitors(c.Context(), h.DB, site.ID, from, to, page)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	setPageHeaders(c, total, page.Offset, len(rows))
 	return c.JSON(rows)
 }
 

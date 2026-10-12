@@ -20,6 +20,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -45,7 +46,14 @@ import (
 	"github.com/securepatrol/backend/internal/storage"
 )
 
-const pgPort = 54329
+// pgPort is the embedded Postgres port; SP_IT_PG_PORT overrides it so two
+// checkouts can run the suite at the same time.
+var pgPort = func() uint32 {
+	if p, err := strconv.ParseUint(os.Getenv("SP_IT_PG_PORT"), 10, 16); err == nil && p > 0 {
+		return uint32(p)
+	}
+	return 54329
+}()
 
 var dsn = fmt.Sprintf("postgres://postgres:postgres@localhost:%d/postgres?sslmode=disable", pgPort)
 
@@ -592,9 +600,15 @@ func TestAPIEndToEnd(t *testing.T) {
 	e.expect(e.do("POST", "/api/v1/incidents/"+incID+"/amendments", sup, "", map[string]any{
 		"changes": map[string]string{"description": "Two pallets missing"}, "reason": "Recount by supervisor",
 	}), 201, "amend")
+	// The stored original stays immutable (D-009); reads show the effective
+	// value plus the filed one (F7).
 	det = e.do("GET", "/api/v1/incidents/"+incID, sup, "", nil).obj()
-	if det["incident"].(map[string]any)["description"] != "Pallet missing" || len(det["amendments"].([]any)) != 1 {
-		t.Fatalf("original incident changed or amendment missing: %v", det)
+	if inc := det["incident"].(map[string]any); inc["description"] != "Two pallets missing" ||
+		inc["original_description"] != "Pallet missing" || inc["amended"] != true || len(det["amendments"].([]any)) != 1 {
+		t.Fatalf("effective/original values or amendment missing: %v", det)
+	}
+	if n := e.count(`SELECT count(*) FROM incidents WHERE id = $1 AND description = 'Pallet missing'`, incID); n != 1 {
+		t.Fatal("original incident row changed")
 	}
 	e.expect(e.do("PUT", "/api/v1/incidents/"+incID+"/status", sup, "", map[string]any{"status": "in_progress"}), 200, "incident status")
 	if l := e.do("GET", "/api/v1/incidents?site_id="+siteA, client, "", nil).list(); l[0].(map[string]any)["guard_name"] != "Budi" {

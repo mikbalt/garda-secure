@@ -2,11 +2,8 @@
 package handler
 
 import (
-	"bytes"
 	"context"
-	"encoding/csv"
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -108,6 +105,8 @@ func (h *Handler) Register(api fiber.Router) {
 	att.Get("/review", web(rolesOps...), h.reviewQueue)
 	att.Post("/:id/review", web(rolesOps...), h.markReviewed)
 	att.Put("/shifts/:shiftId/override", web(rolesAdmin...), h.overrideAttendance)
+	att.Get("/shifts/:shiftId/history", web(rolesStaff...), h.shiftAttendanceHistory)
+	att.Get("/:id/history", web(rolesStaff...), h.attendanceHistory)
 	att.Post("/clock-in", append(field, h.clockIn)...)
 	att.Post("/clock-out", append(field, h.clockOut)...)
 
@@ -126,12 +125,14 @@ func (h *Handler) Register(api fiber.Router) {
 	inc := api.Group("/incidents")
 	inc.Get("/", web(rolesOpsCli...), h.listIncidents)
 	inc.Get("/:id", web(rolesOpsCli...), h.getIncident)
+	inc.Get("/:id/pdf", web(rolesOpsCli...), h.incidentPDF)
 	inc.Post("/", append(field, h.createIncident)...)
 	inc.Put("/:id/status", web(rolesOps...), h.updateIncidentStatus)
 	inc.Post("/:id/amendments", web(rolesOps...), h.amendIncident)
 
 	sos := api.Group("/sos")
 	sos.Get("/", web(rolesOps...), h.listSos)
+	sos.Get("/active", web(rolesOps...), h.activeSos)
 	sos.Post("/", append(field, h.createSos)...)
 	sos.Post("/:id/acknowledge", webOrField(rolesOps...), h.acknowledgeSos)
 
@@ -266,7 +267,8 @@ func created(c *fiber.Ctx, isNew bool, v any) error {
 // ── Access control helpers ───────────────────────────────────────────────────
 
 // siteFor loads a site and checks the caller may access it: tablets only their
-// own site, web users only sites of their realm (others look like 404).
+// own site, web users only sites of their realm and, when their token lists
+// allowed sites (F4), only those (others look like 404).
 func (h *Handler) siteFor(c *fiber.Ctx, siteID string) (*model.Site, error) {
 	if siteID == "" {
 		return nil, service.BadRequest("site_id_required", "site_id is required")
@@ -282,7 +284,7 @@ func (h *Handler) siteFor(c *fiber.Ctx, siteID string) (*model.Site, error) {
 		return site, nil
 	}
 	p := middleware.GetPrincipal(c)
-	if p == nil || site.KeycloakRealm == nil || *site.KeycloakRealm != p.Realm {
+	if p == nil || site.KeycloakRealm == nil || *site.KeycloakRealm != p.Realm || !p.CanSeeSite(site.ID) {
 		return nil, repository.ErrNotFound
 	}
 	return site, nil
@@ -344,36 +346,6 @@ func (h *Handler) photos(ctx context.Context, keys ...string) []Photo {
 		out = append(out, p)
 	}
 	return out
-}
-
-// wantsCSV reports whether ?format=csv was requested.
-func wantsCSV(c *fiber.Ctx) bool { return c.Query("format") == "csv" }
-
-// sendCSV writes a UTF-8 CSV with BOM so Excel opens it correctly.
-func sendCSV(c *fiber.Ctx, filename string, header []string, rows [][]string) error {
-	var buf bytes.Buffer
-	buf.Write([]byte{0xEF, 0xBB, 0xBF}) // UTF-8 BOM
-	w := csv.NewWriter(&buf)
-	_ = w.Write(header)
-	for _, r := range rows {
-		for i, cell := range r {
-			r[i] = csvSafe(cell)
-		}
-		_ = w.Write(r)
-	}
-	w.Flush()
-	c.Set(fiber.HeaderContentType, "text/csv; charset=utf-8")
-	c.Set(fiber.HeaderContentDisposition, `attachment; filename="`+filename+`"`)
-	return c.Send(buf.Bytes())
-}
-
-// csvSafe stops spreadsheet apps from evaluating user-entered text as a
-// formula (CSV injection).
-func csvSafe(s string) string {
-	if s != "" && strings.ContainsRune("=+-@\t\r", rune(s[0])) {
-		return "'" + s
-	}
-	return s
 }
 
 // ── Notifications (transactional outbox, audit BE-R1) ────────────────────────

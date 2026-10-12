@@ -144,6 +144,57 @@ func (c *Client) Exists(ctx context.Context, bucket, key string) (bool, error) {
 	return false, fmt.Errorf("StatObject(%s/%s): %w", bucket, key, err)
 }
 
+// ErrTooLarge is returned by Get when an object exceeds the size limit.
+var ErrTooLarge = errors.New("object too large")
+
+// Get reads an object of at most max bytes; ok is false when it does not
+// exist.
+func (c *Client) Get(ctx context.Context, bucket, key string, max int64) ([]byte, bool, error) {
+	obj, err := c.mc.GetObject(ctx, bucket, key, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, false, fmt.Errorf("GetObject(%s/%s): %w", bucket, key, err)
+	}
+	defer obj.Close()
+	data, err := io.ReadAll(io.LimitReader(obj, max+1))
+	if err != nil {
+		if minio.ToErrorResponse(err).Code == "NoSuchKey" {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("GetObject(%s/%s): %w", bucket, key, err)
+	}
+	if int64(len(data)) > max {
+		return nil, true, ErrTooLarge
+	}
+	return data, true, nil
+}
+
+// RemoveAllVersions permanently deletes an object including every version
+// and delete marker (retention, BE-S9: a plain delete in a versioned bucket
+// would only hide the data). Missing objects are not an error.
+func (c *Client) RemoveAllVersions(ctx context.Context, bucket, key string) error {
+	found := false
+	for obj := range c.mc.ListObjects(ctx, bucket, minio.ListObjectsOptions{Prefix: key, WithVersions: true}) {
+		if obj.Err != nil {
+			return fmt.Errorf("ListObjectVersions(%s/%s): %w", bucket, key, obj.Err)
+		}
+		if obj.Key != key {
+			continue
+		}
+		found = true
+		if err := c.mc.RemoveObject(ctx, bucket, key, minio.RemoveObjectOptions{VersionID: obj.VersionID}); err != nil {
+			return fmt.Errorf("RemoveObject(%s/%s@%s): %w", bucket, key, obj.VersionID, err)
+		}
+	}
+	if !found {
+		// Unversioned bucket or listing without versions: plain delete.
+		if err := c.mc.RemoveObject(ctx, bucket, key, minio.RemoveObjectOptions{}); err != nil &&
+			minio.ToErrorResponse(err).Code != "NoSuchKey" {
+			return fmt.Errorf("RemoveObject(%s/%s): %w", bucket, key, err)
+		}
+	}
+	return nil
+}
+
 // PresignGet returns a time-limited GET URL on the public endpoint.
 func (c *Client) PresignGet(ctx context.Context, bucket, key string, expiry time.Duration) (string, error) {
 	u, err := c.signer.PresignedGetObject(ctx, bucket, key, expiry, url.Values{})

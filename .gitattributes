@@ -28,6 +28,7 @@ infra/backup-offsite/offsite-health text eol=lf
 # Binaries
 *.png       binary
 *.jpg       binary
+*.ttf       binary
 *.jar       binary
 *.keystore  binary
 *.jks       binary

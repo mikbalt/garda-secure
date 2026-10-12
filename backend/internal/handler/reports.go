@@ -1,30 +1,25 @@
 package handler
 
 import (
-	"fmt"
-	"strconv"
-	"time"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 
+	"github.com/securepatrol/backend/internal/export"
 	"github.com/securepatrol/backend/internal/repository"
 	"github.com/securepatrol/backend/internal/service"
 )
 
-func fmtTime(t *time.Time, loc *time.Location) string {
-	if t == nil {
-		return ""
-	}
-	return t.In(loc).Format("2006-01-02 15:04")
-}
+// Reports answer JSON, or a download with ?format=csv|xlsx (every report)
+// and ?format=pdf (incident log) — F5.
 
-func itoa(n int) string { return strconv.Itoa(n) }
-
-func ftoa(f float64) string { return strconv.FormatFloat(f, 'f', 1, 64) }
-
-// GET /reports/attendance/daily?site_id=&date=&format=csv (FR-REP-01)
+// GET /reports/attendance/daily?site_id=&date=&format= (FR-REP-01)
 func (h *Handler) reportDailyAttendance(c *fiber.Ctx) error {
 	site, err := h.siteFor(c, c.Query("site_id"))
+	if err != nil {
+		return h.fail(c, err)
+	}
+	format, err := exportFormat(c, false)
 	if err != nil {
 		return h.fail(c, err)
 	}
@@ -38,25 +33,38 @@ func (h *Handler) reportDailyAttendance(c *fiber.Ctx) error {
 		return h.fail(c, err)
 	}
 	date := from.In(loc).Format("2006-01-02")
-	if !wantsCSV(c) {
+	if format == "" {
 		return c.JSON(fiber.Map{"site_id": site.ID, "date": date, "rows": rows})
 	}
-	out := make([][]string, 0, len(rows))
+	t := &export.Table{
+		Title: "Daily attendance", Subtitle: site.Name + " · " + date, Generated: siteNow(site),
+		Filters: [][2]string{{"Site", site.Name}, {"Date", date}, {"Time zone", loc.String()}},
+		Columns: []export.Column{
+			{Name: "Guard", Kind: export.Text, Width: 1.4}, {Name: "Employee ID", Kind: export.Text},
+			{Name: "Shift start", Kind: export.Time}, {Name: "Shift end", Kind: export.Time},
+			{Name: "Status", Kind: export.Text, Width: 0.7}, {Name: "Clock in", Kind: export.Time},
+			{Name: "Clock out", Kind: export.Time}, {Name: "Late (min)", Kind: export.Int},
+			{Name: "Early out (min)", Kind: export.Int}, {Name: "Hours", Kind: export.Float},
+			{Name: "Override reason", Kind: export.Text, Width: 1.5},
+		},
+	}
 	for _, r := range rows {
-		out = append(out, []string{
-			r.GuardName, deref(r.EmployeeID), fmtTime(&r.ShiftStart, loc), fmtTime(&r.ShiftEnd, loc),
-			r.Status, fmtTime(r.ClockInAt, loc), fmtTime(r.ClockOutAt, loc),
-			itoa(r.LateMinutes), itoa(r.EarlyOutMinutes), ftoa(r.HoursWorked), deref(r.OverrideReason),
+		t.Rows = append(t.Rows, []any{
+			r.GuardName, r.EmployeeID, r.ShiftStart.In(loc), r.ShiftEnd.In(loc), r.Status,
+			localTime(r.ClockInAt, loc), localTime(r.ClockOutAt, loc), r.LateMinutes, r.EarlyOutMinutes,
+			r.HoursWorked, r.OverrideReason,
 		})
 	}
-	return sendCSV(c, fmt.Sprintf("attendance-%s.csv", date),
-		[]string{"Guard", "Employee ID", "Shift start", "Shift end", "Status", "Clock in", "Clock out",
-			"Late (min)", "Early out (min)", "Hours", "Override reason"}, out)
+	return h.sendExport(c, format, "attendance-"+date, t)
 }
 
-// GET /reports/attendance/monthly?site_id=&month=YYYY-MM&format=csv (FR-REP-05)
+// GET /reports/attendance/monthly?site_id=&month=YYYY-MM&format= (FR-REP-05)
 func (h *Handler) reportMonthlyRecap(c *fiber.Ctx) error {
 	site, err := h.siteFor(c, c.Query("site_id"))
+	if err != nil {
+		return h.fail(c, err)
+	}
+	format, err := exportFormat(c, false)
 	if err != nil {
 		return h.fail(c, err)
 	}
@@ -70,25 +78,36 @@ func (h *Handler) reportMonthlyRecap(c *fiber.Ctx) error {
 		return h.fail(c, err)
 	}
 	month := from.In(loc).Format("2006-01")
-	if !wantsCSV(c) {
+	if format == "" {
 		return c.JSON(fiber.Map{"site_id": site.ID, "month": month, "rows": rows})
 	}
-	out := make([][]string, 0, len(rows))
+	t := &export.Table{
+		Title: "Monthly attendance recap", Subtitle: site.Name + " · " + month, Generated: siteNow(site),
+		Filters: [][2]string{{"Site", site.Name}, {"Month", month}},
+		Columns: []export.Column{
+			{Name: "Guard", Kind: export.Text, Width: 1.4}, {Name: "Employee ID", Kind: export.Text},
+			{Name: "Shifts", Kind: export.Int}, {Name: "Present", Kind: export.Int}, {Name: "Late", Kind: export.Int},
+			{Name: "Absent", Kind: export.Int}, {Name: "Early out", Kind: export.Int}, {Name: "Pending", Kind: export.Int},
+			{Name: "Hours", Kind: export.Float}, {Name: "Patrols", Kind: export.Int},
+			{Name: "Patrol completion %", Kind: export.Float},
+		},
+	}
 	for _, r := range rows {
-		out = append(out, []string{
-			r.GuardName, deref(r.EmployeeID), itoa(r.ScheduledShifts), itoa(r.Present), itoa(r.Late),
-			itoa(r.Absent), itoa(r.EarlyOut), itoa(r.Pending), ftoa(r.TotalHours),
-			itoa(r.PatrolSessions), ftoa(r.PatrolCompletePct),
+		t.Rows = append(t.Rows, []any{
+			r.GuardName, r.EmployeeID, r.ScheduledShifts, r.Present, r.Late, r.Absent, r.EarlyOut, r.Pending,
+			r.TotalHours, r.PatrolSessions, r.PatrolCompletePct,
 		})
 	}
-	return sendCSV(c, fmt.Sprintf("monthly-recap-%s.csv", month),
-		[]string{"Guard", "Employee ID", "Shifts", "Present", "Late", "Absent", "Early out", "Pending",
-			"Hours", "Patrols", "Patrol completion %"}, out)
+	return h.sendExport(c, format, "monthly-recap-"+month, t)
 }
 
-// GET /reports/patrol/sessions?site_id=&from=&to=&format=csv (FR-REP-02)
+// GET /reports/patrol/sessions?site_id=&from=&to=&format= (FR-REP-02)
 func (h *Handler) reportPatrolSessions(c *fiber.Ctx) error {
 	site, err := h.siteFor(c, c.Query("site_id"))
+	if err != nil {
+		return h.fail(c, err)
+	}
+	format, err := exportFormat(c, false)
 	if err != nil {
 		return h.fail(c, err)
 	}
@@ -101,62 +120,124 @@ func (h *Handler) reportPatrolSessions(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
-	if !wantsCSV(c) {
+	if format == "" {
 		return c.JSON(fiber.Map{"site_id": site.ID, "rows": rows})
 	}
-	out := make([][]string, 0, len(rows))
+	t := &export.Table{
+		Title: "Patrol sessions", Subtitle: site.Name + " · " + period(from, to, loc), Generated: siteNow(site),
+		Filters: [][2]string{{"Site", site.Name}, {"Period", period(from, to, loc)}},
+		Columns: []export.Column{
+			{Name: "Route", Kind: export.Text, Width: 1.3}, {Name: "Guard", Kind: export.Text, Width: 1.3},
+			{Name: "Started", Kind: export.Time}, {Name: "Ended", Kind: export.Time},
+			{Name: "Status", Kind: export.Text, Width: 0.8}, {Name: "Checkpoints", Kind: export.Int},
+			{Name: "Scanned", Kind: export.Int}, {Name: "Missed", Kind: export.Int},
+			{Name: "SLA breaches", Kind: export.Int}, {Name: "Flagged scans", Kind: export.Int},
+			{Name: "Completion %", Kind: export.Float},
+		},
+	}
 	for _, r := range rows {
-		out = append(out, []string{
-			r.RouteName, r.GuardName, fmtTime(&r.StartedAt, loc), fmtTime(r.EndedAt, loc), r.Status,
-			itoa(r.TotalCheckpoints), itoa(r.ScannedCount), itoa(r.TotalCheckpoints - r.ScannedCount),
-			itoa(r.SLABreaches), ftoa(r.CompletionPct),
+		t.Rows = append(t.Rows, []any{
+			r.RouteName, r.GuardName, r.StartedAt.In(loc), localTime(r.EndedAt, loc), r.Status,
+			r.TotalCheckpoints, r.ScannedCount, r.TotalCheckpoints - r.ScannedCount, r.SLABreaches,
+			r.FlaggedScans, r.CompletionPct,
 		})
 	}
-	return sendCSV(c, "patrol-sessions.csv",
-		[]string{"Route", "Guard", "Started", "Ended", "Status", "Checkpoints", "Scanned", "Missed",
-			"SLA breaches", "Completion %"}, out)
+	return h.sendExport(c, format, "patrol-sessions", t)
 }
 
-// GET /reports/incidents?site_id=&from=&to=&type=&severity=&status=&format=csv (FR-REP-03)
+// GET /reports/incidents?site_id=&from=&to=&type=&severity=&status=&limit=&offset=&format=
+// (FR-REP-03). Values and filters are the effective (amended) ones (F7).
 func (h *Handler) reportIncidents(c *fiber.Ctx) error {
 	site, f, err := h.incidentFilter(c)
 	if err != nil {
 		return h.fail(c, err)
 	}
-	rows, err := repository.ListIncidents(c.Context(), h.DB, f)
+	format, err := exportFormat(c, true)
 	if err != nil {
 		return h.fail(c, err)
 	}
-	if !wantsCSV(c) {
-		return c.JSON(rows)
+	if format == "" {
+		return h.listIncidentsPage(c, f)
+	}
+	total, err := repository.CountIncidents(c.Context(), h.DB, f)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	if err := checkExportSize(format, total); err != nil {
+		return h.fail(c, err)
+	}
+	rows, err := repository.ListIncidents(c.Context(), h.DB, f, repository.Page{})
+	if err != nil {
+		return h.fail(c, err)
 	}
 	loc := site.Location()
-	names := map[string]string{}
-	out := make([][]string, 0, len(rows))
-	for _, r := range rows {
-		name, ok := names[r.GuardID]
-		if !ok {
-			if g, err := repository.GetGuard(c.Context(), h.DB, r.GuardID); err == nil {
-				name = g.Name
-			}
-			names[r.GuardID] = name
-		}
-		out = append(out, []string{
-			fmtTime(&r.OccurredAt, loc), r.Type, r.Severity, r.Status, name, deref(r.Location),
-			deref(r.Description), itoa(len(r.PhotoObjectKeys)), r.ID,
-		})
+	filters := [][2]string{{"Site", site.Name}}
+	if f.From != nil && f.To != nil {
+		filters = append(filters, [2]string{"Period", period(*f.From, *f.To, loc)})
 	}
-	return sendCSV(c, "incidents.csv",
-		[]string{"Occurred", "Category", "Severity", "Status", "Guard", "Location", "Description", "Photos", "ID"}, out)
+	for _, kv := range [][2]string{{"Category", f.Type}, {"Severity", f.Severity}, {"Status", f.Status}} {
+		if kv[1] != "" {
+			filters = append(filters, kv)
+		}
+	}
+	t := &export.Table{
+		Title: "Incident log", Subtitle: site.Name, Generated: siteNow(site), Filters: filters,
+		Columns: []export.Column{
+			{Name: "Occurred", Kind: export.Time}, {Name: "Category", Kind: export.Text},
+			{Name: "Severity", Kind: export.Text, Width: 0.7}, {Name: "Status", Kind: export.Text, Width: 0.8},
+			{Name: "Guard", Kind: export.Text}, {Name: "Location", Kind: export.Text},
+			{Name: "Description", Kind: export.Text, Width: 2.6}, {Name: "Photos", Kind: export.Int},
+			{Name: "Amended", Kind: export.Text, Width: 0.6}, {Name: "Original values", Kind: export.Text, Width: 1.3},
+			{Name: "ID", Kind: export.Text, Width: 1.6},
+		},
+	}
+	if format == export.FormatPDF {
+		t.Columns = t.Columns[:len(t.Columns)-1] // the ID column does not fit
+	}
+	for _, r := range rows {
+		amended := "no"
+		if r.Amended {
+			amended = "yes"
+		}
+		row := []any{
+			r.OccurredAt.In(loc), r.Type, r.Severity, r.Status, r.GuardName, r.Location, r.Description,
+			len(r.PhotoObjectKeys), amended, originalValues(r.OriginalType, r.OriginalSeverity,
+				r.OriginalDescription, r.OriginalLocation),
+		}
+		if format != export.FormatPDF {
+			row = append(row, r.ID)
+		}
+		t.Rows = append(t.Rows, row)
+	}
+	return h.sendExport(c, format, "incidents", t)
 }
 
-// GET /reports/guards/kpi?site_id=&from=&to=&format=csv (FR-REP-04)
+// originalValues summarises the filed values an amendment replaced.
+func originalValues(typ, severity, description, location *string) string {
+	var parts []string
+	for _, kv := range []struct {
+		k string
+		v *string
+	}{{"category", typ}, {"severity", severity}, {"location", location}, {"description", description}} {
+		if kv.v != nil {
+			parts = append(parts, kv.k+": "+*kv.v)
+		}
+	}
+	return strings.Join(parts, "; ")
+}
+
+// GET /reports/guards/kpi?site_id=&from=&to=&format= (FR-REP-04)
 func (h *Handler) reportGuardKPI(c *fiber.Ctx) error {
 	site, err := h.siteFor(c, c.Query("site_id"))
 	if err != nil {
 		return h.fail(c, err)
 	}
-	from, to, err := service.DateRange(c.Query("from"), c.Query("to"), site.Location(), 366)
+	format, err := exportFormat(c, false)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	loc := site.Location()
+	from, to, err := service.DateRange(c.Query("from"), c.Query("to"), loc, 366)
 	if err != nil {
 		return h.fail(c, err)
 	}
@@ -164,18 +245,24 @@ func (h *Handler) reportGuardKPI(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
-	if !wantsCSV(c) {
+	if format == "" {
 		return c.JSON(fiber.Map{"site_id": site.ID, "rows": rows})
 	}
-	out := make([][]string, 0, len(rows))
+	t := &export.Table{
+		Title: "Guard KPIs", Subtitle: site.Name + " · " + period(from, to, loc), Generated: siteNow(site),
+		Filters: [][2]string{{"Site", site.Name}, {"Period", period(from, to, loc)}},
+		Columns: []export.Column{
+			{Name: "Guard", Kind: export.Text, Width: 1.5}, {Name: "Attendance %", Kind: export.Float},
+			{Name: "On-time %", Kind: export.Float}, {Name: "Patrol completion %", Kind: export.Float},
+			{Name: "Incidents", Kind: export.Int}, {Name: "SLA breaches", Kind: export.Int},
+		},
+	}
 	for _, r := range rows {
-		out = append(out, []string{
-			r.GuardName, ftoa(r.AttendanceRatePct), ftoa(r.OnTimeRatePct), ftoa(r.PatrolCompletePct),
-			itoa(r.IncidentsFiled), itoa(r.SLABreaches),
+		t.Rows = append(t.Rows, []any{
+			r.GuardName, r.AttendanceRatePct, r.OnTimeRatePct, r.PatrolCompletePct, r.IncidentsFiled, r.SLABreaches,
 		})
 	}
-	return sendCSV(c, "guard-kpi.csv",
-		[]string{"Guard", "Attendance %", "On-time %", "Patrol completion %", "Incidents", "SLA breaches"}, out)
+	return h.sendExport(c, format, "guard-kpi", t)
 }
 
 // GET /dashboard/summary?site_id=

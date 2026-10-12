@@ -12,27 +12,68 @@ import (
 
 // ── Incidents ────────────────────────────────────────────────────────────────
 
-const incidentColumns = `id, site_id, guard_id, device_id, type, severity, description,
-	photo_object_keys, location, status, occurred_at, created_at, updated_at, received_at, flags,
-	COALESCE((SELECT g.name FROM guards g WHERE g.id = incidents.guard_id), '')`
+// incidentCols selects an incident row. From the incidents_effective view
+// (reads) type/severity/description/location are the amended values and the
+// filed ones follow; from incidents itself (RETURNING of an insert) both are
+// the filed values and amended is false.
+func incidentCols(src string) string {
+	eff, amended := "eff_", "amended"
+	if src == "incidents" {
+		eff, amended = "", "false"
+	}
+	return `id, site_id, guard_id, device_id, ` + eff + `type, ` + eff + `severity, ` + eff + `description,
+	photo_object_keys, ` + eff + `location, status, occurred_at, created_at, updated_at, received_at, flags,
+	COALESCE((SELECT g.name FROM guards g WHERE g.id = ` + src + `.guard_id), ''),
+	type, severity, description, location, ` + amended
+}
+
+var (
+	incidentColumns   = incidentCols("incidents_effective")
+	incidentRetColumn = incidentCols("incidents")
+)
 
 func scanIncident(row pgx.Row) (model.Incident, error) {
 	var i model.Incident
+	var origType, origSeverity string
+	var origDescription, origLocation *string
 	err := row.Scan(&i.ID, &i.SiteID, &i.GuardID, &i.DeviceID, &i.Type, &i.Severity, &i.Description,
 		&i.PhotoObjectKeys, &i.Location, &i.Status, &i.OccurredAt, &i.CreatedAt, &i.UpdatedAt,
-		&i.ReceivedAt, &i.Flags, &i.GuardName)
+		&i.ReceivedAt, &i.Flags, &i.GuardName, &origType, &origSeverity, &origDescription, &origLocation,
+		&i.Amended)
 	if i.PhotoObjectKeys == nil {
 		i.PhotoObjectKeys = []string{}
 	}
 	if i.Flags == nil {
 		i.Flags = []string{}
 	}
+	if i.Amended {
+		if origType != i.Type {
+			i.OriginalType = &origType
+		}
+		if origSeverity != i.Severity {
+			i.OriginalSeverity = &origSeverity
+		}
+		if !equalPtr(origDescription, i.Description) {
+			i.OriginalDescription = origDescription
+		}
+		if !equalPtr(origLocation, i.Location) {
+			i.OriginalLocation = origLocation
+		}
+	}
 	return i, err
+}
+
+func equalPtr(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 func scanIncidentRows(rows pgx.Rows) (model.Incident, error) { return scanIncident(rows) }
 
-// IncidentFilter narrows ListIncidents. Empty fields are ignored.
+// IncidentFilter narrows ListIncidents. Empty fields are ignored. Type and
+// severity match the effective (amended) values (F7).
 type IncidentFilter struct {
 	SiteID   string
 	From, To *time.Time
@@ -41,18 +82,32 @@ type IncidentFilter struct {
 	Status   string
 }
 
-// ListIncidents returns the incidents of a site matching the filter, newest first.
-func ListIncidents(ctx context.Context, db DBTX, f IncidentFilter) ([]model.Incident, error) {
-	rows, err := db.Query(ctx, `
-		SELECT `+incidentColumns+` FROM incidents
+const incidentWhere = `
 		WHERE site_id = $1
 		  AND ($2::timestamptz IS NULL OR occurred_at >= $2)
 		  AND ($3::timestamptz IS NULL OR occurred_at <  $3)
-		  AND ($4 = '' OR type = $4)
-		  AND ($5 = '' OR severity = $5)
-		  AND ($6 = '' OR status = $6)
-		ORDER BY occurred_at DESC
-		LIMIT 1000`, f.SiteID, f.From, f.To, f.Type, f.Severity, f.Status)
+		  AND ($4 = '' OR eff_type = $4)
+		  AND ($5 = '' OR eff_severity = $5)
+		  AND ($6 = '' OR status = $6)`
+
+// CountIncidents returns how many incidents match the filter.
+func CountIncidents(ctx context.Context, db DBTX, f IncidentFilter) (int, error) {
+	var n int
+	err := db.QueryRow(ctx, `SELECT count(*) FROM incidents_effective`+incidentWhere,
+		f.SiteID, f.From, f.To, f.Type, f.Severity, f.Status).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("CountIncidents: %w", err)
+	}
+	return n, nil
+}
+
+// ListIncidents returns one page of the incidents of a site matching the
+// filter, newest first.
+func ListIncidents(ctx context.Context, db DBTX, f IncidentFilter, p Page) ([]model.Incident, error) {
+	rows, err := db.Query(ctx, `
+		SELECT `+incidentColumns+` FROM incidents_effective`+incidentWhere+`
+		ORDER BY occurred_at DESC, id
+		LIMIT $7 OFFSET $8`, f.SiteID, f.From, f.To, f.Type, f.Severity, f.Status, p.limit(), p.Offset)
 	if err != nil {
 		return nil, fmt.Errorf("ListIncidents: %w", err)
 	}
@@ -67,7 +122,7 @@ func CreateIncident(ctx context.Context, db DBTX, i model.Incident, clientID *st
 		   location, status, occurred_at, flags)
 		VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, 'open', $10, $11)
 		ON CONFLICT (id) DO NOTHING
-		RETURNING `+incidentColumns,
+		RETURNING `+incidentRetColumn,
 		clientID, i.SiteID, i.GuardID, i.DeviceID, i.Type, i.Severity, i.Description,
 		i.PhotoObjectKeys, i.Location, i.OccurredAt, flagsOrEmpty(i.Flags)))
 	if err == nil {
@@ -82,7 +137,7 @@ func CreateIncident(ctx context.Context, db DBTX, i model.Incident, clientID *st
 
 // GetIncident retrieves an incident by ID.
 func GetIncident(ctx context.Context, db DBTX, id string) (*model.Incident, error) {
-	i, err := scanIncident(db.QueryRow(ctx, `SELECT `+incidentColumns+` FROM incidents WHERE id = $1`, id))
+	i, err := scanIncident(db.QueryRow(ctx, `SELECT `+incidentColumns+` FROM incidents_effective WHERE id = $1`, id))
 	if err != nil {
 		return nil, mapNoRows(err)
 	}
@@ -91,13 +146,14 @@ func GetIncident(ctx context.Context, db DBTX, id string) (*model.Incident, erro
 
 // UpdateIncidentStatus moves an incident through its workflow.
 func UpdateIncidentStatus(ctx context.Context, db DBTX, id, status string) (*model.Incident, error) {
-	i, err := scanIncident(db.QueryRow(ctx, `
-		UPDATE incidents SET status = $2, updated_at = now() WHERE id = $1
-		RETURNING `+incidentColumns, id, status))
+	tag, err := db.Exec(ctx, `UPDATE incidents SET status = $2, updated_at = now() WHERE id = $1`, id, status)
 	if err != nil {
-		return nil, mapNoRows(err)
+		return nil, fmt.Errorf("UpdateIncidentStatus: %w", err)
 	}
-	return &i, nil
+	if tag.RowsAffected() == 0 {
+		return nil, ErrNotFound
+	}
+	return GetIncident(ctx, db, id)
 }
 
 // ── Amendments ───────────────────────────────────────────────────────────────
@@ -179,17 +235,30 @@ func GetSosAlert(ctx context.Context, db DBTX, id string) (*model.SosAlert, erro
 	return &a, nil
 }
 
-// ListSosAlerts returns the SOS alerts of a site, newest first.
+// ListSosAlerts returns the latest 200 SOS alerts of a site, newest first.
 func ListSosAlerts(ctx context.Context, db DBTX, siteID string, unackOnly bool) ([]model.SosAlert, error) {
+	rows, _, err := ListSosAlertsPage(ctx, db, siteID, unackOnly, Page{Limit: 200})
+	return rows, err
+}
+
+// ListSosAlertsPage returns one page of a site's SOS alerts, newest first,
+// and how many match.
+func ListSosAlertsPage(ctx context.Context, db DBTX, siteID string, unackOnly bool, p Page) ([]model.SosAlert, int, error) {
+	var total int
+	if err := db.QueryRow(ctx, `SELECT count(*) FROM sos_alerts WHERE site_id = $1 AND (NOT $2 OR acknowledged_at IS NULL)`,
+		siteID, unackOnly).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("ListSosAlerts count: %w", err)
+	}
 	rows, err := db.Query(ctx, `
 		SELECT `+sosColumns+` FROM sos_alerts
 		WHERE site_id = $1 AND (NOT $2 OR acknowledged_at IS NULL)
-		ORDER BY fired_at DESC
-		LIMIT 200`, siteID, unackOnly)
+		ORDER BY fired_at DESC, id
+		LIMIT $3 OFFSET $4`, siteID, unackOnly, p.limit(), p.Offset)
 	if err != nil {
-		return nil, fmt.Errorf("ListSosAlerts: %w", err)
+		return nil, 0, fmt.Errorf("ListSosAlerts: %w", err)
 	}
-	return collect(rows, scanSosRows)
+	out, err := collect(rows, scanSosRows)
+	return out, total, err
 }
 
 // AcknowledgeSosAlert marks an alert acknowledged; already-acknowledged alerts
@@ -251,17 +320,24 @@ func GetDefect(ctx context.Context, db DBTX, id string) (*model.DefectReport, er
 	return &d, nil
 }
 
-// ListDefects returns the defect reports of a site, optionally by status.
-func ListDefects(ctx context.Context, db DBTX, siteID, status string) ([]model.DefectReport, error) {
+// ListDefects returns one page of the defect reports of a site, optionally
+// by status, newest first, and how many match.
+func ListDefects(ctx context.Context, db DBTX, siteID, status string, p Page) ([]model.DefectReport, int, error) {
+	var total int
+	if err := db.QueryRow(ctx, `SELECT count(*) FROM defect_reports WHERE site_id = $1 AND ($2 = '' OR status = $2)`,
+		siteID, status).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("ListDefects count: %w", err)
+	}
 	rows, err := db.Query(ctx, `
 		SELECT `+defectColumns+` FROM defect_reports
 		WHERE site_id = $1 AND ($2 = '' OR status = $2)
-		ORDER BY created_at DESC
-		LIMIT 500`, siteID, status)
+		ORDER BY created_at DESC, id
+		LIMIT $3 OFFSET $4`, siteID, status, p.limit(), p.Offset)
 	if err != nil {
-		return nil, fmt.Errorf("ListDefects: %w", err)
+		return nil, 0, fmt.Errorf("ListDefects: %w", err)
 	}
-	return collect(rows, scanDefectRows)
+	out, err := collect(rows, scanDefectRows)
+	return out, total, err
 }
 
 // UpdateDefectStatus moves a defect through Open → In Progress → Resolved.
@@ -320,17 +396,26 @@ func GetVisitor(ctx context.Context, db DBTX, id string) (*model.VisitorLog, err
 	return &v, nil
 }
 
-// ListVisitors returns the visitor logs of a site with entry in [from, to).
-func ListVisitors(ctx context.Context, db DBTX, siteID string, from, to time.Time) ([]model.VisitorLog, error) {
+// ListVisitors returns one page of the visitor logs of a site with entry in
+// [from, to), newest first, and how many match.
+func ListVisitors(ctx context.Context, db DBTX, siteID string, from, to time.Time, p Page) ([]model.VisitorLog, int, error) {
+	var total int
+	if err := db.QueryRow(ctx, `
+		SELECT count(*) FROM visitor_logs
+		WHERE site_id = $1 AND COALESCE(entry_at, created_at) >= $2 AND COALESCE(entry_at, created_at) < $3`,
+		siteID, from, to).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("ListVisitors count: %w", err)
+	}
 	rows, err := db.Query(ctx, `
 		SELECT `+visitorColumns+` FROM visitor_logs
 		WHERE site_id = $1 AND COALESCE(entry_at, created_at) >= $2 AND COALESCE(entry_at, created_at) < $3
-		ORDER BY COALESCE(entry_at, created_at) DESC
-		LIMIT 1000`, siteID, from, to)
+		ORDER BY COALESCE(entry_at, created_at) DESC, id
+		LIMIT $4 OFFSET $5`, siteID, from, to, p.limit(), p.Offset)
 	if err != nil {
-		return nil, fmt.Errorf("ListVisitors: %w", err)
+		return nil, 0, fmt.Errorf("ListVisitors: %w", err)
 	}
-	return collect(rows, scanVisitorRows)
+	out, err := collect(rows, scanVisitorRows)
+	return out, total, err
 }
 
 // SetVisitorExit records the exit time; an existing exit time is kept.

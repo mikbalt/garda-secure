@@ -226,6 +226,15 @@ type Incident struct {
 	UpdatedAt       time.Time `json:"updated_at"`
 	ReceivedAt      time.Time `json:"received_at"` // server receipt time
 	Flags           []string  `json:"flags"`
+	// Type, Severity, Description and Location are the effective values:
+	// the latest amendment of each field, else the original (F7). Amended
+	// is true once an amendment exists; Original* hold the filed values of
+	// fields whose effective value differs.
+	Amended             bool    `json:"amended"`
+	OriginalType        *string `json:"original_type,omitempty"`
+	OriginalSeverity    *string `json:"original_severity,omitempty"`
+	OriginalDescription *string `json:"original_description,omitempty"`
+	OriginalLocation    *string `json:"original_location,omitempty"`
 }
 
 // IncidentAmendment is a supervisor-approved correction to an incident.
