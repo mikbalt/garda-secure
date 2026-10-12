@@ -515,6 +515,9 @@ func (h *Handler) listVisitors(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	for i := range rows {
+		h.visitorOut(&rows[i], false)
+	}
 	setPageHeaders(c, total, page.Offset, len(rows))
 	return c.JSON(rows)
 }
@@ -560,9 +563,13 @@ func (h *Handler) createVisitor(c *fiber.Ctx) error {
 		return h.fail(c, err)
 	}
 	guard := middleware.GetGuard(c)
+	idNumber, err := h.sealIDNumber(nilIfEmpty(b.IDNumber)) // encrypted at rest (BE-S9)
+	if err != nil {
+		return h.fail(c, err)
+	}
 	v, isNew, err := repository.CreateVisitor(c.Context(), h.DB, model.VisitorLog{
 		SiteID: site.ID, GuardID: guard.ID, DeviceID: deviceID(c), VisitorName: b.VisitorName,
-		IDType: nilIfEmpty(b.IDType), IDNumber: nilIfEmpty(b.IDNumber), Plate: nilIfEmpty(b.Plate),
+		IDType: nilIfEmpty(b.IDType), IDNumber: idNumber, Plate: nilIfEmpty(b.Plate),
 		HostName: nilIfEmpty(b.HostName), EntryAt: &entry, Purpose: nilIfEmpty(b.Purpose),
 		PhotoObjectKey: nilIfEmpty(b.PhotoObjectKey),
 	}, nilIfEmpty(b.ID))
@@ -572,6 +579,7 @@ func (h *Handler) createVisitor(c *fiber.Ctx) error {
 	if err := service.CheckReplay(v, isNew, site.ID, guard.ID); err != nil {
 		return h.fail(c, err)
 	}
+	h.visitorOut(v, false)
 	return created(c, isNew, v)
 }
 
@@ -603,5 +611,6 @@ func (h *Handler) visitorExit(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	h.visitorOut(out, false)
 	return c.JSON(out)
 }

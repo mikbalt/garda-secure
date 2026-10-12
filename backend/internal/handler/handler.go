@@ -146,6 +146,7 @@ func (h *Handler) Register(api fiber.Router) {
 
 	vis := api.Group("/visitors")
 	vis.Get("/", web(rolesOps...), h.listVisitors)
+	vis.Get("/:id", web(rolesOps...), h.getVisitor)
 	vis.Post("/", append(field, h.createVisitor)...)
 	vis.Post("/:id/exit", append(field, h.visitorExit)...)
 

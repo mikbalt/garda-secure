@@ -86,6 +86,7 @@ func (s *Scheduler) jobs() []job {
 		{"sla_check", 30 * time.Second, 2 * time.Minute, s.CheckSLA},
 		{"monthly_recap", 10 * time.Minute, 40 * time.Minute, s.MonthlyRecap},
 		{"backups", time.Minute, backupTimeout, s.Backups},
+		{"retention", time.Hour, 50 * time.Minute, s.Retention},
 	}
 }
 

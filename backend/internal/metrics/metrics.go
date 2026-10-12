@@ -80,6 +80,15 @@ var (
 		Help: "Unix time of the last successful run per job.",
 	}, []string{"job"})
 
+	// RetentionItems counts records/objects handled by the retention job
+	// (kind = visitor_log, visitor_photo, selfie, attendance_gps, scan_gps,
+	// notification_log, incident_photo, defect_photo, checkpoint_photo,
+	// visitor_id_encrypted; result = done | failed).
+	RetentionItems = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "sp_retention_items_total",
+		Help: "Items purged, cleared or encrypted by the retention job, by kind and result (done, failed).",
+	}, []string{"kind", "result"})
+
 	// BackupLastSuccess is the finish time of the newest successful backup
 	// (0 = no successful backup yet).
 	BackupLastSuccess = prometheus.NewGauge(prometheus.GaugeOpts{
@@ -97,7 +106,7 @@ func RegisterAPI(r prometheus.Registerer) {
 // RegisterWorker registers the worker metrics and the Go/process collectors.
 func RegisterWorker(r prometheus.Registerer) {
 	r.MustRegister(Notifications, QueueDepth, NotificationsFailed, SOSUnacknowledged,
-		WorkerHeartbeat, JobRuns, JobLastSuccess, BackupLastSuccess)
+		WorkerHeartbeat, JobRuns, JobLastSuccess, BackupLastSuccess, RetentionItems)
 	registerRuntime(r)
 }
 

@@ -90,6 +90,10 @@ type Config struct {
 	WorkerHTTPAddr        string        // WORKER_HTTP_ADDR, default :9091 (/health, /metrics)
 	WorkerShutdownTimeout time.Duration // WORKER_SHUTDOWN_TIMEOUT, default 40s
 
+	// Data retention (BE-S9) and Keycloak user management (F1); see features.go.
+	Retention     Retention
+	KeycloakAdmin KeycloakAdmin
+
 	MigrationsPath string
 
 	LogLevel string
@@ -167,6 +171,9 @@ func Load() (*Config, error) {
 	}
 	cfg.BackupHour = hour
 	if err := cfg.loadReliability(); err != nil {
+		return nil, err
+	}
+	if err := cfg.loadFeatures(); err != nil {
 		return nil, err
 	}
 
