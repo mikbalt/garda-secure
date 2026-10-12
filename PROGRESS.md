@@ -9,7 +9,6 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
-| Wave 2 backend — field integrity: server-verified guard sessions (D-035), signed checkpoint QR, patrol schedules + "not started" alerts | `muhamhad-pc1/claude-be-field` | 2026-10-12 | branch `agent/muhamhad-pc1/be-field`; migration 006 |
 | Wave 2 backend — PRD gaps: user management via Keycloak admin API + per-site client scoping, incident_filed, amended values in reports, override history, xlsx, route snapshots, channel registry, site floor plans, retention job, realm-wide SOS | `muhamhad-pc1/claude-be-features` | 2026-10-12 | branch `agent/muhamhad-pc1/be-features`; migration 007 |
 | Wave 2 web — hardening (WEB-*) + UIs for ops alerts, audit log, platform-admin, flags | `muhamhad-pc1/claude-web` | 2026-10-12 | branch `agent/muhamhad-pc1/web-hardening` |
 | Wave 2 mobile — hardening (MOB-2..11) + guard session token + signed QR client | `muhamhad-pc1/claude-mobile` | 2026-10-12 | branch `agent/muhamhad-pc1/mobile-hardening` |
@@ -23,7 +22,7 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 | 003 | v1_core (devices, shift templates, patrol sessions, amendments, notifications, settings, backups) | `muhamhad-pc1/claude` | pushed |
 | 004 | be_reliability (outbox, ops alerts, SLA, backups) | `muhamhad-pc1/claude-be-rel` | pushed |
 | 005 | be_security (audit append-only, received_at/flags, per-site employee_id) | `muhamhad-pc1/claude-be-sec` | pushed |
-| 006 | be_field (guard sessions, signed QR, patrol schedules) | `muhamhad-pc1/claude-be-field` | reserved |
+| 006 | be_field (guard sessions, signed QR, patrol schedules) | `muhamhad-pc1/claude-be-field` | pushed |
 | 007 | be_features (overrides history, route snapshots, floor plans, channels, retention) | `muhamhad-pc1/claude-be-features` | reserved |
 | 008 | *(next free)* | | |
 
@@ -87,3 +86,4 @@ Mobile (D-024) — open audit items, see docs/audit-2026-10.md
 | Hardening wave 1 — backend reliability: transactional notification outbox, SOS lane, Postgres claim, SMTP timeouts, job isolation, SLA coverage, backups (Keycloak DB, TZ, timeout, alerts), ops alerts, metrics, /ready, worker health (D-026..D-030) | `muhamhad-pc1/claude-be-rel` | 2026-10-12 | merge 5c8e2f5 |
 | Hardening wave 1 — backend security: Go 1.26 + deps + govulncheck, replay ownership, settings exfil guard, platform-admin, token/azp binding, limits + rate limits, append-only audit + GET /audit, write-once photos + EXIF strip, per-kind photo access, plausibility flags (D-031..D-033) | `muhamhad-pc1/claude-be-sec` | 2026-10-12 | merge e2314d6 |
 | Hardening wave 1 — infra/ops/CI: SERVER_HOST + private CA + preflight, healthchecks, nginx (DNS, headers, CSP, rate limits, admin allow-list, :9443), Silo, enforced staff OTP, least privilege, monitoring/alerting, restic off-site backups, deploy/restore scripts, SHA-pinned CI, Trivy, e2e stack job, GHCR CD (D-034) | `muhamhad-pc1/claude-infra` | 2026-10-12 | merge e906804, 05e9cf1 |
+| Wave 2 backend — server-verified guard sessions, signed checkpoint QR, patrol schedules + `patrol_not_started` + compliance report (D-036..D-038) | `muhamhad-pc1/claude-be-field` | 2026-10-12 | merge agent/muhamhad-pc1/be-field |

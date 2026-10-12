@@ -330,3 +330,29 @@ in PRD §9 (OQ-x). New entries go at the bottom with the next free number.
   fully on-prem; no online map tiles.
 - **Clock window:** keep current behaviour (clock-in from start − window until
   shift end, late after start; clock-out until end + window). The PRD follows.
+
+### D-036 — Guard sessions (implements D-035 "both")
+- **Date:** 2026-10-12 · **Status:** Accepted
+- `POST /device/guard-sessions` checks the PIN on the server and returns a
+  12 h HS256 guard token bound to guard, device and site (`X-Guard-Token`).
+  5 wrong PINs lock the guard for 15 min, counted server-side across tablets;
+  every attempt is audited. Verification is by event time with a 7-day grace
+  for queued records; a bad token is 403 `guard_token_invalid` (never for SOS).
+  Records without proof are flagged `guard_unverified`; such clock-ins go to
+  review. Offline unlock with the local bcrypt PIN stays possible.
+
+### D-037 — Signed checkpoint QR codes
+- **Date:** 2026-10-12 · **Status:** Accepted
+- `SP1:<checkpoint_id>:<sig>` (HMAC, version stored in the checkpoint JSON).
+  Tablets never receive payloads. Custom codes remain legacy (`qr_unsigned`);
+  bad/outdated signatures are accepted but flagged `qr_invalid`.
+  `POST /patrol/routes/:id/regenerate-qr` = reprint; rotating
+  `QR_SIGNING_SECRET` invalidates every printed code.
+
+### D-038 — Patrol schedules
+- **Date:** 2026-10-12 · **Status:** Accepted
+- Schedule windows per route (weekdays, start/end, every N minutes, grace);
+  expectations materialised 48 h ahead; matched by session event time, one
+  session per expected patrol, late starts recorded within 12 h. Missed patrols
+  raise `patrol_not_started` even when the tablet is offline. Compliance = on
+  time / decided (`GET /reports/patrol-compliance`, KPI, monthly recap).
