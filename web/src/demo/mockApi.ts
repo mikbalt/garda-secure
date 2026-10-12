@@ -236,7 +236,7 @@ function monthly(siteId: string, range: [Date, Date]): MonthlyRecapRow[] {
 
 // ── Routes ───────────────────────────────────────────────────────────────────
 
-on('GET', '/me', () => ({ subject: 'demo', username: 'demo', realm: 'demo', client_id: 'securepatrol-web', roles: [] }))
+on('GET', '/me', () => ({ subject: 'demo', username: 'demo', realm: 'demo', client_id: 'securepatrol-web', roles: [], sites: [], sites_restricted: false }))
 
 // Sites
 on('GET', '/sites', () => w.sites)
@@ -267,7 +267,16 @@ on('PUT', '/guards/:id/pin', ({ params, body }) => {
 })
 
 // Devices
-on('GET', '/devices', () => w.devices)
+on('GET', '/devices', () =>
+  w.devices.map((d, i) => ({
+    ...d,
+    health_at: d.status === 'active' ? iso(new Date(Date.now() - (i + 1) * 60_000)) : undefined,
+    health:
+      d.status === 'active'
+        ? { app_version: '1.4.0', app_build: '42', platform: 'android', os_version: '14', outbox_pending: i, outbox_failed: 0, sos_pending: 0, last_sync: iso(now()), clock_offset_ms: -800, private_ca: true, errors: [], received_at: iso(now()) }
+        : undefined,
+  })),
+)
 on('PUT', '/devices/:id', ({ params, body }) => {
   const d = byId(w.devices, params.id)
   if (body.status === 'active' && !body.site_id) throw bad('site_required', 'assign a site before activating the device')
@@ -342,7 +351,24 @@ on('PUT', '/attendance/shifts/:shiftId/override', ({ params, body }) => {
     a = { id: uid(), shift_id: shift.id, guard_id: shift.guard_id, site_id: shift.site_id, status: 'present', late_minutes: 0, early_out_minutes: 0, needs_review: false, created_at: iso(now()) }
     w.attendance.push(a)
   }
-  return Object.assign(a, { status: body.status, override_reason: body.reason, overridden_by: 'demo/admin', overridden_at: iso(now()), needs_review: false, clock_in_at: body.clock_in_at ?? a.clock_in_at, clock_out_at: body.clock_out_at ?? a.clock_out_at })
+  const before = { ...a }
+  const fresh = !w.attendance.some((x) => x.id === a!.id && x.overridden_at) && !before.clock_in_at && !before.override_reason
+  const out = Object.assign(a, { status: body.status, override_reason: body.reason, overridden_by: 'demo/admin', overridden_at: iso(now()), needs_review: false, clock_in_at: body.clock_in_at ?? a.clock_in_at, clock_out_at: body.clock_out_at ?? a.clock_out_at })
+  ;(fx.attendance_overrides ??= []).push({
+    id: uid(), attendance_id: a.id, shift_id: shift.id, site_id: shift.site_id,
+    before_status: fresh ? undefined : before.status, before_clock_in_at: before.clock_in_at, before_clock_out_at: before.clock_out_at, before_reason: before.override_reason,
+    after_status: out.status, after_clock_in_at: out.clock_in_at, after_clock_out_at: out.clock_out_at,
+    reason: String(body.reason), actor: 'demo/admin', created_at: iso(now()),
+  })
+  return out
+})
+on('GET', '/attendance/:id/history', ({ params }) => {
+  const a = byId(w.attendance, params.id)
+  return { attendance: a, overrides: (fx.attendance_overrides ?? []).filter((o) => o.attendance_id === a.id) }
+})
+on('GET', '/attendance/shifts/:shiftId/history', ({ params }) => {
+  const a = w.attendance.find((x) => x.shift_id === params.shiftId)
+  return { attendance: a ?? null, overrides: a ? (fx.attendance_overrides ?? []).filter((o) => o.attendance_id === a.id) : [] }
 })
 
 // Patrol
@@ -399,7 +425,13 @@ on('PUT', '/patrol/routes/:id/schedules', ({ params, body }) => {
   return { route_id: r.id, schedules: list, generated_expectations: list.reduce((n, sc) => n + 2 * patrolsPerDay(sc, sc.weekdays[0]), 0) }
 })
 on('GET', '/patrol/live', ({ query }) =>
-  w.sessions.filter((s) => s.site_id === query.site_id && s.status === 'in_progress').map((s) => ({ guard_name: guardName(s.guard_id), progress: progress(s) })),
+  w.sessions
+    .filter((s) => s.site_id === query.site_id && s.status === 'in_progress')
+    .map((s) => {
+      const p = progress(s)
+      const last = p.checkpoints.map((c) => c.scanned_at).filter(Boolean).sort().pop()
+      return { guard_name: guardName(s.guard_id), last_scan_at: last, progress: p }
+    }),
 )
 on('GET', '/patrol/sessions', ({ query }) =>
   w.sessions.filter((s) => s.site_id === query.site_id && inRange(s.started_at, dateRange(query.from, query.to))).sort((a, b) => b.started_at.localeCompare(a.started_at)).map(summary),
@@ -409,13 +441,15 @@ on('GET', '/patrol/sessions/:id', ({ params }) => progress(byId(w.sessions, para
 // Incidents & field reports
 on('GET', '/incidents', ({ query }) =>
   w.incidents
+    .map(effective)
     .filter((i) => i.site_id === query.site_id && (!query.type || i.type === query.type) && (!query.severity || i.severity === query.severity) && (!query.status || i.status === query.status) && (!query.from || inRange(i.occurred_at, dateRange(query.from, query.to))))
     .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at)),
 )
 on('GET', '/incidents/:id', ({ params }) => {
-  const i = byId(w.incidents, params.id)
+  const i = effective(byId(w.incidents, params.id))
   return { incident: i, guard_name: guardName(i.guard_id), amendments: w.amendments.filter((a) => a.incident_id === i.id), photos: i.photo_object_keys.map((key) => ({ key, uploaded: true, url: photoUrl(key) })) }
 })
+on('GET', '/incidents/:id/pdf', ({ params }) => demoPdf(`Incident ${byId(w.incidents, params.id).id}`))
 on('PUT', '/incidents/:id/status', ({ params, body }) => Object.assign(byId(w.incidents, params.id), { status: body.status, updated_at: iso(now()) }))
 on('POST', '/incidents/:id/amendments', ({ params, body }) => {
   if (!String(body.reason ?? '').trim()) throw bad('reason_required', 'a reason is required')
@@ -423,6 +457,12 @@ on('POST', '/incidents/:id/amendments', ({ params, body }) => {
   w.amendments.push(a)
   return a
 })
+on('GET', '/sos/active', () =>
+  w.sos
+    .filter((s) => !s.acknowledged_at)
+    .sort((a, b) => b.fired_at.localeCompare(a.fired_at))
+    .map((s) => ({ id: s.id, site_id: s.site_id, site_name: w.sites.find((x) => x.id === s.site_id)?.name ?? '—', guard_id: s.guard_id, guard_name: guardName(s.guard_id), fired_at: s.fired_at, received_at: s.fired_at, gps_lat: s.gps_lat, gps_lng: s.gps_lng })),
+)
 on('GET', '/sos', ({ query }) => w.sos.filter((s) => s.site_id === query.site_id && (query.unack_only !== 'true' || !s.acknowledged_at)).sort((a, b) => b.fired_at.localeCompare(a.fired_at)))
 on('POST', '/sos/:id/acknowledge', ({ params }) => {
   const s = byId(w.sos, params.id)
@@ -432,7 +472,13 @@ on('POST', '/sos/:id/acknowledge', ({ params }) => {
 })
 on('GET', '/defects', ({ query }) => w.defects.filter((d) => d.site_id === query.site_id && (!query.status || d.status === query.status)).map((d) => ({ flags: [], ...d })))
 on('PUT', '/defects/:id/status', ({ params, body }) => Object.assign(byId(w.defects, params.id), { status: body.status, updated_at: iso(now()) }))
-on('GET', '/visitors', ({ query }) => w.visitors.filter((v) => v.site_id === query.site_id && inRange(v.entry_at, dateRange(query.from, query.to))).map((v) => ({ flags: [], ...v })))
+on('GET', '/visitors', ({ query }) =>
+  w.visitors.filter((v) => v.site_id === query.site_id && inRange(v.entry_at, dateRange(query.from, query.to))).map((v) => ({ flags: [], ...v, id_number: mask(v.id_number) })),
+)
+on('GET', '/visitors/:id', ({ params }) => {
+  const v = byId(w.visitors, params.id)
+  return { visitor: { flags: [], ...v }, photos: v.photo_object_key ? [{ key: v.photo_object_key, uploaded: true, url: photoUrl(v.photo_object_key) }] : [] }
+})
 on('GET', '/media/url', ({ query }) => ({ key: query.key, uploaded: true, url: photoUrl(query.key ?? '') }))
 
 // Reports & dashboard
@@ -494,7 +540,11 @@ on('GET', '/reports/guards/kpi', ({ query }): { site_id?: string; rows: GuardKpi
 }))
 
 // Administration
-on('GET', '/notifications/event-types', () => ({ event_types: ['sos', 'sla_missed', 'absent', 'late_clock_in', 'incident_high', 'defect_opened', 'monthly_recap', 'patrol_not_started'], channels: ['email', 'whatsapp'] }))
+on('GET', '/notifications/event-types', () => ({ event_types: ['sos', 'sla_missed', 'absent', 'late_clock_in', 'incident_high', 'incident_filed', 'defect_opened', 'monthly_recap', 'patrol_not_started'], channels: ['email', 'whatsapp'] }))
+on('GET', '/notifications/channels', () => [
+  { name: 'email', configured: !!w.channels.smtp?.host },
+  { name: 'whatsapp', configured: !!w.channels.whatsapp?.phone_number_id },
+])
 on('GET', '/notifications/rules', ({ query }) => w.rules.filter((r) => r.site_id === query.site_id))
 on('POST', '/notifications/rules', ({ body }) => {
   const r = { id: uid(), enabled: true, created_at: iso(now()), ...body } as World['rules'][0]
@@ -534,6 +584,113 @@ function photoUrl(key: string): string {
   return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)
 }
 
+// ── be-features (F1, F3, F5, F6, F7, WEB-3, BE-S9): demo shapes ───────────────
+
+type DemoUser = { id: string; username: string; email: string; first_name: string; last_name: string; enabled: boolean; roles: string[]; sites: string[]; otp_configured: boolean; required_actions: string[]; created_at: string }
+type DemoDeviceAccount = { id: string; username: string; name: string; enabled: boolean; created_at: string; device?: unknown }
+type DemoFloorplan = { id: string; site_id: string; name: string; object_key: string; content_type: string; width: number; height: number; size_bytes: number; created_at: string; url?: string }
+type DemoOverride = Record<string, unknown> & { attendance_id: string }
+const fx = w as World & { attendance_overrides?: DemoOverride[]; users?: DemoUser[]; device_accounts?: DemoDeviceAccount[]; floorplans?: DemoFloorplan[] }
+
+function mask(v?: string | null) {
+  if (!v) return v
+  return v.length > 8 ? v.slice(0, 4) + '*'.repeat(v.length - 8) + v.slice(-4) : '*'.repeat(Math.max(0, v.length - 2)) + v.slice(-2)
+}
+
+/** Incident with the latest amendment per field applied (F7). */
+function effective<T extends { id: string; type: string; severity: string; description?: string | null; location?: string | null }>(i: T) {
+  const out: Record<string, unknown> = { ...i, amended: false }
+  for (const a of w.amendments.filter((x) => x.incident_id === i.id).sort((x, y) => x.created_at.localeCompare(y.created_at))) {
+    out.amended = true
+    for (const [k, v] of Object.entries(a.changes)) {
+      if (out[`original_${k}`] === undefined && (i as Record<string, unknown>)[k] !== v) out[`original_${k}`] = (i as Record<string, unknown>)[k]
+      out[k] = v
+    }
+  }
+  return out as T & { amended: boolean }
+}
+
+function demoPdf(title: string) {
+  return new Blob([`%PDF-1.4\n% SecurePatrol demo: ${title}\n`], { type: 'application/pdf' })
+}
+
+const planSvg = (name: string) =>
+  'data:image/svg+xml;utf8,' +
+  encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800"><rect width="1200" height="800" fill="#f8fafc"/><rect x="60" y="60" width="1080" height="680" fill="none" stroke="#334155" stroke-width="8"/><line x1="600" y1="60" x2="600" y2="500" stroke="#334155" stroke-width="6"/><line x1="60" y1="420" x2="420" y2="420" stroke="#334155" stroke-width="6"/><text x="600" y="780" font-family="sans-serif" font-size="28" text-anchor="middle" fill="#64748b">${name}</text></svg>`)
+
+on('GET', '/sites/:id/floorplans', ({ params }) => (fx.floorplans ?? []).filter((f) => f.site_id === params.id).map((f) => ({ ...f, url: planSvg(f.name) })))
+on('POST', '/sites/:id/floorplans', ({ params, body }) => {
+  const form = body as unknown as { get?: (k: string) => unknown }
+  const name = String(form.get?.('name') ?? 'Floor plan')
+  const id = uid()
+  const f: DemoFloorplan = { id, site_id: byId(w.sites, params.id).id, name, object_key: `sites/${params.id}/floorplan/${id}.png`, content_type: 'image/png', width: 1200, height: 800, size_bytes: 48_000, created_at: iso(now()) }
+  ;(fx.floorplans ??= []).push(f)
+  return { ...f, url: planSvg(name) }
+})
+on('DELETE', '/sites/:id/floorplans/:floorplanId', ({ params }) => {
+  if (w.routes.some((r) => r.checkpoints.some((c) => (c as { floorplan_id?: string }).floorplan_id === params.floorplanId))) {
+    throw new HttpError(409, 'floorplan_in_use', 'checkpoints are placed on this floor plan; move them first')
+  }
+  fx.floorplans = (fx.floorplans ?? []).filter((f) => f.id !== params.floorplanId)
+  return null
+})
+
+const users = () =>
+  (fx.users ??= [
+    { id: uid(), username: 'dewi.admin', email: 'dewi@example.com', first_name: 'Dewi', last_name: 'Lestari', enabled: true, roles: ['admin'], sites: [], otp_configured: true, required_actions: [], created_at: iso(new Date(Date.now() - 90 * 86_400_000)) },
+    { id: uid(), username: 'agus.spv', email: 'agus@example.com', first_name: 'Agus', last_name: 'Setiawan', enabled: true, roles: ['supervisor'], sites: w.sites.slice(0, 1).map((s) => s.id), otp_configured: true, required_actions: [], created_at: iso(new Date(Date.now() - 40 * 86_400_000)) },
+    { id: uid(), username: 'klien.gedung', email: 'owner@example.com', first_name: 'Pemilik', last_name: 'Gedung', enabled: true, roles: ['client-readonly'], sites: w.sites.slice(0, 1).map((s) => s.id), otp_configured: false, required_actions: [], created_at: iso(new Date(Date.now() - 10 * 86_400_000)) },
+  ])
+const demoPassword = () => 'Demo-' + Math.random().toString(36).slice(2, 8) + 'X7'
+on('GET', '/users', ({ query }) =>
+  users().filter(
+    (u) =>
+      (!query.role || u.roles.includes(query.role)) &&
+      (query.enabled === undefined || String(u.enabled) === query.enabled) &&
+      (!query.search || `${u.username} ${u.email} ${u.first_name} ${u.last_name}`.toLowerCase().includes(query.search.toLowerCase())),
+  ),
+)
+on('GET', '/users/:id', ({ params }) => byId(users(), params.id))
+on('POST', '/users', ({ body }) => {
+  const username = String(body.username ?? '').toLowerCase().trim()
+  if (!/^[a-z0-9][a-z0-9._@-]{2,63}$/.test(username)) throw bad('invalid_username', 'invalid username')
+  if (users().some((u) => u.username === username)) throw new HttpError(409, 'username_taken', 'this username is already used')
+  const roles = (body.roles as string[] | undefined) ?? []
+  if (!roles.length) throw bad('roles_required', 'choose at least one role')
+  const u: DemoUser = {
+    id: uid(), username, email: String(body.email ?? ''), first_name: String(body.first_name ?? ''), last_name: String(body.last_name ?? ''), enabled: true, roles, sites: (body.sites as string[] | undefined) ?? [],
+    otp_configured: false, required_actions: ['UPDATE_PASSWORD', ...(roles.some((r) => r !== 'client-readonly') ? ['CONFIGURE_TOTP'] : [])], created_at: iso(now()),
+  }
+  users().push(u)
+  return body.send_invite ? { user: u, invite_sent: true } : { user: u, invite_sent: false, temporary_password: String(body.temporary_password || demoPassword()) }
+})
+on('PUT', '/users/:id', ({ params, body }) => {
+  const u = byId(users(), params.id)
+  for (const k of ['first_name', 'last_name', 'email', 'enabled', 'roles', 'sites'] as const) if (body[k] !== undefined) Object.assign(u, { [k]: body[k] })
+  return u
+})
+on('POST', '/users/:id/reset-password', ({ params, body }) => (byId(users(), params.id), body.send_email ? { email_sent: true } : { temporary_password: demoPassword() }))
+on('POST', '/users/:id/reset-otp', ({ params }) => {
+  const u = byId(users(), params.id)
+  Object.assign(u, { otp_configured: false, required_actions: [...new Set([...u.required_actions, 'CONFIGURE_TOTP'])] })
+  return { user_id: u.id, otp_removed: 1, otp_configured: false }
+})
+on('POST', '/users/:id/logout', ({ params }) => (byId(users(), params.id), { logged_out: true }))
+const deviceAccounts = () =>
+  (fx.device_accounts ??= w.devices.map((d) => ({ id: d.keycloak_user_id, username: 'device-' + d.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), name: d.name, enabled: d.status !== 'revoked', created_at: d.created_at })))
+on('GET', '/device-accounts', () => deviceAccounts().map((a) => ({ ...a, device: w.devices.find((d) => d.keycloak_user_id === a.id) })))
+on('POST', '/device-accounts', ({ body }) => {
+  const name = String(body.name ?? '').trim()
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+  if (!slug) throw bad('invalid_name', 'name is required')
+  if (deviceAccounts().some((a) => a.username === 'device-' + slug)) throw new HttpError(409, 'username_taken', 'this username is already used')
+  const a = { id: uid(), username: 'device-' + slug, name, enabled: true, created_at: iso(now()) }
+  deviceAccounts().push(a)
+  return { account: a, password: demoPassword() + demoPassword() }
+})
+on('POST', '/device-accounts/:id/reset-password', ({ params }) => ({ account: byId(deviceAccounts(), params.id), password: demoPassword() + demoPassword() }))
+on('PUT', '/device-accounts/:id', ({ params, body }) => Object.assign(byId(deviceAccounts(), params.id), { enabled: !!body.enabled }))
+
 // ── Adapter ──────────────────────────────────────────────────────────────────
 
 function toCsv(data: unknown): string {
@@ -561,9 +718,16 @@ const adapter: AxiosAdapter = async (cfg: InternalAxiosRequestConfig) => {
     try {
       const data = r.fn({ params, query, body })
       if (method !== 'GET') persist()
-      if (query.format === 'csv') {
+      if (query.format === 'csv' || query.format === 'xlsx') {
+        // Demo: XLSX downloads are served as CSV.
         const blob = new Blob(['﻿' + toCsv(data)], { type: 'text/csv' })
         return respond(200, blob, { 'content-disposition': `attachment; filename="demo${path.replace(/\//g, '-')}.csv"` })
+      }
+      if (query.format === 'pdf') {
+        return respond(200, demoPdf(path), { 'content-disposition': `attachment; filename="demo${path.replace(/\//g, '-')}.pdf"` })
+      }
+      if (Array.isArray(data)) {
+        return respond(200, data, { 'x-total-count': String(data.length) })
       }
       return respond(method === 'POST' && data !== null ? 201 : data === null ? 204 : 200, data)
     } catch (e) {
