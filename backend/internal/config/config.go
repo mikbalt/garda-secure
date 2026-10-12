@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Config holds all runtime configuration loaded from environment variables.
@@ -48,7 +49,24 @@ type Config struct {
 	WhatsAppTemplateName  string
 	WhatsAppTemplateLang  string
 
-	BackupHour int // local server hour for the daily pg_dump
+	BackupHour int // hour (0-23) in BackupLocation for the daily pg_dump
+	// BackupLocation is BACKUP_TZ (default Asia/Jakarta), independent of the
+	// container's TZ.
+	BackupLocation *time.Location
+	// BackupTimeout bounds each pg_dump (BACKUP_TIMEOUT, default 1h).
+	BackupTimeout time.Duration
+	// BackupKeycloakDatabaseURL, when set, is dumped into a separate object
+	// next to the application database (BACKUP_KEYCLOAK_DATABASE_URL).
+	BackupKeycloakDatabaseURL string
+
+	// Database pool (BE-R6).
+	DBMaxConns         int32         // DB_MAX_CONNS, default 20
+	DBStatementTimeout time.Duration // DB_STATEMENT_TIMEOUT, default 30s
+
+	// Worker (BE-R2, BE-O1, BE-R6).
+	NotifyWorkers         int           // NOTIFY_WORKERS, default 4 (min 2: one is reserved for SOS)
+	WorkerHTTPAddr        string        // WORKER_HTTP_ADDR, default :9091 (/health, /metrics)
+	WorkerShutdownTimeout time.Duration // WORKER_SHUTDOWN_TIMEOUT, default 40s
 
 	MigrationsPath string
 
@@ -103,6 +121,9 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("BACKUP_HOUR must be 0-23")
 	}
 	cfg.BackupHour = hour
+	if err := cfg.loadReliability(); err != nil {
+		return nil, err
+	}
 
 	if cfg.DatabaseURL == "" {
 		return nil, errors.New("DATABASE_URL is required")
@@ -128,6 +149,60 @@ func (c *Config) IssuerFor(realm string) string {
 // JWKSURLFor returns the internal JWKS URL of a realm.
 func (c *Config) JWKSURLFor(realm string) string {
 	return c.KeycloakURL + "/realms/" + realm + "/protocol/openid-connect/certs"
+}
+
+// loadReliability reads the backup, pool and worker settings.
+func (c *Config) loadReliability() error {
+	var err error
+	if c.BackupLocation, err = time.LoadLocation(envOrDefault("BACKUP_TZ", "Asia/Jakarta")); err != nil {
+		return fmt.Errorf("BACKUP_TZ: %w", err)
+	}
+	if c.BackupTimeout, err = envDuration("BACKUP_TIMEOUT", time.Hour); err != nil {
+		return err
+	}
+	c.BackupKeycloakDatabaseURL = os.Getenv("BACKUP_KEYCLOAK_DATABASE_URL")
+
+	maxConns, err := envInt("DB_MAX_CONNS", 20)
+	if err != nil || maxConns < 2 || maxConns > 1000 {
+		return errors.New("DB_MAX_CONNS must be between 2 and 1000")
+	}
+	c.DBMaxConns = int32(maxConns) // #nosec G115 -- range checked above
+	if c.DBStatementTimeout, err = envDuration("DB_STATEMENT_TIMEOUT", 30*time.Second); err != nil {
+		return err
+	}
+
+	if c.NotifyWorkers, err = envInt("NOTIFY_WORKERS", 4); err != nil || c.NotifyWorkers < 2 || c.NotifyWorkers > 64 {
+		return errors.New("NOTIFY_WORKERS must be between 2 and 64")
+	}
+	c.WorkerHTTPAddr = envOrDefault("WORKER_HTTP_ADDR", ":9091")
+	if c.WorkerShutdownTimeout, err = envDuration("WORKER_SHUTDOWN_TIMEOUT", 40*time.Second); err != nil {
+		return err
+	}
+	return nil
+}
+
+func envInt(key string, def int) (int, error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return def, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be an integer", key)
+	}
+	return n, nil
+}
+
+func envDuration(key string, def time.Duration) (time.Duration, error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return def, nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be a duration like 30s or 1h", key)
+	}
+	return d, nil
 }
 
 func envOrDefault(key, def string) string {

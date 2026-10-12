@@ -12,6 +12,14 @@ func Logger(log zerolog.Logger) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		start := time.Now()
 		err := c.Next()
+		if err != nil {
+			// Render handler errors (incl. recovered panics) now, so the
+			// logged status is the one the client gets (audit BE-O1).
+			if herr := c.App().ErrorHandler(c, err); herr != nil {
+				_ = c.SendStatus(fiber.StatusInternalServerError)
+			}
+			err = nil
+		}
 
 		status := c.Response().StatusCode()
 		dur := time.Since(start)

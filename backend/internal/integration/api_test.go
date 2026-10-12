@@ -27,6 +27,7 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/requestid"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -94,7 +95,7 @@ const (
 func newEnv(t *testing.T) *env {
 	t.Helper()
 	ctx := context.Background()
-	pool, err := db.New(ctx, dsn)
+	pool, err := db.New(ctx, dsn, db.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,6 +139,7 @@ func newEnv(t *testing.T) *env {
 
 	h := &handler.Handler{DB: pool, Redis: rdb, Storage: stg, Notifier: notifier, Settings: st, Cfg: cfg, Log: log}
 	app := fiber.New(fiber.Config{BodyLimit: handler.MaxPhotoBytes + 1<<20})
+	app.Use(requestid.New())
 	api := app.Group("/api/v1", middleware.JWT(validator), middleware.LoadDevice(pool), middleware.Audit(pool))
 	h.Register(api)
 
@@ -463,6 +465,20 @@ func TestAPIEndToEnd(t *testing.T) {
 	}), 400, "manual without photo")
 	e.expect(e.do("POST", "/api/v1/patrol/sessions/"+sessID+"/scans", tablet, budi, map[string]any{"qr_code": "QR-NOPE"}), 400, "unknown QR")
 
+	// The session and its scans were synced after the fact (the tablet was
+	// "offline" when they happened): no SLA alarm while the scan for Gudang
+	// may still be in the tablet's outbox (F2: no false positives).
+	if err := e.sched.CheckSLA(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n := e.count(`SELECT COUNT(*) FROM sla_breaches WHERE session_id = $1`, sessID); n != 0 {
+		t.Fatalf("SLA breaches while the tablet was offline = %d, want 0", n)
+	}
+	// The tablet has been online since before Gudang was due and still sent
+	// no scan: now it is a breach, notified once.
+	if _, err := e.pool.Exec(ctx, `UPDATE devices SET online_since = now() - interval '1 hour', last_seen_at = now() WHERE id = $1`, deviceID); err != nil {
+		t.Fatal(err)
+	}
 	if err := e.sched.CheckSLA(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -475,6 +491,9 @@ func TestAPIEndToEnd(t *testing.T) {
 	if n := e.count(`SELECT COUNT(*) FROM notification_log WHERE event_type = 'sla_missed'`); n != 1 {
 		t.Fatalf("SLA notifications = %d", n)
 	}
+	if n := e.count(`SELECT COUNT(*) FROM notification_log WHERE event_type = 'sla_missed' AND lane = 'normal' AND status = 'queued'`); n != 1 {
+		t.Fatal("SLA notification not queued on the normal lane")
+	}
 	live := e.expect(e.do("GET", "/api/v1/patrol/live?site_id="+siteA, client, "", nil), 200, "live").list()
 	if len(live) != 1 {
 		t.Fatalf("live patrols = %d", len(live))
@@ -485,6 +504,40 @@ func TestAPIEndToEnd(t *testing.T) {
 		t.Fatalf("progress = %v", cps)
 	}
 	e.expect(e.do("POST", "/api/v1/patrol/sessions/"+sessID+"/end", tablet, budi, nil), 200, "end session")
+	if err := e.sched.CheckSLA(ctx); err != nil { // evaluates the ended session once
+		t.Fatal(err)
+	}
+	if n := e.count(`SELECT COUNT(*) FROM patrol_sessions WHERE id = $1 AND sla_checked_at IS NOT NULL`, sessID); n != 1 {
+		t.Fatal("ended session not marked SLA-checked")
+	}
+
+	// A session synced from an offline tablet and ended early: the unscanned
+	// checkpoints with an SLA are breaches once the session has ended (F2).
+	offID := uuid.NewString()
+	e.expect(e.do("POST", "/api/v1/patrol/sessions", tablet, budi, map[string]any{
+		"id": offID, "route_id": routeID, "started_at": rfc(now.Add(-30 * time.Minute)),
+	}), 201, "start offline session")
+	if _, err := e.pool.Exec(ctx, `UPDATE devices SET online_since = now(), last_seen_at = now() WHERE id = $1`, deviceID); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.sched.CheckSLA(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n := e.count(`SELECT COUNT(*) FROM sla_breaches WHERE session_id = $1`, offID); n != 0 {
+		t.Fatalf("offline session breaches before end = %d, want 0", n)
+	}
+	e.expect(e.do("POST", "/api/v1/patrol/sessions/"+offID+"/end", tablet, budi, map[string]any{
+		"ended_at": rfc(now.Add(-25 * time.Minute)),
+	}), 200, "end offline session early")
+	if err := e.sched.CheckSLA(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n := e.count(`SELECT COUNT(*) FROM sla_breaches WHERE session_id = $1`, offID); n != 2 {
+		t.Fatalf("ended-early session breaches = %d, want 2 (Gerbang, Gudang)", n)
+	}
+	if n := e.count(`SELECT COUNT(*) FROM notification_log WHERE event_type = 'sla_missed'`); n != 3 {
+		t.Fatalf("SLA notifications after early end = %d, want 3", n)
+	}
 	sessions := e.expect(e.do("GET", "/api/v1/reports/patrol/sessions?site_id="+siteA, sup, "", nil), 200, "patrol report").obj()["rows"].([]any)
 	if s := sessions[0].(map[string]any); s["scanned_count"].(float64) != 1 || s["sla_breaches"].(float64) != 1 || s["status"] != "completed" {
 		t.Fatalf("session summary = %v", s)
@@ -548,8 +601,34 @@ func TestAPIEndToEnd(t *testing.T) {
 	if n := e.count(`SELECT COUNT(*) FROM notification_log WHERE event_type = 'sos' AND recipient = '6281234567890'`); n != 1 {
 		t.Fatalf("sos notifications = %d", n)
 	}
-	if n, _ := e.mr.List("notifications:queue"); len(n) == 0 {
-		t.Fatal("nothing enqueued in redis")
+	if n := e.count(`SELECT COUNT(*) FROM notification_log WHERE event_type = 'sos' AND lane = 'sos' AND request_id IS NOT NULL`); n != 1 {
+		t.Fatal("SOS delivery not on the sos lane / without request id")
+	}
+	if n, _ := e.mr.List("notifications:wake"); len(n) == 0 {
+		t.Fatal("workers were not woken via redis")
+	}
+
+	// Redis down: the SOS and its deliveries still commit together (the
+	// worker finds them by polling Postgres), and a replay fills in a
+	// delivery that is missing (e.g. a recipient added after a crash).
+	e.mr.Close()
+	sos2 := uuid.NewString()
+	e.expect(e.do("POST", "/api/v1/sos", tablet, budi, map[string]any{"id": sos2}), 201, "sos with redis down")
+	if n := e.count(`SELECT COUNT(*) FROM notification_log WHERE dedupe_key LIKE $1`, "sos:"+sos2+"|%"); n != 1 {
+		t.Fatalf("deliveries of SOS with redis down = %d, want 1", n)
+	}
+	e.expect(e.do("POST", "/api/v1/notifications/rules", admin, "", map[string]any{
+		"site_id": siteA, "event_type": "sos", "channel": "email", "recipient": "sup@example.com",
+	}), 201, "second sos rule")
+	e.expect(e.do("POST", "/api/v1/sos", tablet, budi, map[string]any{"id": sos2}), 200, "sos replay")
+	if n := e.count(`SELECT COUNT(*) FROM notification_log WHERE dedupe_key LIKE $1`, "sos:"+sos2+"|%"); n != 2 {
+		t.Fatalf("deliveries of SOS after replay = %d, want 2", n)
+	}
+	if err := e.mr.Restart(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.pool.Exec(ctx, `UPDATE sos_alerts SET acknowledged_at = now(), acknowledged_by = 'test' WHERE id = $1`, sos2); err != nil {
+		t.Fatal(err)
 	}
 	e.expect(e.do("POST", "/api/v1/sos/"+sosID+"/acknowledge", tablet, budi, nil), 403, "guard acks sos")
 	e.expect(e.do("POST", "/api/v1/sos/"+sosID+"/acknowledge", client, "", nil), 403, "client acks sos")

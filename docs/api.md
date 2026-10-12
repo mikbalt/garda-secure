@@ -2,7 +2,16 @@
 
 Base path: `/api/v1` (behind nginx: `https://<host>/api/v1`). All endpoints need
 `Authorization: Bearer <Keycloak access token>`. JSON in/out; timestamps are
-RFC 3339 (UTC in responses). Errors: `{"error": "...", "code": "machine_code"}`.
+RFC 3339 (UTC in responses). Errors: `{"error": "...", "code": "machine_code"}`;
+500 responses also carry `request_id` (the `X-Request-ID` the API logs with
+the error) for support.
+
+Unauthenticated operational endpoints on the API port (outside `/api/v1`):
+`GET /health` (DB + Redis; proxied by nginx), `GET /ready` (DB, Redis and
+MinIO reachable → 200 `{status: ready, db, redis, minio}`, else 503) and
+`GET /metrics` (Prometheus). `/ready` and `/metrics` are **not** proxied by
+nginx; scrape them on the internal network. The worker serves `/health` and
+`/metrics` on `WORKER_HTTP_ADDR` (default `:9091`).
 
 Roles (Keycloak realm roles): `admin`, `supervisor`, `hr`, `client-readonly`
 (web, client `securepatrol-web`) and `device` (tablet, client `securepatrol-tablet`).
@@ -89,7 +98,7 @@ Denials: `403 {code: device_unregistered | device_pending | device_revoked | gua
 | GET | `/attendance/review?site_id=` | admin, supervisor | records flagged `needs_review` |
 | POST | `/attendance/:id/review` | admin, supervisor | `{note?}` |
 | PUT | `/attendance/shifts/:shiftId/override` | admin | `{status: present\|late\|absent, reason (required), clock_in_at?, clock_out_at?}` |
-| POST | `/attendance/clock-in` | field | `{id?, clock_in_at?, selfie_object_key?, gps_lat?, gps_lng?}` — 400 `no_shift`, 409 `already_clocked_in` |
+| POST | `/attendance/clock-in` | field | `{id?, clock_in_at?, selfie_object_key?, gps_lat?, gps_lng?}` — 400 `no_shift`, 409 `already_clocked_in` (another record exists for the shift); concurrent retries with the same `id` all get the stored record (one 201, the rest 200) |
 | POST | `/attendance/clock-out` | field | `{attendance_id?, clock_out_at?, gps_lat?, gps_lng?}` — 409 `not_clocked_in`, `clock_out_window_closed` |
 
 ## Patrol
@@ -117,7 +126,7 @@ Denials: `403 {code: device_unregistered | device_pending | device_revoked | gua
 | PUT | `/incidents/:id/status` | admin, supervisor | `{status: open\|in_progress\|resolved}` |
 | POST | `/incidents/:id/amendments` | admin, supervisor | `{changes:{type?,severity?,description?,location?}, reason}` — original stays immutable |
 | GET | `/sos?site_id=&unack_only=true` | admin, supervisor | |
-| POST | `/sos` | field | `{id?, fired_at?, gps_lat?, gps_lng?}` — retry with same `id` until 2xx |
+| POST | `/sos` | field | `{id?, fired_at?, gps_lat?, gps_lng?}` — retry with same `id` until 2xx. The alert and its notification deliveries are stored in one transaction (a 2xx means the notifications are queued); a replay re-creates deliveries that are missing (e.g. a recipient added since), within 24 h |
 | POST | `/sos/:id/acknowledge` | admin, supervisor, or field guard with role supervisor | |
 | GET | `/defects?site_id=&status=` | admin, supervisor | |
 | POST | `/defects` | field | `{id?, defect_type, location?, description?, photo_object_key?, reported_at?}` |
@@ -162,12 +171,35 @@ List rows of `/incidents`, `/sos`, `/defects`, `/visitors` and attendance record
 | PUT | `/notifications/rules/:id` | `{enabled}` |
 | DELETE | `/notifications/rules/:id` | |
 | GET | `/notifications/log?site_id=&status=queued\|sent\|failed&limit=` | |
-| POST | `/notifications/log/:id/retry` | failed deliveries only |
+| POST | `/notifications/log/:id/retry` | failed deliveries only; queues **one** more attempt |
+| GET | `/notifications/ops-event-types` | `{event_types: [ops_backup_failed, ops_backup_stale, ops_sos_undelivered, ops_job_failing], channels}` |
+| GET | `/notifications/ops-rules` | install-wide ops alert recipients `[{id, event_type, channel, recipient, enabled, created_by?, created_at}]` |
+| POST | `/notifications/ops-rules` | `{event_type (ops_*), channel: email\|whatsapp, recipient}` → 201 (same recipient rules as site rules); 409 `duplicate` |
+| PUT | `/notifications/ops-rules/:id` | `{enabled}` |
+| DELETE | `/notifications/ops-rules/:id` | 204 |
+| GET | `/notifications/ops-log?status=&limit=` | deliveries of ops alerts (rows without a site) |
+| POST | `/notifications/ops-log/:id/retry` | failed ops deliveries only |
 | GET | `/settings/channels` | `{smtp:{host,port,user,password,from}, whatsapp:{api_url,token,phone_number_id,template_name,template_lang}}` — secrets masked as `********` |
 | PUT | `/settings/channels` | same shape; send `********` to keep a stored secret |
 | POST | `/settings/channels/test` | `{channel, recipient}` — sends immediately; 502 with error on failure |
-| GET | `/backups` | last 60 runs |
+| GET | `/backups` | last 60 runs `{id, object_key, size_bytes?, status, trigger, error?, requested_by?, created_at, started_at?, finished_at?, keycloak_object_key?, keycloak_size_bytes?}` — the Keycloak database is dumped into `keycloak_object_key` when `BACKUP_KEYCLOAK_DATABASE_URL` is set |
 | POST | `/backups` | queue a manual backup (202); the worker runs it within a minute |
 
 Event types: `sos`, `sla_missed`, `absent`, `late_clock_in`, `incident_high`,
-`defect_opened`, `monthly_recap` (e-mailed on the 1st at 07:00 site time).
+`defect_opened`, `monthly_recap` (sent from the 1st at 07:00 site time; if the
+worker was down it catches up until the 5th; e-mail gets an HTML table,
+WhatsApp a plain-text summary). `absent` covers shifts up to 3 days back
+(older flags found after a worker outage are recorded but not notified after
+24 h). `sla_missed` is raised for late scans, for unscanned SLA checkpoints of
+a session that ended (also early or auto-abandoned), and for overdue
+checkpoints of a running session only when the tablet was online across the
+due time or a later scan already arrived — sessions recorded offline are
+judged when they sync/end, by event time.
+
+**Ops alerts** are install-wide (no site; any realm's admin manages them, like
+the channel settings, D-005): `ops_backup_failed` (a backup run failed),
+`ops_backup_stale` (no successful backup for 26 h; daily), `ops_sos_undelivered`
+(an SOS delivery gave up after ~30 min of retries, or an SOS fired at a site
+with no SOS rule), `ops_job_failing` (a scheduled job failed 5 times in a row;
+hourly). Retry schedules: SOS 10 s, 20 s, 30 s, then every 60 s for 30 min;
+other events 30 s, 2 min, 10 min, 30 min, then `failed`.

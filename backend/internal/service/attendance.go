@@ -22,6 +22,10 @@ type ClockInInput struct {
 	DeviceID        *string
 	SelfieObjectKey *string
 	GPSLat, GPSLng  *float64
+	// AfterWrite, when set, runs inside the clock-in transaction with the
+	// result (new or replayed) — used to stage notifications atomically
+	// with the record (transactional outbox, audit BE-R1).
+	AfterWrite func(ctx context.Context, tx pgx.Tx, res *ClockInResult) error
 }
 
 // ClockInResult reports the stored record and what happened.
@@ -36,6 +40,10 @@ type ClockInResult struct {
 // the event time (D-004). A clock-in for a shift already auto-flagged absent
 // (offline sync arriving late) replaces the absent mark and is queued for
 // supervisor review (D-007).
+//
+// The shift row is locked for the transaction, so a clock-in never races the
+// absent auto-flag, and concurrent retries with the same client id return
+// the stored record (200) instead of a 409.
 func ClockIn(ctx context.Context, pool *pgxpool.Pool, in ClockInInput) (*ClockInResult, error) {
 	at, err := ClientTime(in.At)
 	if err != nil {
@@ -48,64 +56,91 @@ func ClockIn(ctx context.Context, pool *pgxpool.Pool, in ClockInInput) (*ClockIn
 
 	var res *ClockInResult
 	err = pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
-		if in.ID != nil {
-			if existing, err := repository.GetAttendance(ctx, tx, *in.ID); err == nil {
-				if existing.GuardID != in.Guard.ID {
-					return Conflict("id_conflict", "attendance id already used by another guard")
-				}
-				res = &ClockInResult{Record: existing}
-				return nil
-			} else if !errors.Is(err, repository.ErrNotFound) {
-				return err
-			}
-		}
-
-		window := time.Duration(cfg.ClockWindowMinutes) * time.Minute
-		shift, err := repository.FindShiftForClockIn(ctx, tx, in.Guard.ID, in.Site.ID, at, window)
-		if errors.Is(err, repository.ErrNotFound) {
-			return BadRequest("no_shift", "no scheduled shift for this guard within the clock-in window")
-		}
-		if err != nil {
+		var err error
+		if res, err = clockIn(ctx, tx, in, at, cfg); err != nil {
 			return err
 		}
-
-		p := repository.ClockInParams{
-			ID: in.ID, ShiftID: shift.ID, GuardID: in.Guard.ID, SiteID: in.Site.ID,
-			DeviceID: in.DeviceID, ClockInAt: at, SelfieObjectKey: in.SelfieObjectKey,
-			GPSLat: in.GPSLat, GPSLng: in.GPSLng,
+		if in.AfterWrite != nil {
+			return in.AfterWrite(ctx, tx, res)
 		}
-		p.Status, p.LateMinutes = arrivalStatus(shift.StartTime, at, cfg.LateGraceMinutes)
-
-		existing, err := repository.GetAttendanceByShift(ctx, tx, shift.ID)
-		switch {
-		case errors.Is(err, repository.ErrNotFound):
-			rec, err := repository.InsertClockIn(ctx, tx, p)
-			if repository.IsUniqueViolation(err) {
-				return Conflict("already_clocked_in", "guard already clocked in for this shift")
-			}
-			if err != nil {
-				return err
-			}
-			res = &ClockInResult{Record: rec, Shift: shift, Created: true}
-			return nil
-		case err != nil:
-			return err
-		case existing.Status == "absent" && existing.ClockInAt == nil && existing.OverriddenBy == nil:
-			rec, err := repository.ApplyClockInToAbsent(ctx, tx, existing.ID, p,
-				"Clock-in synced after the shift was auto-flagged absent")
-			if err != nil {
-				return err
-			}
-			res = &ClockInResult{Record: rec, Shift: shift, Created: true}
-			return nil
-		default:
-			return Conflict("already_clocked_in", "guard already has an attendance record for this shift")
-		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
 	return res, nil
+}
+
+// replayedClockIn returns the record stored under the client id, if any.
+func replayedClockIn(ctx context.Context, tx pgx.Tx, in ClockInInput) (*ClockInResult, error) {
+	if in.ID == nil {
+		return nil, nil
+	}
+	existing, err := repository.GetAttendance(ctx, tx, *in.ID)
+	if errors.Is(err, repository.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if existing.GuardID != in.Guard.ID {
+		return nil, Conflict("id_conflict", "attendance id already used by another guard")
+	}
+	return &ClockInResult{Record: existing}, nil
+}
+
+func clockIn(ctx context.Context, tx pgx.Tx, in ClockInInput, at time.Time, cfg model.SiteConfig) (*ClockInResult, error) {
+	if replay, err := replayedClockIn(ctx, tx, in); err != nil || replay != nil {
+		return replay, err
+	}
+
+	window := time.Duration(cfg.ClockWindowMinutes) * time.Minute
+	shift, err := repository.FindShiftForClockIn(ctx, tx, in.Guard.ID, in.Site.ID, at, window)
+	if errors.Is(err, repository.ErrNotFound) {
+		return nil, BadRequest("no_shift", "no scheduled shift for this guard within the clock-in window")
+	}
+	if err != nil {
+		return nil, err
+	}
+	// Serialise with FlagAbsentees and with identical retries, then look
+	// again: a concurrent retry may have committed while we waited.
+	if err := repository.LockShift(ctx, tx, shift.ID); err != nil {
+		return nil, err
+	}
+	if replay, err := replayedClockIn(ctx, tx, in); err != nil || replay != nil {
+		return replay, err
+	}
+
+	p := repository.ClockInParams{
+		ID: in.ID, ShiftID: shift.ID, GuardID: in.Guard.ID, SiteID: in.Site.ID,
+		DeviceID: in.DeviceID, ClockInAt: at, SelfieObjectKey: in.SelfieObjectKey,
+		GPSLat: in.GPSLat, GPSLng: in.GPSLng,
+	}
+	p.Status, p.LateMinutes = arrivalStatus(shift.StartTime, at, cfg.LateGraceMinutes)
+
+	existing, err := repository.GetAttendanceByShift(ctx, tx, shift.ID)
+	switch {
+	case errors.Is(err, repository.ErrNotFound):
+		rec, err := repository.InsertClockIn(ctx, tx, p)
+		if repository.IsUniqueViolation(err) {
+			return nil, Conflict("already_clocked_in", "guard already clocked in for this shift")
+		}
+		if err != nil {
+			return nil, err
+		}
+		return &ClockInResult{Record: rec, Shift: shift, Created: true}, nil
+	case err != nil:
+		return nil, err
+	case existing.Status == "absent" && existing.ClockInAt == nil && existing.OverriddenBy == nil:
+		rec, err := repository.ApplyClockInToAbsent(ctx, tx, existing.ID, p,
+			"Clock-in synced after the shift was auto-flagged absent")
+		if err != nil {
+			return nil, err
+		}
+		return &ClockInResult{Record: rec, Shift: shift, Created: true}, nil
+	default:
+		return nil, Conflict("already_clocked_in", "guard already has an attendance record for this shift")
+	}
 }
 
 // ClockOutInput is a guard clocking out from a tablet.

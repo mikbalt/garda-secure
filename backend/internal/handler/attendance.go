@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"context"
 	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/securepatrol/backend/internal/middleware"
 	"github.com/securepatrol/backend/internal/notification"
@@ -112,23 +114,43 @@ func (h *Handler) clockIn(c *fiber.Ctx) error {
 		return h.fail(c, err)
 	}
 	guard := middleware.GetGuard(c)
+	var staged notification.Staged
 	res, err := service.ClockIn(c.Context(), h.DB, service.ClockInInput{
 		ID: nilIfEmpty(b.ID), At: b.ClockInAt, Guard: guard, Site: site, DeviceID: deviceID(c),
 		SelfieObjectKey: nilIfEmpty(b.SelfieObjectKey), GPSLat: b.GPSLat, GPSLng: b.GPSLng,
+		// The late notification is staged in the clock-in transaction (BE-R1);
+		// a replay fills it in if it is missing.
+		AfterWrite: func(ctx context.Context, tx pgx.Tx, res *service.ClockInResult) error {
+			staged = notification.Staged{}
+			rec := res.Record
+			if rec.Status != "late" || rec.SiteID != site.ID || rec.ShiftID == nil ||
+				(!res.Created && !replayFresh(rec.CreatedAt)) {
+				return nil
+			}
+			shift := res.Shift
+			if shift == nil {
+				var err error
+				if shift, err = repository.GetShift(ctx, tx, *rec.ShiftID); err != nil {
+					return err
+				}
+			}
+			var err error
+			staged, err = h.Notifier.Stage(ctx, tx, notification.Event{
+				Type: notification.EventLateClockIn, Site: site, DedupeKey: "late:" + rec.ID,
+				RequestID: requestID(c),
+				Params: map[string]string{
+					"guard":   guard.Name,
+					"minutes": strconv.Itoa(rec.LateMinutes),
+					"shift":   shift.StartTime.In(site.Location()).Format("02 Jan 15:04"),
+				},
+			})
+			return err
+		},
 	})
 	if err != nil {
 		return h.fail(c, err)
 	}
-	if res.Created && res.Record.Status == "late" && res.Shift != nil {
-		h.publish(c.Context(), notification.Event{
-			Type: notification.EventLateClockIn, Site: site, DedupeKey: "late:" + res.Record.ID,
-			Params: map[string]string{
-				"guard":   guard.Name,
-				"minutes": strconv.Itoa(res.Record.LateMinutes),
-				"shift":   res.Shift.StartTime.In(site.Location()).Format("02 Jan 15:04"),
-			},
-		})
-	}
+	h.Notifier.Wake(c.Context(), staged)
 	return created(c, res.Created, res.Record)
 }
 

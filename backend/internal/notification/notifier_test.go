@@ -26,7 +26,7 @@ func TestRenderLanguagesAndPlaceholders(t *testing.T) {
 
 func TestEveryEventHasTemplates(t *testing.T) {
 	for _, lang := range []string{"id", "en"} {
-		for _, ev := range EventTypes {
+		for _, ev := range append(append([]string{}, EventTypes...), OpsEventTypes...) {
 			if _, ok := templates[lang][ev]; !ok {
 				t.Errorf("missing %s template for %s", lang, ev)
 			}
