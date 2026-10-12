@@ -1,7 +1,7 @@
 // API models (see docs/api.md). Parsing is tolerant: unknown fields are
 // ignored and optional fields may be missing. Timestamps arrive as RFC 3339
-// UTC strings and are kept as UTC [DateTime]s; the tablet sits at the site, so
-// the UI shows them in the device's local time.
+// UTC strings and are kept as UTC [DateTime]s; the UI shows them in the
+// site's time zone (AppClock.site, D-013).
 
 DateTime? _ts(Object? v) => v is String && v.isNotEmpty ? DateTime.tryParse(v)?.toUtc() : null;
 String? _str(Object? v) => v is String && v.isNotEmpty ? v : null;
@@ -119,11 +119,17 @@ class RosterGuard {
 }
 
 class Checkpoint {
-  const Checkpoint({required this.id, required this.name, required this.qrCode, this.slaMinutes, this.orderIndex = 0});
+  const Checkpoint({required this.id, required this.name, this.qrCode = '', this.qrSigned = false, this.slaMinutes, this.orderIndex = 0});
 
   final String id;
   final String name;
+
+  /// Legacy plain QR text; empty for signed checkpoints (the server no longer
+  /// ships their codes to tablets, D-035).
   final String qrCode;
+
+  /// The checkpoint's QR is a signed `SP1:` payload.
+  final bool qrSigned;
   final int? slaMinutes;
   final int orderIndex;
 
@@ -131,11 +137,43 @@ class Checkpoint {
         id: j['id'] as String,
         name: (j['name'] as String?) ?? '',
         qrCode: (j['qr_code'] as String?) ?? '',
+        qrSigned: j['qr_signed'] == true,
         slaMinutes: j['sla_minutes'] is num ? (j['sla_minutes'] as num).toInt() : null,
         orderIndex: _int(j['order_index']),
       );
 
-  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'qr_code': qrCode, 'sla_minutes': slaMinutes, 'order_index': orderIndex};
+  Map<String, dynamic> toJson() =>
+      {'id': id, 'name': name, 'qr_code': qrCode.isEmpty ? null : qrCode, 'qr_signed': qrSigned, 'sla_minutes': slaMinutes, 'order_index': orderIndex};
+}
+
+/// A signed checkpoint QR payload `SP1:<checkpoint uuid>:<signature>`. The
+/// tablet cannot verify the signature (the key stays on the server); it
+/// matches the checkpoint locally and sends the raw payload for the server
+/// to verify (it may flag the scan `qr_invalid`).
+class SignedQr {
+  const SignedQr(this.checkpointId, this.raw);
+
+  final String checkpointId;
+  final String raw;
+
+  static final _re = RegExp(r'^SP1:([0-9a-f-]{36}):[A-Za-z0-9_-]+$');
+
+  static SignedQr? parse(String scanned) {
+    final raw = scanned.trim();
+    final m = _re.firstMatch(raw);
+    return m == null ? null : SignedQr(m.group(1)!, raw);
+  }
+}
+
+/// The result of matching a scanned code against a route.
+class QrMatch {
+  const QrMatch(this.checkpoint, {this.signed});
+
+  final Checkpoint checkpoint;
+
+  /// Set for signed payloads; null for legacy codes. Either way the raw
+  /// scanned text is sent as `qr_payload`.
+  final SignedQr? signed;
 }
 
 class PatrolRoute {
@@ -148,14 +186,27 @@ class PatrolRoute {
 
   int get totalSlaMinutes => checkpoints.fold(0, (n, c) => n + (c.slaMinutes ?? 0));
 
-  /// Finds a checkpoint by its scanned QR payload or ID.
-  Checkpoint? byCode(String code) {
-    final c = code.trim();
+  /// Matches a scanned QR: a signed `SP1:` payload by checkpoint ID, a legacy
+  /// code by exact text. Anything else (incl. a bare checkpoint ID) is no
+  /// match.
+  QrMatch? matchQr(String scanned) {
+    final signed = SignedQr.parse(scanned);
+    if (signed != null) {
+      for (final cp in checkpoints) {
+        if (cp.id.toLowerCase() == signed.checkpointId) return QrMatch(cp, signed: signed);
+      }
+      return null;
+    }
+    final c = scanned.trim();
+    if (c.isEmpty) return null;
     for (final cp in checkpoints) {
-      if (cp.qrCode == c || cp.id == c) return cp;
+      if (!cp.qrSigned && cp.qrCode.isNotEmpty && cp.qrCode == c) return QrMatch(cp);
     }
     return null;
   }
+
+  /// Finds a checkpoint by its scanned QR payload.
+  Checkpoint? byCode(String code) => matchQr(code)?.checkpoint;
 
   factory PatrolRoute.fromJson(Map<String, dynamic> j) {
     final cps = _list(j['checkpoints']).map(Checkpoint.fromJson).toList()..sort((a, b) => a.orderIndex.compareTo(b.orderIndex));
@@ -163,6 +214,38 @@ class PatrolRoute {
   }
 
   Map<String, dynamic> toJson() => {'id': id, 'name': name, 'active': active, 'checkpoints': checkpoints.map((c) => c.toJson()).toList()};
+}
+
+/// A scheduled patrol of a route (`patrols_due` of `/device/status`).
+class PatrolDue {
+  const PatrolDue({required this.routeId, required this.routeName, required this.dueAt, this.graceUntil, this.status = 'pending'});
+
+  final String routeId;
+  final String routeName;
+  final DateTime dueAt;
+  final DateTime? graceUntil;
+
+  /// pending | missed (past the grace time) — the server lists only patrols
+  /// that were not started; `started` is tolerated and ignored.
+  final String status;
+
+  bool get pending => status == 'pending' || status == 'missed';
+
+  /// Not started although due.
+  bool overdue(DateTime now) => status == 'missed' || (pending && now.isAfter(dueAt));
+
+  static PatrolDue? fromJson(Map<String, dynamic> j) {
+    final due = _ts(j['due_at']);
+    final route = _str(j['route_id']);
+    if (due == null || route == null) return null;
+    return PatrolDue(routeId: route, routeName: _str(j['route_name']) ?? '', dueAt: due, graceUntil: _ts(j['grace_until']), status: _str(j['status']) ?? 'pending');
+  }
+}
+
+/// The most relevant not-started scheduled patrol: the earliest pending one.
+PatrolDue? nextDuePatrol(List<PatrolDue> due, {String? routeId}) {
+  final open = due.where((d) => d.pending && (routeId == null || d.routeId == routeId)).toList()..sort((a, b) => a.dueAt.compareTo(b.dueAt));
+  return open.isEmpty ? null : open.first;
 }
 
 class Shift {
@@ -245,7 +328,17 @@ class SosAlert {
 
 /// `GET /device/status` — where the acting guard stands right now.
 class GuardStatus {
-  const GuardStatus({this.shift, this.shiftAttendance, this.openAttendance, this.sessionId, this.sessionRouteId, this.sessionStartedAt});
+  const GuardStatus({
+    this.shift,
+    this.shiftAttendance,
+    this.openAttendance,
+    this.sessionId,
+    this.sessionRouteId,
+    this.sessionStartedAt,
+    this.serverTime,
+    this.guardVerified,
+    this.patrolsDue = const [],
+  });
 
   final Shift? shift;
   final AttendanceRecord? shiftAttendance;
@@ -253,6 +346,13 @@ class GuardStatus {
   final String? sessionId;
   final String? sessionRouteId;
   final DateTime? sessionStartedAt;
+  final DateTime? serverTime;
+
+  /// The server accepted the guard token of this request (null: not sent).
+  final bool? guardVerified;
+
+  /// Scheduled patrols around now (empty when the server does not send them).
+  final List<PatrolDue> patrolsDue;
 
   factory GuardStatus.fromJson(Map<String, dynamic> j) {
     final sess = _map(_map(j['session'])['session']);
@@ -263,6 +363,9 @@ class GuardStatus {
       sessionId: _str(sess['id']),
       sessionRouteId: _str(sess['route_id']),
       sessionStartedAt: _ts(sess['started_at']),
+      serverTime: _ts(j['server_time']),
+      guardVerified: j['guard_verified'] is bool ? j['guard_verified'] as bool : null,
+      patrolsDue: _list(j['patrols_due']).map(PatrolDue.fromJson).whereType<PatrolDue>().toList(),
     );
   }
 }

@@ -3,11 +3,14 @@ import 'package:provider/provider.dart';
 
 import '../../config/env.dart';
 import '../../core/api/api_client.dart';
+import '../../core/api/tls.dart';
 import '../../core/auth/auth_provider.dart';
 import '../../core/auth/keycloak_service.dart';
 import '../../l10n/strings.dart';
 import '../../shared/widgets/brand.dart';
 import '../../theme/app_theme.dart';
+import '../auth/supervisor_gate.dart';
+import '../device/device_info_screen.dart';
 
 /// Split layout of the onboarding screens: brand panel with the three
 /// onboarding steps on tablets, the form alone on phones.
@@ -158,6 +161,9 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
     super.dispose();
   }
 
+  /// Cleartext is refused (MOB-8): the device password and PINs travel there.
+  static String? _https(S s, String? v) => TrustStore.isAllowed(ServerConfig.normalizeUrl(v ?? '')) ? null : s.t('setup.httpsRequired');
+
   void _submit() {
     if (!_form.currentState!.validate()) return;
     final kc = _keycloak.text.trim();
@@ -185,7 +191,7 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
               keyboardType: TextInputType.url,
               autocorrect: false,
               decoration: InputDecoration(labelText: s.t('setup.server'), hintText: s.t('setup.serverHint'), prefixIcon: const Icon(Icons.dns_outlined)),
-              validator: req,
+              validator: (v) => req(v) ?? _https(s, v),
             ),
             const SizedBox(height: 16),
             TextFormField(
@@ -210,6 +216,7 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
                 keyboardType: TextInputType.url,
                 autocorrect: false,
                 decoration: InputDecoration(labelText: s.t('setup.keycloak'), helperText: s.t('setup.keycloakHint')),
+                validator: (v) => (v == null || v.trim().isEmpty) ? null : _https(s, v),
               ),
             const SizedBox(height: 24),
             FilledButton(onPressed: _submit, child: Text(s.t('setup.continue'))),
@@ -261,10 +268,11 @@ class _DeviceLoginScreenState extends State<DeviceLoginScreen> {
         'bad_credentials' => s.t('login.badCredentials'),
         'not_device' => s.t('login.notDevice'),
         'unreachable' => s.t('login.unreachable'),
+        'insecure' => s.t('login.insecure'),
         _ => '${s.t('common.error')} (${e.detail ?? e.reason})',
       };
     } on ApiException catch (e) {
-      _error = e.network ? s.t('login.unreachable') : '${s.t('common.error')}: ${e.message}';
+      _error = e.network ? s.t('login.unreachable') : s.error(e.code, '${s.t('common.error')}: ${e.message}');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -284,7 +292,7 @@ class _DeviceLoginScreenState extends State<DeviceLoginScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _Heading(title: s.t('login.title'), subtitle: s.t('login.subtitle')),
-              _ServerChip(config: session.config, onEdit: session.editServer),
+              _ServerChip(config: session.config, onEdit: () => _changeServer(context)),
               const SizedBox(height: 20),
               TextFormField(
                 controller: _name,
@@ -335,6 +343,22 @@ class _DeviceLoginScreenState extends State<DeviceLoginScreen> {
         ),
       ),
     );
+  }
+}
+
+/// Changing the server of a tablet that was in use needs a supervisor, and
+/// is refused while items are queued for the current server (MOB-2).
+Future<void> _changeServer(BuildContext context) async {
+  final s = S.of(context);
+  final session = context.read<DeviceSession>();
+  final n = await session.db.outboxCount();
+  if (!context.mounted) return;
+  if (n > 0) return showOutboxBlocked(context, s.t('dev.serverBlocked'));
+  if (session.roster.isNotEmpty && !await requireSupervisor(context)) return;
+  try {
+    await session.editServer();
+  } on OutboxNotEmpty {
+    if (context.mounted) await showOutboxBlocked(context, s.t('dev.serverBlocked'));
   }
 }
 

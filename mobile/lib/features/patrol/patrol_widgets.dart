@@ -5,10 +5,11 @@ import 'package:flutter/material.dart';
 import '../../l10n/strings.dart';
 import '../../theme/app_theme.dart';
 import 'progress.dart';
+import '../../core/services/clock.dart';
 
-/// Wall-clock time `HH:mm` on the tablet (the tablet runs in the site's zone).
+/// Wall-clock time `HH:mm` in the site's time zone (MOB-9).
 String hhmm(DateTime t) {
-  final l = t.toLocal();
+  final l = AppClock.site(t);
   return '${l.hour.toString().padLeft(2, '0')}:${l.minute.toString().padLeft(2, '0')}';
 }
 

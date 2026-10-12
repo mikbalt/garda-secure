@@ -39,14 +39,37 @@ void main() {
       expect(PinVerifier.verifySync('4827', goHash), isFalse);
       expect(PinVerifier.verifySync('4826', 'not-a-hash'), isFalse);
     });
-    test('locks out after repeated failures', () {
-      final a = PinAttempts(maxAttempts: 3, lockout: const Duration(seconds: 30));
+    test('locks out after repeated failures, escalating, and survives a restart', () {
+      Map<String, dynamic>? saved;
+      final a = PinAttempts(maxAttempts: 3, onChanged: (s) => saved = s);
       final t0 = DateTime(2026, 10, 9, 12);
       expect(a.fail('g', t0), 2);
       expect(a.fail('g', t0), 1);
       expect(a.fail('g', t0), 0);
-      expect(a.waitSeconds('g', t0.add(const Duration(seconds: 10))), greaterThan(0));
+      expect(a.waitSeconds('g', t0.add(const Duration(seconds: 10))), 20);
       expect(a.waitSeconds('g', t0.add(const Duration(seconds: 31))), 0);
+      // The next wrong PIN locks at once, for longer (2 min).
+      final t1 = t0.add(const Duration(seconds: 40));
+      expect(a.fail('g', t1), 0);
+      expect(a.waitSeconds('g', t1.add(const Duration(seconds: 100))), 20);
+      final t2 = t1.add(const Duration(minutes: 3));
+      expect(a.fail('g', t2), 0);
+      expect(a.waitSeconds('g', t2.add(const Duration(minutes: 9))), 60, reason: 'third step: 10 min');
+
+      // Restart: the state is restored from what was persisted.
+      final b = PinAttempts(maxAttempts: 3)..load(saved);
+      expect(b.waitSeconds('g', t2.add(const Duration(minutes: 9))), 60);
+      expect(b.failureCounts, {'g': 5});
+      b.success('g');
+      expect(b.waitSeconds('g', t2), 0);
+      expect(b.failureCounts, isEmpty);
+    });
+
+    test('a server lockout (423) is applied locally', () {
+      final a = PinAttempts();
+      final t0 = DateTime(2026, 10, 9, 12);
+      a.lockFor('g', const Duration(seconds: 90), t0);
+      expect(a.waitSeconds('g', t0), 90);
     });
   });
 
@@ -95,9 +118,9 @@ void main() {
 
     test('keeps strict order and SOS first', () async {
       final t = DateTime.utc(2026, 10, 9, 10);
-      await h.outbox.enqueue(OutboxOp(id: '1', kind: 'session_start', method: 'POST', path: '/x', body: const {}, createdAt: t));
-      await h.outbox.enqueue(OutboxOp(id: '2', kind: 'scan', method: 'POST', path: '/x', body: const {}, createdAt: t.add(const Duration(seconds: 1))));
-      await h.outbox.enqueue(OutboxOp(id: '3', kind: 'sos', method: 'POST', path: '/sos', body: const {}, priority: 0, createdAt: t.add(const Duration(seconds: 2))));
+      await h.outbox.enqueue(OutboxOp(id: '1', kind: 'session_start', method: 'POST', path: '/x', body: const {}, createdAt: t), send: false);
+      await h.outbox.enqueue(OutboxOp(id: '2', kind: 'scan', method: 'POST', path: '/x', body: const {}, createdAt: t.add(const Duration(seconds: 1))), send: false);
+      await h.outbox.enqueue(OutboxOp(id: '3', kind: 'sos', method: 'POST', path: '/sos', body: const {}, priority: 0, createdAt: t.add(const Duration(seconds: 2))), send: false);
       final ids = (await h.outbox.list()).map((o) => o.id).toList();
       expect(ids, ['3', '1', '2']);
       await h.outbox.refreshCounts();

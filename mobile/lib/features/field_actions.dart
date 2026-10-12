@@ -7,6 +7,7 @@ import '../core/api/api_client.dart';
 import '../core/auth/auth_provider.dart';
 import '../core/database/local_db.dart';
 import '../core/database/sync_service.dart';
+import '../core/services/clock.dart';
 import '../core/services/location_service.dart';
 import '../core/services/photo_service.dart';
 import '../shared/models/models.dart';
@@ -127,7 +128,12 @@ class FieldActions extends ChangeNotifier {
 
   String get _guardId => session.guard!.id;
   String get _siteId => session.site!.id;
-  DateTime get _now => DateTime.now().toUtc();
+
+  /// Server-corrected event time (MOB-4).
+  DateTime get _now => AppClock.now();
+
+  /// The acting guard's session token at the time of the action (D-035).
+  String? get _token => session.guardToken;
 
   /// Loads the guard's local state after unlock, reconciled with the server.
   Future<void> loadForGuard() async {
@@ -169,7 +175,7 @@ class FieldActions extends ChangeNotifier {
 
   Future<void> _restorePatrol(String sessionId) async {
     try {
-      final res = (await session.api.get('/patrol/sessions/$sessionId', guardId: _guardId) as Map).cast<String, dynamic>();
+      final res = (await session.api.get('/patrol/sessions/$sessionId', guardId: _guardId, guardToken: _token) as Map).cast<String, dynamic>();
       final s = (res['session'] as Map).cast<String, dynamic>();
       final route = session.routes.where((r) => r.id == s['route_id']).firstOrNull;
       if (route == null) return;
@@ -198,6 +204,7 @@ class FieldActions extends ChangeNotifier {
       method: 'POST',
       path: '/attendance/clock-in',
       guardId: _guardId,
+      guardToken: _token,
       label: session.guard!.name,
       body: {
         'id': id,
@@ -222,6 +229,7 @@ class FieldActions extends ChangeNotifier {
       method: 'POST',
       path: '/attendance/clock-out',
       guardId: _guardId,
+      guardToken: _token,
       label: session.guard!.name,
       body: {
         if (attendanceId != null) 'attendance_id': attendanceId,
@@ -251,6 +259,7 @@ class FieldActions extends ChangeNotifier {
       method: 'POST',
       path: '/patrol/sessions',
       guardId: _guardId,
+      guardToken: _token,
       label: route.name,
       body: {'id': sessionId, 'route_id': route.id, 'started_at': at.toIso8601String()},
     ));
@@ -260,13 +269,16 @@ class FieldActions extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Records a checkpoint scan. Returns the checkpoint, or null when the code
-  /// is not on the route. A repeated scan is ignored (returns the checkpoint).
+  /// Records a checkpoint scan from a scanned QR [code] (signed `SP1:`
+  /// payload or legacy text), or a manual check-in of [checkpoint]. Returns
+  /// the checkpoint, or null when the code is not on the route. A repeated
+  /// scan is ignored (returns the checkpoint).
   Future<Checkpoint?> scan(String code, {String method = 'qr', LocalPhoto? photo, Fix? fix, Checkpoint? checkpoint}) async {
     final p = patrol;
     if (p == null) return null;
-    final cp = checkpoint ?? p.route.byCode(code);
-    if (cp == null) return null;
+    final match = checkpoint != null ? QrMatch(checkpoint) : p.route.matchQr(code);
+    if (match == null) return null;
+    final cp = match.checkpoint;
     if (p.scans.any((s) => s.checkpointId == cp.id)) return cp;
     final at = _now;
     await outbox.enqueue(OutboxOp(
@@ -275,10 +287,13 @@ class FieldActions extends ChangeNotifier {
       method: 'POST',
       path: '/patrol/sessions/${p.sessionId}/scans',
       guardId: _guardId,
+      guardToken: _token,
       label: cp.name,
       body: {
         'id': _uuid.v4(),
-        'checkpoint_id': cp.id,
+        // QR: the raw scanned text for the server to verify (signed `SP1:`
+        // payload or legacy code, D-035); manual: the chosen checkpoint.
+        if (checkpoint != null) 'checkpoint_id': cp.id else 'qr_payload': code.trim(),
         'method': method,
         'scanned_at': at.toIso8601String(),
         if (photo != null) 'photo_object_key': photo.objectKey,
@@ -302,6 +317,7 @@ class FieldActions extends ChangeNotifier {
       method: 'POST',
       path: '/patrol/sessions/${p.sessionId}/end',
       guardId: _guardId,
+      guardToken: _token,
       label: p.route.name,
       body: {'ended_at': _now.toIso8601String(), 'abandoned': abandoned},
     ));
@@ -320,6 +336,7 @@ class FieldActions extends ChangeNotifier {
         method: 'POST',
         path: '/incidents',
         guardId: _guardId,
+        guardToken: _token,
         label: type,
         body: {
           'id': _uuid.v4(),
@@ -339,6 +356,7 @@ class FieldActions extends ChangeNotifier {
         method: 'POST',
         path: '/defects',
         guardId: _guardId,
+        guardToken: _token,
         label: type,
         body: {
           'id': _uuid.v4(),
@@ -361,6 +379,7 @@ class FieldActions extends ChangeNotifier {
       method: 'POST',
       path: '/visitors',
       guardId: _guardId,
+      guardToken: _token,
       label: name,
       body: {
         'id': id,
@@ -388,6 +407,7 @@ class FieldActions extends ChangeNotifier {
       method: 'POST',
       path: '/visitors/${v.id}/exit',
       guardId: _guardId,
+      guardToken: _token,
       label: v.name,
       body: {'exit_at': at.toIso8601String()},
     ));
@@ -400,12 +420,18 @@ class FieldActions extends ChangeNotifier {
 
   /// Raises SOS: queued with top priority and retried every 10 s until the
   /// server confirms (FR-OFF-04). GPS is attached when available within 4 s.
-  Future<void> sos() async {
+  ///
+  /// From the lock screen ([as] = the guard who tapped their name, MOB-3) no
+  /// PIN is needed: the alert is sent without a guard token and the server
+  /// flags it `guard_unverified` — an SOS is never blocked by a PIN.
+  Future<void> sos({RosterGuard? as}) async {
     final id = _uuid.v4();
     final firedAt = _now;
     // Captured before the GPS wait: the tablet may lock meanwhile.
-    final guardId = _guardId;
-    final guardName = session.guard!.name;
+    final g = as ?? session.guard!;
+    final guardId = g.id;
+    final guardName = g.name;
+    final token = as == null ? _token : null;
     _sosClear?.cancel();
     sosOutstanding.add(id);
     sosPreparing = true;
@@ -420,6 +446,7 @@ class FieldActions extends ChangeNotifier {
         method: 'POST',
         path: '/sos',
         guardId: guardId,
+        guardToken: token,
         priority: 0,
         label: guardName,
         body: {
@@ -479,6 +506,7 @@ class FieldActions extends ChangeNotifier {
       method: 'POST',
       path: '/sos/${alert.id}/acknowledge',
       guardId: _guardId,
+      guardToken: _token,
       priority: 0,
       label: alert.guardName ?? '',
       body: const {},

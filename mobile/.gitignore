@@ -45,3 +45,7 @@ app.*.map.json
 # Screenshot test output (screenshots/README.md)
 /screenshots/out/
 *.iml
+
+# Installation CA bundled at build time (assets/certs/README.txt)
+/assets/certs/*.crt
+/assets/certs/*.pem
