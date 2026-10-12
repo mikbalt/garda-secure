@@ -9,6 +9,8 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
+| Wave 3 web — Users + tablet accounts, tablet health, site-scoping hints, override history, visitor detail | `muhamhad-pc1/claude-web-people` | 2026-10-12 | branch `agent/muhamhad-pc1/web-people` |
+| Wave 3 web — floor plans + live plan view, patrol schedules + compliance report, regenerate QR, XLSX/PDF, amended incidents, incident GPS, new events/channels, paging, /sos/active | `muhamhad-pc1/claude-web-patrol` | 2026-10-12 | branch `agent/muhamhad-pc1/web-patrol` |
 
 ## Migration numbers
 

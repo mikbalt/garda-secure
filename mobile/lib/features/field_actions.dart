@@ -346,6 +346,8 @@ class FieldActions extends ChangeNotifier {
           if (locationText != null && locationText.trim().isNotEmpty) 'location': locationText.trim(),
           'photo_object_keys': photos.map((p) => p.objectKey).toList(),
           'occurred_at': _now.toIso8601String(),
+          if (fix != null) 'gps_lat': fix.lat,
+          if (fix != null) 'gps_lng': fix.lng,
         },
         photos: photos.map((p) => OutboxPhoto(id: p.id, kind: p.kind, path: p.path)).toList(),
       ));

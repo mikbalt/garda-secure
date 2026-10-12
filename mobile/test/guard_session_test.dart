@@ -5,6 +5,7 @@ import 'package:securepatrol/core/auth/auth_provider.dart';
 import 'package:securepatrol/core/database/local_db.dart';
 import 'package:securepatrol/core/database/sync_service.dart';
 import 'package:securepatrol/core/services/clock.dart';
+import 'package:securepatrol/core/services/location_service.dart';
 import 'package:securepatrol/core/storage/secure_store.dart';
 import 'package:securepatrol/features/auth/pin_screen.dart';
 import 'package:securepatrol/shared/models/models.dart';
@@ -52,9 +53,11 @@ void main() {
       expect(h.store.data[SecureKeys.guardToken('g-1')], contains('tok-1'));
       expect(h.api.calls.first.json, {'guard_id': 'g-1', 'pin': _pin});
 
-      await h.actions.reportIncident(type: 'theft', severity: 'low');
+      await h.actions.reportIncident(type: 'theft', severity: 'low', fix: const Fix(-6.2, 106.8, 12));
       final op = (await h.outbox.list()).single;
       expect(op.guardToken, 'tok-1');
+      expect(op.body['gps_lat'], -6.2, reason: 'incident GPS (D-049)');
+      expect(op.body['gps_lng'], 106.8);
       await h.outbox.process();
       expect(h.api.calls.where((c) => c.path == '/incidents').single.guardToken, 'tok-1');
     });
