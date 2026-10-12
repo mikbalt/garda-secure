@@ -15,6 +15,7 @@ import 'manual_checkin_sheet.dart';
 import 'patrol_widgets.dart';
 import 'progress.dart';
 import 'scanner_screen.dart';
+import '../../core/services/clock.dart';
 
 const _finishGreen = Color(0xFF059669);
 
@@ -101,7 +102,7 @@ class _ActivePatrolViewState extends State<ActivePatrolView> {
     final s = S.of(context);
     showMessage(context, s.t('pat.scanned', {'name': cp.name}));
     final p = context.read<FieldActions>().patrol;
-    if (p == null || p.progress(DateTime.now().toUtc()).next != null) return;
+    if (p == null || p.progress(AppClock.now()).next != null) return;
     // Last checkpoint: offer to finish right away.
     final finish = await _confirm(
       icon: const Icon(Icons.task_alt_rounded, color: AppColors.ok, size: 44),
@@ -148,7 +149,7 @@ class _ActivePatrolViewState extends State<ActivePatrolView> {
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
-    final now = DateTime.now().toUtc();
+    final now = AppClock.now();
     final patrol = widget.patrol;
     final progress = patrol.progress(now);
     final allDone = progress.next == null;

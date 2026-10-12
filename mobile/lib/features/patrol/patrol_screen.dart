@@ -13,6 +13,7 @@ import '../field_actions.dart';
 import 'active_patrol_view.dart';
 import 'progress.dart';
 import 'patrol_widgets.dart';
+import '../../core/services/clock.dart';
 
 /// Patrol (FR-PAT-02..05), pushed full screen from home: the route picker
 /// when no patrol runs, otherwise the running patrol, then a short summary.
@@ -47,7 +48,7 @@ class _PatrolFlowState extends State<_PatrolFlow> {
     final p = actions.patrol;
     if (p == null) return;
     final s = S.of(context);
-    final now = DateTime.now().toUtc();
+    final now = AppClock.now();
     // Freeze the outcome before the local patrol is cleared.
     setState(() {
       if (abandoned) {
@@ -99,7 +100,16 @@ class _RoutePickerState extends State<_RoutePicker> {
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
-    final routes = context.watch<DeviceSession>().routes.where((r) => r.active && r.checkpoints.isNotEmpty).toList();
+    final session = context.watch<DeviceSession>();
+    final dueList = session.guardStatus?.patrolsDue ?? const <PatrolDue>[];
+    final routes = session.routes.where((r) => r.active && r.checkpoints.isNotEmpty).toList();
+    // Scheduled routes first, the most urgent on top (D-035 schedules).
+    int dueRank(PatrolRoute r) => nextDuePatrol(dueList, routeId: r.id)?.dueAt.millisecondsSinceEpoch ?? 1 << 62;
+    final order = {for (var i = 0; i < routes.length; i++) routes[i].id: i};
+    routes.sort((a, b) {
+      final c = dueRank(a).compareTo(dueRank(b));
+      return c != 0 ? c : order[a.id]!.compareTo(order[b.id]!);
+    });
     return Scaffold(
       appBar: AppBar(
         title: Text(s.t('pat2.title')),
@@ -131,7 +141,7 @@ class _RoutePickerState extends State<_RoutePicker> {
                           for (final r in routes)
                             SizedBox(
                               width: cardWidth,
-                              child: _RouteCard(route: r, busy: _starting == r.id, disabled: _starting != null, onStart: () => _start(r)),
+                              child: _RouteCard(route: r, due: nextDuePatrol(dueList, routeId: r.id), busy: _starting == r.id, disabled: _starting != null, onStart: () => _start(r)),
                             ),
                         ],
                       ),
@@ -147,9 +157,10 @@ class _RoutePickerState extends State<_RoutePicker> {
 }
 
 class _RouteCard extends StatelessWidget {
-  const _RouteCard({required this.route, required this.busy, required this.disabled, required this.onStart});
+  const _RouteCard({required this.route, this.due, required this.busy, required this.disabled, required this.onStart});
 
   final PatrolRoute route;
+  final PatrolDue? due;
   final bool busy;
   final bool disabled;
   final VoidCallback onStart;
@@ -180,6 +191,10 @@ class _RouteCard extends StatelessWidget {
                     Wrap(spacing: 8, runSpacing: 6, children: [
                       Pill(text: s.t('pat.points', {'n': cps.length}), color: AppColors.primary, icon: Icons.place_outlined),
                       if (minutes > 0) Pill(text: s.t('pat.roundTime', {'n': minutes}), color: AppColors.textMuted, icon: Icons.schedule_rounded),
+                      if (due != null)
+                        due!.overdue(AppClock.now())
+                            ? Pill(text: s.t('pat.overdueSince', {'time': hhmm(due!.dueAt)}), color: AppColors.overdue, icon: Icons.alarm_rounded)
+                            : Pill(text: s.t('pat.dueAt', {'time': hhmm(due!.dueAt)}), color: AppColors.primary, icon: Icons.event_repeat_rounded),
                     ]),
                   ],
                 ),

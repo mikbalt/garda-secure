@@ -12,6 +12,7 @@ import '../../shared/widgets/ui.dart';
 import '../../theme/app_theme.dart';
 import '../field_actions.dart';
 import '../home/home_screen.dart' show hm;
+import '../../core/services/clock.dart';
 
 /// Clock in (selfie + GPS, FR-ATT-03) or clock out. Saved to the outbox, so
 /// it works offline with the real event time.
@@ -62,7 +63,7 @@ class _ClockScreenState extends State<ClockScreen> {
     if (st == null) return true; // unknown (offline): let the server decide
     final shift = st.shift;
     if (shift == null) return false;
-    final now = DateTime.now().toUtc();
+    final now = AppClock.now();
     final opens = shift.start.subtract(Duration(minutes: session.siteConfig.clockWindowMinutes));
     return !now.isBefore(opens) && now.isBefore(shift.end);
   }
@@ -114,7 +115,7 @@ class _ClockScreenState extends State<ClockScreen> {
                     ]),
                   ),
                   Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                    Text(hm(DateTime.now()), style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()])),
+                    Text(hm(AppClock.now()), style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()])),
                     Text(session.site?.name ?? '', style: const TextStyle(fontSize: 13, color: AppColors.textMuted)),
                   ]),
                 ]),

@@ -10,6 +10,7 @@ import '../../shared/widgets/ui.dart';
 import '../../theme/app_theme.dart';
 import '../field_actions.dart';
 import 'report_kit.dart';
+import '../../core/services/clock.dart';
 
 /// Visitor / vehicle log of this tablet (FR-INC-04): who is still inside,
 /// recording exits, and the "visitor in" form.
@@ -50,7 +51,7 @@ class _VisitorsScreenState extends State<VisitorsScreen> {
       builder: (ctx) => AlertDialog(
         icon: const Icon(Icons.logout_rounded, color: AppColors.primary, size: 32),
         title: Text(s.t('rep2.vis.exitTitle', {'name': v.name})),
-        content: Text(s.t('rep2.vis.exitBody', {'time': hhmm(DateTime.now())}), textAlign: TextAlign.center),
+        content: Text(s.t('rep2.vis.exitBody', {'time': hhmm(AppClock.now())}), textAlign: TextAlign.center),
         actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         actions: [
           OutlinedButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(s.t('common.cancel'))),
@@ -76,7 +77,7 @@ class _VisitorsScreenState extends State<VisitorsScreen> {
     final width = MediaQuery.sizeOf(context).width;
     final narrow = width < 600;
     final columns = width >= 900 ? 2 : 1;
-    final now = DateTime.now().toUtc();
+    final now = AppClock.now();
 
     return Scaffold(
       appBar: AppBar(title: Text(s.t('vis.title'))),
@@ -202,8 +203,8 @@ class _VisitorCard extends StatelessWidget {
 
   /// "09:12", or "08/10 09:12" when not today.
   String _when(DateTime t) {
-    final l = t.toLocal();
-    final today = DateTime.now();
+    final l = AppClock.site(t);
+    final today = AppClock.siteNow();
     final sameDay = l.year == today.year && l.month == today.month && l.day == today.day;
     return sameDay ? hhmm(t) : '${l.day.toString().padLeft(2, '0')}/${l.month.toString().padLeft(2, '0')} ${hhmm(t)}';
   }

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/auth/auth_provider.dart';
 import '../../l10n/strings.dart';
 import '../../theme/app_theme.dart';
+import '../device/device_info_screen.dart';
 import 'setup_screen.dart';
 
 /// Registered but not (yet) approved — or revoked. Polls every 10 s
@@ -45,27 +46,13 @@ class PendingScreen extends StatelessWidget {
           ],
           const SizedBox(height: 36),
           OutlinedButton.icon(
-            onPressed: () => _confirmSignOut(context),
+            // A revoked tablet that was in use needs a supervisor (MOB-2).
+            onPressed: () => protectedSignOut(context, gate: revoked || session.roster.isNotEmpty),
             icon: const Icon(Icons.logout),
             label: Text(s.t('pending.signOut')),
           ),
         ],
       ),
     );
-  }
-
-  static Future<void> _confirmSignOut(BuildContext context) async {
-    final s = S.of(context);
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (c) => AlertDialog(
-        content: Text(s.t('dev.signOutConfirm')),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: Text(s.t('common.cancel'))),
-          FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(s.t('dev.signOut'))),
-        ],
-      ),
-    );
-    if (ok == true && context.mounted) await context.read<DeviceSession>().signOutDevice();
   }
 }

@@ -7,15 +7,20 @@ import 'package:provider/provider.dart';
 import '../../core/database/sync_service.dart';
 import '../../features/field_actions.dart';
 import '../../l10n/strings.dart';
+import '../models/models.dart';
 import '../../theme/app_theme.dart';
 
 /// Panic button (FR-INC-02). Press and hold for 2 s — a ring fills while
 /// holding — so it cannot fire from a stray tap, yet needs no extra dialog in
 /// an emergency.
+///
+/// On the lock screen [asGuard] is the guard who tapped their name: the SOS
+/// is raised for them without a PIN (MOB-3).
 class SosButton extends StatefulWidget {
-  const SosButton({super.key, this.compact = false});
+  const SosButton({super.key, this.compact = false, this.asGuard});
 
   final bool compact;
+  final RosterGuard? asGuard;
 
   @override
   State<SosButton> createState() => _SosButtonState();
@@ -31,7 +36,7 @@ class _SosButtonState extends State<SosButton> with SingleTickerProviderStateMix
     _hold.reset();
     await HapticFeedback.heavyImpact();
     if (!mounted) return;
-    unawaited(context.read<FieldActions>().sos());
+    unawaited(context.read<FieldActions>().sos(as: widget.asGuard));
   }
 
   @override

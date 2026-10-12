@@ -5,8 +5,21 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+// Release signing (MOB-7). android/key.properties (never committed; CI writes
+// it from secrets) holds storeFile (relative to android/app), storePassword,
+// keyAlias and keyPassword. Without it a release build FAILS instead of being
+// signed with the debug key. For a local `flutter run --release` only, set
+// SP_ALLOW_DEBUG_SIGNING=true (or the Gradle property allowDebugSigning=true).
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file("key.properties")
+def hasReleaseKey = keystorePropertiesFile.exists()
+if (hasReleaseKey) {
+    keystorePropertiesFile.withReader("UTF-8") { reader -> keystoreProperties.load(reader) }
+}
+def allowDebugSigning = (project.findProperty("allowDebugSigning") ?: System.getenv("SP_ALLOW_DEBUG_SIGNING") ?: "false").toString().toBoolean()
+
 android {
-    namespace = "id.co.securepatrol.securepatrol"
+    namespace = "id.co.securepatrol.tablet"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -20,22 +33,42 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "id.co.securepatrol.securepatrol"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
+        applicationId = "id.co.securepatrol.tablet"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
+        // From pubspec `version:` (name+code) or --build-name/--build-number (CI).
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (hasReleaseKey) {
+            release {
+                keyAlias = keystoreProperties["keyAlias"]
+                keyPassword = keystoreProperties["keyPassword"]
+                storeFile = file(keystoreProperties["storeFile"])
+                storePassword = keystoreProperties["storePassword"]
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.debug
+            if (hasReleaseKey) {
+                signingConfig = signingConfigs.release
+            } else if (allowDebugSigning) {
+                signingConfig = signingConfigs.debug
+            }
         }
+    }
+}
+
+// Fail early and clearly instead of producing a debug-signed or unsigned
+// release APK.
+gradle.taskGraph.whenReady { graph ->
+    def releaseTasks = graph.allTasks.findAll { it.project == project && it.name ==~ /(assemble|bundle|package)Release/ }
+    if (!releaseTasks.isEmpty() && !hasReleaseKey && !allowDebugSigning) {
+        throw new GradleException("Release build without android/key.properties. Provide the release keystore (see mobile/README.md) or, for a local test only, set SP_ALLOW_DEBUG_SIGNING=true.")
     }
 }
 
