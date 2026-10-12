@@ -87,8 +87,9 @@ func scanSessionRows(rows pgx.Rows) (model.PatrolSession, error) { return scanSe
 // idempotent: a retry returns the existing session and created=false.
 func CreateSession(ctx context.Context, db DBTX, s model.PatrolSession, clientID *string) (*model.PatrolSession, bool, error) {
 	out, err := scanSession(db.QueryRow(ctx, `
-		INSERT INTO patrol_sessions (id, route_id, site_id, guard_id, device_id, started_at)
-		VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6)
+		INSERT INTO patrol_sessions (id, route_id, site_id, guard_id, device_id, started_at, route_snapshot)
+		VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6,
+		        (SELECT checkpoints FROM routes WHERE id = $2)) -- F9: checkpoints as of the start
 		ON CONFLICT (id) DO NOTHING
 		RETURNING `+sessionColumns,
 		clientID, s.RouteID, s.SiteID, s.GuardID, s.DeviceID, s.StartedAt))

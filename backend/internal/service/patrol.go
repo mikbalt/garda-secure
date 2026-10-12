@@ -158,9 +158,10 @@ func ComputeProgress(route model.Route, s model.PatrolSession, scans []model.Che
 	return p
 }
 
-// LoadProgress fetches a session's route and scans and computes progress.
+// LoadProgress fetches a session's route (its snapshot from the session
+// start, F9) and scans and computes progress.
 func LoadProgress(ctx context.Context, db repository.DBTX, s model.PatrolSession) (*SessionProgress, error) {
-	route, err := repository.GetRoute(ctx, db, s.RouteID)
+	route, err := repository.GetSessionRoute(ctx, db, s.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -170,6 +171,36 @@ func LoadProgress(ctx context.Context, db repository.DBTX, s model.PatrolSession
 	}
 	p := ComputeProgress(*route, s, scans, Now())
 	return &p, nil
+}
+
+// LoadProgressBatch computes the progress of many sessions with two queries
+// (routes incl. snapshots, and scans) instead of two per session.
+func LoadProgressBatch(ctx context.Context, db repository.DBTX, sessions []model.PatrolSession) ([]SessionProgress, error) {
+	out := make([]SessionProgress, 0, len(sessions))
+	if len(sessions) == 0 {
+		return out, nil
+	}
+	ids := make([]string, len(sessions))
+	for i, s := range sessions {
+		ids[i] = s.ID
+	}
+	routes, err := repository.ListSessionRoutes(ctx, db, ids)
+	if err != nil {
+		return nil, err
+	}
+	scans, err := repository.ListScansForSessions(ctx, db, ids)
+	if err != nil {
+		return nil, err
+	}
+	now := Now()
+	for _, s := range sessions {
+		route, ok := routes[s.ID]
+		if !ok {
+			continue // deleted concurrently
+		}
+		out = append(out, ComputeProgress(route, s, scans[s.ID], now))
+	}
+	return out, nil
 }
 
 // StartSessionInput starts a patrol from a tablet.

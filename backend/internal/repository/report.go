@@ -26,14 +26,16 @@ type SessionSummaryRow struct {
 }
 
 // SessionSummaries returns the patrol sessions of a site started in [from, to).
-// Only scans of checkpoints that belong to the route count towards completion.
+// Only scans of checkpoints that belong to the route count towards completion;
+// the route is the session's snapshot (F9), else the current route.
 func SessionSummaries(ctx context.Context, db DBTX, siteID string, from, to time.Time) ([]SessionSummaryRow, error) {
 	rows, err := db.Query(ctx, `
 		SELECT ps.id, r.id, r.name, g.id, g.name, ps.started_at, ps.ended_at, ps.status,
-		       jsonb_array_length(r.checkpoints) AS total,
+		       jsonb_array_length(COALESCE(ps.route_snapshot, r.checkpoints)) AS total,
 		       (SELECT COUNT(DISTINCT cs.checkpoint_id) FROM checkpoint_scans cs
 		         WHERE cs.session_id = ps.id
-		           AND cs.checkpoint_id IN (SELECT cp->>'id' FROM jsonb_array_elements(r.checkpoints) cp)) AS scanned,
+		           AND cs.checkpoint_id IN (SELECT cp->>'id'
+		                FROM jsonb_array_elements(COALESCE(ps.route_snapshot, r.checkpoints)) cp)) AS scanned,
 		       (SELECT COUNT(*) FROM sla_breaches b WHERE b.session_id = ps.id) AS breaches,
 		       (SELECT COUNT(*) FROM checkpoint_scans cs WHERE cs.session_id = ps.id AND cardinality(cs.flags) > 0) AS flagged
 		FROM patrol_sessions ps
@@ -94,7 +96,7 @@ func MonthlyRecap(ctx context.Context, db DBTX, siteID string, from, to time.Tim
 		         COUNT(*) AS sessions,
 		         AVG(LEAST(1.0,
 		             (SELECT COUNT(DISTINCT cs.checkpoint_id) FROM checkpoint_scans cs WHERE cs.session_id = ps.id)::numeric
-		             / NULLIF(jsonb_array_length(r.checkpoints), 0))) * 100 AS pct
+		             / NULLIF(jsonb_array_length(COALESCE(ps.route_snapshot, r.checkpoints)), 0))) * 100 AS pct
 		  FROM patrol_sessions ps
 		  JOIN routes r ON r.id = ps.route_id
 		  WHERE ps.site_id = $1 AND ps.started_at >= $2 AND ps.started_at < $3
@@ -247,8 +249,8 @@ func GetDashboardSummary(ctx context.Context, db DBTX, siteID string, dayFrom, d
 	}
 
 	rows, err = db.Query(ctx, `
-		SELECT severity, COUNT(*) FROM incidents
-		WHERE site_id = $1 AND status <> 'resolved' GROUP BY severity`, siteID)
+		SELECT eff_severity, COUNT(*) FROM incidents_effective
+		WHERE site_id = $1 AND status <> 'resolved' GROUP BY eff_severity`, siteID)
 	if err != nil {
 		return nil, fmt.Errorf("GetDashboardSummary severity: %w", err)
 	}
