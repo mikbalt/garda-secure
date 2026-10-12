@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, MapPin, Siren } from 'lucide-react'
 import apiClient, { apiGet } from '../../api/client'
+import { FlagBadges } from '../../components/FlagBadges'
 import { TableSkeleton } from '../../components/LoadingSkeleton'
 import { Button } from '../../components/ui/Button'
 import { EmptyState, ErrorState, Notice } from '../../components/ui/States'
@@ -14,6 +15,10 @@ import type { Site, SosAlert } from '../../types'
 
 type Filter = 'all' | 'unack'
 
+/** History shown (WEB-10): the API returns the latest 200 alerts; older ones are reports' job. */
+const WINDOW_DAYS = 30
+const PAGE = 20
+
 export function SosTab({ site }: { site: Site }) {
   const { t, lang } = useI18n()
   const tz = site.timezone
@@ -22,11 +27,13 @@ export function SosTab({ site }: { site: Site }) {
   const onError = useErrorToast()
   const now = useNow(15_000)
   const [filter, setFilter] = useState<Filter>('all')
+  const [shown, setShown] = useState(PAGE)
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['sos', site.id, 'all'],
     queryFn: () => apiGet<SosAlert[]>('/sos', { site_id: site.id }),
-    refetchInterval: 10_000,
+    // The banner already polls open alerts every 10 s; the history can be calmer.
+    refetchInterval: 30_000,
   })
 
   const ack = useMutation({
@@ -42,9 +49,12 @@ export function SosTab({ site }: { site: Site }) {
   if (isLoading) return <TableSkeleton cols={3} />
   if (error) return <ErrorState error={error} onRetry={() => refetch()} />
 
-  const all = data ?? []
+  const since = now - WINDOW_DAYS * 86_400_000
+  // Open alerts always count, however old; handled ones only within the window.
+  const all = (data ?? []).filter((s) => !s.acknowledged_at || Date.parse(s.fired_at) >= since)
   const unackCount = all.filter((s) => !s.acknowledged_at).length
-  const rows = filter === 'unack' ? all.filter((s) => !s.acknowledged_at) : all
+  const filtered = filter === 'unack' ? all.filter((s) => !s.acknowledged_at) : all
+  const rows = filtered.slice(0, shown)
 
   if (all.length === 0) return <EmptyState icon={Siren} title={t('ops.sos.emptyTitle')} message={t('ops.sos.emptyBody')} />
 
@@ -55,12 +65,16 @@ export function SosTab({ site }: { site: Site }) {
           label={t('common.status')}
           hideLabel
           value={filter}
-          onChange={setFilter}
+          onChange={(f) => {
+            setFilter(f)
+            setShown(PAGE)
+          }}
           options={[
             { value: 'all', label: t('common.all'), count: all.length },
             { value: 'unack', label: t('ops.sos.filterUnack'), count: unackCount, tone: unackCount ? 'red' : undefined },
           ]}
         />
+        <p className="text-xs text-gray-600">{t('sos.windowNote', { n: WINDOW_DAYS })}</p>
       </div>
       {unackCount > 0 && <Notice tone="warn">{t('ops.sos.unackHint')}</Notice>}
       {rows.length === 0 ? (
@@ -84,7 +98,12 @@ export function SosTab({ site }: { site: Site }) {
                   <p className="text-sm font-semibold text-gray-900">
                     {s.guard_name || '—'} <span className="font-normal text-gray-600">{t('ops.sos.pressed')}</span>
                   </p>
-                  <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-gray-500">
+                  {(s.flags?.length ?? 0) > 0 && (
+                    <div className="mt-1">
+                      <FlagBadges flags={s.flags} />
+                    </div>
+                  )}
+                  <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-gray-600">
                     <span>
                       {formatDateTime(s.fired_at, tz, lang)} · {relTime(s.fired_at, lang, now)}
                     </span>
@@ -111,7 +130,7 @@ export function SosTab({ site }: { site: Site }) {
                     </Button>
                   </div>
                 ) : (
-                  <div className="text-right text-xs text-gray-500">
+                  <div className="text-right text-xs text-gray-600">
                     <p className="font-medium text-gray-700">{t('ops.sos.ackedBy', { who: s.acknowledged_by || '—' })}</p>
                     <p>
                       {formatTime(s.acknowledged_at, tz)} · {t('ops.sos.response', { d: fmtDuration(Date.parse(s.acknowledged_at!) - Date.parse(s.fired_at), t) })}
@@ -122,6 +141,13 @@ export function SosTab({ site }: { site: Site }) {
             )
           })}
         </ul>
+      )}
+      {filtered.length > rows.length && (
+        <div className="mt-4 flex justify-center">
+          <Button variant="secondary" onClick={() => setShown((n) => n + PAGE)}>
+            {t('common.showMore', { n: filtered.length - rows.length })}
+          </Button>
+        </div>
       )}
     </>
   )
