@@ -50,7 +50,7 @@ services:
       - securepatrol
 
   redis:
-    image: redis:7.4.11-alpine
+    image: redis:8.10.2-alpine
     restart: always
     <<: *hardening
     logging: *logging
