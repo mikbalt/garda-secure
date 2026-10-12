@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -84,6 +85,12 @@ type env struct {
 	key      *rsa.PrivateKey
 	sched    *jobs.Scheduler
 	settings *settings.Store
+	cfg      *config.Config
+
+	// Guard tokens from POST /device/guard-sessions by "tablet|guard";
+	// doH sends them as X-Guard-Token unless the caller sets that header.
+	tokMu       sync.Mutex
+	guardTokens map[string]string
 }
 
 const (
@@ -152,7 +159,7 @@ func newEnv(t *testing.T, opts ...func(*config.Config)) *env {
 	app.Use(requestid.New())
 	h.Mount(app, validator)
 
-	return &env{t: t, app: app, pool: pool, mr: mr, key: key, settings: st,
+	return &env{t: t, app: app, pool: pool, mr: mr, key: key, settings: st, cfg: cfg, guardTokens: map[string]string{},
 		sched: jobs.NewScheduler(pool, rdb, notifier, stg, cfg, log)}
 }
 
@@ -214,6 +221,14 @@ func (e *env) doH(method, path, token, guardID string, body any, headers map[str
 	}
 	if guardID != "" {
 		req.Header.Set(middleware.GuardHeader, guardID)
+		if _, set := headers[middleware.GuardTokenHeader]; !set {
+			e.tokMu.Lock()
+			tok := e.guardTokens[token+"|"+guardID]
+			e.tokMu.Unlock()
+			if tok != "" {
+				req.Header.Set(middleware.GuardTokenHeader, tok)
+			}
+		}
 	}
 	for k, v := range headers {
 		req.Header.Set(k, v)
@@ -246,6 +261,28 @@ func (e *env) count(sql string, args ...any) int {
 }
 
 func rfc(t time.Time) string { return t.UTC().Format(time.RFC3339) }
+
+// loginGuard verifies a guard's PIN on the server (POST /device/guard-sessions)
+// and makes doH send the token for this tablet and guard from now on.
+func (e *env) loginGuard(tablet, guard, pin string) string {
+	e.t.Helper()
+	r := e.expect(e.do("POST", "/api/v1/device/guard-sessions", tablet, "", map[string]any{"guard_id": guard, "pin": pin}), 200, "guard session")
+	tok := r.str("token")
+	if tok == "" || r.str("guard_id") != guard || r.str("expires_at") == "" {
+		e.t.Fatalf("guard session = %s", r.raw)
+	}
+	e.tokMu.Lock()
+	e.guardTokens[tablet+"|"+guard] = tok
+	e.tokMu.Unlock()
+	return tok
+}
+
+// setPinAndLogin gives a guard a PIN (admin) and logs them in on a tablet.
+func (e *env) setPinAndLogin(admin, tablet, guard, pin string) {
+	e.t.Helper()
+	e.expect(e.do("PUT", "/api/v1/guards/"+guard+"/pin", admin, "", map[string]any{"pin": pin}), 200, "set pin")
+	e.loginGuard(tablet, guard, pin)
+}
 
 // ── The scenario ─────────────────────────────────────────────────────────────
 
@@ -314,6 +351,11 @@ func TestAPIEndToEnd(t *testing.T) {
 		}
 	}
 	e.expect(e.do("GET", "/api/v1/sites", tablet, "", nil), 403, "device on web route")
+	// Server-verified guard identity (D-035): the guards unlock with their PIN
+	// online, so their records are not flagged guard_unverified.
+	e.loginGuard(tablet, budi, "4826")
+	e.setPinAndLogin(admin, tablet, sari, "5937")
+	e.setPinAndLogin(admin, tablet, joko, "6048")
 
 	// ── Shifts & attendance ──────────────────────────────────────────────────
 	mkShift := func(guard string, start, end time.Time) string {

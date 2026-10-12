@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/securepatrol/backend/internal/fieldauth"
 	"github.com/securepatrol/backend/internal/model"
 	"github.com/securepatrol/backend/internal/repository"
 )
@@ -18,6 +19,7 @@ type ClockInInput struct {
 	ID              *string    // client UUID for idempotent sync
 	At              *time.Time // event time recorded on the tablet; nil = now
 	Guard           *model.Guard
+	Auth            *fieldauth.GuardAuth // guard token proof; nil = unverified
 	Site            *model.Site
 	DeviceID        *string
 	SelfieObjectKey *string
@@ -122,6 +124,9 @@ func clockIn(ctx context.Context, tx pgx.Tx, in ClockInInput, at time.Time, cfg 
 	p.Status, p.LateMinutes = arrivalStatus(shift.StartTime, at, cfg.LateGraceMinutes)
 	p.ReceivedAt = Now()
 	p.Flags, p.NeedsReview = ClockInFlags(at, p.ReceivedAt, p.Status, in.DeviceLastSeen)
+	if gf := GuardFlags(in.Auth, at); len(gf) > 0 {
+		p.Flags, p.NeedsReview = append(p.Flags, gf...), true // D-035: unverified clock-ins are reviewed
+	}
 
 	existing, err := repository.GetAttendanceByShift(ctx, tx, shift.ID)
 	switch {
@@ -153,6 +158,7 @@ type ClockOutInput struct {
 	AttendanceID   *string // optional: makes retries of a completed clock-out idempotent
 	At             *time.Time
 	Guard          *model.Guard
+	Auth           *fieldauth.GuardAuth // guard token proof; nil = unverified
 	Site           *model.Site
 	GPSLat, GPSLng *float64
 }
@@ -215,7 +221,11 @@ func ClockOut(ctx context.Context, pool *pgxpool.Pool, in ClockOutInput) (*model
 			}
 			early = earlyOutMinutes(shift.EndTime, at, cfg.EarlyOutGraceMinutes)
 		}
-		r, err := repository.SetClockOut(ctx, tx, rec.ID, at, early, in.GPSLat, in.GPSLng)
+		addFlag := ""
+		if len(GuardFlags(in.Auth, at)) > 0 {
+			addFlag = FlagGuardUnverified
+		}
+		r, err := repository.SetClockOut(ctx, tx, rec.ID, at, early, in.GPSLat, in.GPSLng, addFlag)
 		if err != nil {
 			return err
 		}

@@ -28,6 +28,9 @@ func (e *env) newFieldSite(realm, admin, name string) fieldSite {
 	f.tablet = e.token(realm, "tablet-"+uuid.NewString(), "securepatrol-tablet", "device")
 	dev := e.expect(e.do("POST", "/api/v1/device/register", f.tablet, "", map[string]any{"name": name}), 200, "register").str("id")
 	e.expect(e.do("PUT", "/api/v1/devices/"+dev, admin, "", map[string]any{"status": "active", "site_id": f.site}), 200, "approve")
+	// Both guards unlock online (server-verified PIN, D-035).
+	e.setPinAndLogin(admin, f.tablet, f.guard, "4826")
+	e.setPinAndLogin(admin, f.tablet, f.guard2, "5937")
 	return f
 }
 

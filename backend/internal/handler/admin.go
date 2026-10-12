@@ -432,7 +432,7 @@ func (h *Handler) deviceRoutes(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
-	return c.JSON(routes)
+	return c.JSON(deviceRoutesView(routes))
 }
 
 // deviceShifts lists the acting guard's shifts from yesterday to +7 days.
@@ -461,7 +461,8 @@ func (h *Handler) deviceStatus(c *fiber.Ctx) error {
 	g := middleware.GetGuard(c)
 	ctx := c.Context()
 	now := service.Now()
-	out := fiber.Map{"server_time": now, "config": site.Config(), "guard": g}
+	out := fiber.Map{"server_time": now, "config": site.Config(), "guard": g,
+		"guard_verified": middleware.GetGuardAuth(c).VerifiedAt(now, now)}
 
 	opt := func(v any, err error) (any, error) {
 		if errors.Is(err, repository.ErrNotFound) {
@@ -495,8 +496,14 @@ func (h *Handler) deviceStatus(c *fiber.Ctx) error {
 		if err != nil {
 			return h.fail(c, err)
 		}
+		service.HideSignedQR(p)
 		out["session"] = p
 	}
+	due, err := h.patrolsDue(ctx, site.ID, now)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	out["patrols_due"] = due
 	return c.JSON(out)
 }
 

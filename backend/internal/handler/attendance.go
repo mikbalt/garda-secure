@@ -128,7 +128,7 @@ func (h *Handler) clockIn(c *fiber.Ctx) error {
 	guard := middleware.GetGuard(c)
 	var staged notification.Staged
 	res, err := service.ClockIn(c.Context(), h.DB, service.ClockInInput{
-		ID: nilIfEmpty(b.ID), At: b.ClockInAt, Guard: guard, Site: site, DeviceID: deviceID(c),
+		ID: nilIfEmpty(b.ID), At: b.ClockInAt, Guard: guard, Auth: middleware.GetGuardAuth(c), Site: site, DeviceID: deviceID(c),
 		SelfieObjectKey: nilIfEmpty(b.SelfieObjectKey), GPSLat: b.GPSLat, GPSLng: b.GPSLng,
 		DeviceLastSeen: middleware.GetDevice(c).LastSeenAt,
 		// The late notification is staged in the clock-in transaction (BE-R1);
@@ -186,7 +186,7 @@ func (h *Handler) clockOut(c *fiber.Ctx) error {
 		return h.fail(c, err)
 	}
 	rec, _, err := service.ClockOut(c.Context(), h.DB, service.ClockOutInput{
-		AttendanceID: nilIfEmpty(b.AttendanceID), At: b.ClockOutAt, Guard: middleware.GetGuard(c),
+		AttendanceID: nilIfEmpty(b.AttendanceID), At: b.ClockOutAt, Guard: middleware.GetGuard(c), Auth: middleware.GetGuardAuth(c),
 		Site: site, GPSLat: b.GPSLat, GPSLng: b.GPSLng,
 	})
 	if err != nil {

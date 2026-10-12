@@ -221,7 +221,7 @@ func TestNormalizeRoute(t *testing.T) {
 		{Name: "B", OrderIndex: 5},
 		{Name: "A", OrderIndex: 1, QRCode: "QR-A"},
 	}}
-	if err := NormalizeRoute(&r); err != nil {
+	if err := NormalizeRoute(&r, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if r.Name != "Night" || r.Checkpoints[0].Name != "A" || r.Checkpoints[1].OrderIndex != 1 {
@@ -231,11 +231,11 @@ func TestNormalizeRoute(t *testing.T) {
 		t.Error("missing generated id/qr code")
 	}
 	dup := model.Route{Name: "x", Checkpoints: []model.Checkpoint{{Name: "A", QRCode: "Q"}, {Name: "B", QRCode: "Q"}}}
-	if err := NormalizeRoute(&dup); err == nil {
+	if err := NormalizeRoute(&dup, nil, nil); err == nil {
 		t.Error("duplicate QR codes accepted")
 	}
 	badSLA := model.Route{Name: "x", Checkpoints: []model.Checkpoint{{Name: "A", SLAMinutes: intp(0)}}}
-	if err := NormalizeRoute(&badSLA); err == nil {
+	if err := NormalizeRoute(&badSLA, nil, nil); err == nil {
 		t.Error("zero SLA accepted")
 	}
 }

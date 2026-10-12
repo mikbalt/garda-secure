@@ -146,7 +146,50 @@ function summary(s: PatrolSession): SessionSummary {
     session_id: s.id, route_id: s.route_id, route_name: p.route_name, guard_id: s.guard_id, guard_name: guardName(s.guard_id),
     started_at: s.started_at, ended_at: s.ended_at, status: s.status, total_checkpoints: p.total, scanned_count: p.scanned,
     sla_breaches: p.checkpoints.filter((c) => c.status === 'late' || c.status === 'overdue').length, completion_pct: p.completion_pct,
+    // D-035: session flags and the scheduled patrol it satisfied (none in the demo data).
+    flags: (s as { flags?: string[] }).flags ?? [], expectation_id: null, due_at: null, late_start: false,
+  } as SessionSummary
+}
+
+// ── Patrol schedules (D-035), kept on the world object ───────────────────────
+
+type RouteScheduleInput = { weekdays: number[]; start_time: string; end_time?: string | null; every_minutes?: number | null; grace_minutes?: number; active?: boolean }
+const ws = w as World & { route_schedules?: Record<string, (RouteScheduleInput & { id: string; route_id: string })[]> }
+const schedulesOf = (routeId: string) => (ws.route_schedules ??= {})[routeId] ?? []
+
+/** Number of patrols a window plans on one day (weekday 1 = Monday). */
+function patrolsPerDay(sc: RouteScheduleInput, weekday: number): number {
+  if (sc.active === false || !sc.weekdays.includes(weekday)) return 0
+  if (!sc.every_minutes || !sc.end_time) return 1
+  const [sh, sm] = sc.start_time.split(':').map(Number)
+  const [eh, em] = sc.end_time.split(':').map(Number)
+  let span = eh * 60 + em - (sh * 60 + sm)
+  if (span <= 0) span += 1440
+  return Math.ceil(span / sc.every_minutes)
+}
+
+type Compliance = { expected: number; started_on_time: number; late: number; missed: number; pending: number; compliance_pct: number | null }
+const pct = (c: Compliance) => (c.started_on_time + c.late + c.missed ? Math.round((c.started_on_time / (c.started_on_time + c.late + c.missed)) * 1000) / 10 : null)
+
+/** Demo approximation of /reports/patrol-compliance: sessions of the day count as on-time starts. */
+function compliance(siteId: string, range: [Date, Date]) {
+  const rows: (Compliance & { date: string; route_id: string; route_name: string })[] = []
+  const totals: Compliance = { expected: 0, started_on_time: 0, late: 0, missed: 0, pending: 0, compliance_pct: null }
+  for (let t = range[0].getTime(); t < range[1].getTime() && t <= Date.now(); t += 86_400_000) {
+    const date = new Date(t + 7 * 3600_000).toISOString().slice(0, 10)
+    const weekday = ((new Date(t + 7 * 3600_000).getUTCDay() + 6) % 7) + 1
+    for (const r of w.routes.filter((x) => x.site_id === siteId && x.active)) {
+      const expected = schedulesOf(r.id).reduce((n, sc) => n + patrolsPerDay(sc, weekday), 0)
+      if (!expected) continue
+      const started = Math.min(expected, w.sessions.filter((x) => x.route_id === r.id && inRange(x.started_at, dayRange(date))).length)
+      const row = { date, route_id: r.id, route_name: r.name, expected, started_on_time: started, late: 0, missed: expected - started, pending: 0, compliance_pct: null as number | null }
+      row.compliance_pct = pct(row)
+      rows.push(row)
+      for (const k of ['expected', 'started_on_time', 'late', 'missed', 'pending'] as const) totals[k] += row[k]
+    }
   }
+  totals.compliance_pct = pct(totals)
+  return { rows, totals }
 }
 
 function dailyRows(siteId: string, range: [Date, Date]): DailyAttendanceRow[] {
@@ -219,7 +262,7 @@ on('PUT', '/guards/:id', ({ params, body }) => Object.assign(byId(w.guards, para
 on('PUT', '/guards/:id/pin', ({ params, body }) => {
   if (!/^\d{4,6}$/.test(String(body.pin ?? ''))) throw bad('invalid_pin', 'PIN must be 4–6 digits')
   if (['1234', '0000', '1111', '123456'].includes(String(body.pin))) throw bad('weak_pin', 'PIN is too easy to guess')
-  byId(w.guards, params.id).has_pin = true
+  Object.assign(byId(w.guards, params.id), { has_pin: true, pin_locked_until: undefined })
   return { has_pin: true }
 })
 
@@ -305,10 +348,22 @@ on('PUT', '/attendance/shifts/:shiftId/override', ({ params, body }) => {
 // Patrol
 on('GET', '/patrol/routes', ({ query }) => w.routes.filter((r) => r.site_id === query.site_id && (query.active !== 'true' || r.active)))
 on('GET', '/patrol/routes/:id', ({ params }) => byId(w.routes, params.id))
+/** Demo stand-in for the server's signed payload SP1:<checkpoint id>:<22-char signature>. */
+const signedQR = (id: string, version: number) => `SP1:${id}:${btoa(`${id}:${version}`).replace(/[^A-Za-z0-9]/g, '').padEnd(22, 'A').slice(-22)}`
+type QRCheckpoint = PatrolRoute['checkpoints'][0] & { qr_signed?: boolean; qr_version?: number }
 const normalizeRoute = (body: Body, base?: PatrolRoute): PatrolRoute => {
-  const cps = ((body.checkpoints as PatrolRoute['checkpoints']) ?? []).map((c, i) => ({
-    ...c, id: c.id || uid(), qr_code: c.qr_code || `SP-${uid().slice(-6).toUpperCase()}`, order_index: i,
-  }))
+  const stored = new Map(((base?.checkpoints ?? []) as QRCheckpoint[]).map((c) => [c.id, c]))
+  const cps = ((body.checkpoints as QRCheckpoint[]) ?? []).map((c, i) => {
+    const old = c.id ? stored.get(c.id) : undefined
+    const id = c.id || uid()
+    const custom = !!c.qr_code && !c.qr_code.startsWith('SP1:')
+    // D-035: new codes are signed; signed codes stay; custom codes are legacy.
+    if (old?.qr_signed || !custom) {
+      const version = old?.qr_signed ? (old.qr_version ?? 1) : (old?.qr_version ?? 0) + 1
+      return { ...c, id, qr_code: signedQR(id, version), qr_signed: true, qr_version: version, order_index: i }
+    }
+    return { ...c, id, qr_signed: false, qr_version: old?.qr_version ?? 0, order_index: i }
+  })
   if (!String(body.name ?? '').trim()) throw bad('name_required', 'route name is required')
   if (cps.length === 0) throw bad('checkpoints_required', 'a route needs at least one checkpoint')
   return { ...(base ?? { id: uid(), site_id: String(body.site_id), created_at: iso(now()) }), name: String(body.name), active: body.active !== false, checkpoints: cps } as PatrolRoute
@@ -322,6 +377,26 @@ on('PUT', '/patrol/routes/:id', ({ params, body }) => {
   const r = normalizeRoute(body, byId(w.routes, params.id))
   w.routes = w.routes.map((x) => (x.id === r.id ? r : x))
   return r
+})
+on('POST', '/patrol/routes/:id/regenerate-qr', ({ params }) => {
+  const r = byId(w.routes, params.id)
+  r.checkpoints = (r.checkpoints as QRCheckpoint[]).map((c) => {
+    const version = (c.qr_version ?? 0) + 1
+    return { ...c, qr_code: signedQR(c.id, version), qr_signed: true, qr_version: version }
+  })
+  return r
+})
+on('GET', '/patrol/routes/:id/schedules', ({ params }) => ({ route_id: params.id, schedules: schedulesOf(byId(w.routes, params.id).id) }))
+on('PUT', '/patrol/routes/:id/schedules', ({ params, body }) => {
+  const r = byId(w.routes, params.id)
+  const list = ((body.schedules as RouteScheduleInput[]) ?? []).map((sc, i) => {
+    if (!sc.weekdays?.length) throw bad('invalid_weekdays', `schedule ${i + 1}: weekdays must be 1 (Monday) … 7 (Sunday)`)
+    if (!/^\d{2}:\d{2}$/.test(sc.start_time ?? '')) throw bad('invalid_start_time', `schedule ${i + 1}: start_time must be HH:MM`)
+    if (sc.every_minutes && !sc.end_time) throw bad('end_time_required', `schedule ${i + 1}: end_time is required with every_minutes`)
+    return { id: uid(), route_id: r.id, end_time: null, every_minutes: null, grace_minutes: 15, active: true, created_at: iso(now()), updated_at: iso(now()), ...sc }
+  })
+  ;(ws.route_schedules ??= {})[r.id] = list
+  return { route_id: r.id, schedules: list, generated_expectations: list.reduce((n, sc) => n + 2 * patrolsPerDay(sc, sc.weekdays[0]), 0) }
 })
 on('GET', '/patrol/live', ({ query }) =>
   w.sessions.filter((s) => s.site_id === query.site_id && s.status === 'in_progress').map((s) => ({ guard_name: guardName(s.guard_id), progress: progress(s) })),
@@ -355,9 +430,9 @@ on('POST', '/sos/:id/acknowledge', ({ params }) => {
   s.acknowledged_at ??= iso(now())
   return s
 })
-on('GET', '/defects', ({ query }) => w.defects.filter((d) => d.site_id === query.site_id && (!query.status || d.status === query.status)))
+on('GET', '/defects', ({ query }) => w.defects.filter((d) => d.site_id === query.site_id && (!query.status || d.status === query.status)).map((d) => ({ flags: [], ...d })))
 on('PUT', '/defects/:id/status', ({ params, body }) => Object.assign(byId(w.defects, params.id), { status: body.status, updated_at: iso(now()) }))
-on('GET', '/visitors', ({ query }) => w.visitors.filter((v) => v.site_id === query.site_id && inRange(v.entry_at, dateRange(query.from, query.to))))
+on('GET', '/visitors', ({ query }) => w.visitors.filter((v) => v.site_id === query.site_id && inRange(v.entry_at, dateRange(query.from, query.to))).map((v) => ({ flags: [], ...v })))
 on('GET', '/media/url', ({ query }) => ({ key: query.key, uploaded: true, url: photoUrl(query.key ?? '') }))
 
 // Reports & dashboard
@@ -386,7 +461,11 @@ on('GET', '/dashboard/summary', ({ query }) => {
   }
 })
 on('GET', '/reports/attendance/daily', ({ query }) => ({ site_id: query.site_id, date: query.date, rows: dailyRows(siteOf(query).id, dayRange(query.date)) }))
-on('GET', '/reports/attendance/monthly', ({ query }) => ({ site_id: query.site_id, month: query.month, rows: monthly(siteOf(query).id, monthRange(query.month)) }))
+on('GET', '/reports/attendance/monthly', ({ query }) => ({
+  site_id: query.site_id, month: query.month, rows: monthly(siteOf(query).id, monthRange(query.month)),
+  patrol_compliance: compliance(siteOf(query).id, monthRange(query.month)).totals,
+}))
+on('GET', '/reports/patrol-compliance', ({ query }) => ({ site_id: query.site_id, from: query.from, to: query.to, ...compliance(siteOf(query).id, dateRange(query.from, query.to)) }))
 on('GET', '/reports/patrol/sessions', ({ query }) => ({
   site_id: query.site_id,
   rows: w.sessions.filter((s) => s.site_id === query.site_id && inRange(s.started_at, dateRange(query.from, query.to))).map(summary),
@@ -409,12 +488,13 @@ on('GET', '/reports/guards/kpi', ({ query }): { site_id?: string; rows: GuardKpi
       sla_breaches: w.sessions
         .filter((s) => s.guard_id === m.guard_id && s.site_id === query.site_id)
         .reduce((n, s) => n + progress(s).checkpoints.filter((c) => c.status === 'late' || c.status === 'overdue').length, 0),
-    }
+      scheduled_patrols: 0, schedule_compliance_pct: null, // D-035 (no scheduled patrols in the demo data)
+    } as GuardKpiRow
   }),
 }))
 
 // Administration
-on('GET', '/notifications/event-types', () => ({ event_types: ['sos', 'sla_missed', 'absent', 'late_clock_in', 'incident_high', 'defect_opened', 'monthly_recap'], channels: ['email', 'whatsapp'] }))
+on('GET', '/notifications/event-types', () => ({ event_types: ['sos', 'sla_missed', 'absent', 'late_clock_in', 'incident_high', 'defect_opened', 'monthly_recap', 'patrol_not_started'], channels: ['email', 'whatsapp'] }))
 on('GET', '/notifications/rules', ({ query }) => w.rules.filter((r) => r.site_id === query.site_id))
 on('POST', '/notifications/rules', ({ body }) => {
   const r = { id: uid(), enabled: true, created_at: iso(now()), ...body } as World['rules'][0]
