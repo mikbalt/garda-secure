@@ -459,9 +459,12 @@ to `SERVER_HOST` + localhost, so it cannot be used to impersonate other websites
 server certificate (`cert.pem`/`key.pem`, 825 days, SAN = `SERVER_HOST` + localhost).
 
 Install the CA once per device (file `nginx/certs/securepatrol-ca.crt`):
-* **Android tablets:** copy the file to the tablet → *Settings → Security → Encryption &
-  credentials → Install a certificate → CA certificate*. (The app must trust user CAs
-  for this host — mobile network-security config.)
+* **Android tablets:** the SecurePatrol app does **not** trust user-installed CAs
+  (Dart's TLS ignores the Android store, and user CAs would allow interception). Bundle
+  the CA into the APK instead: GitHub secret `SECUREPATROL_CA_PEM` = contents of
+  `securepatrol-ca.crt` (the release job writes it to `mobile/assets/certs/`), or copy it
+  there before a local build — see §3. Installing it in Android settings is only needed
+  for the tablet's browser.
 * **Windows:** double-click → *Install certificate → Local machine → Trusted Root
   Certification Authorities*.
 * **macOS:** Keychain Access → System → import → *Always trust*.

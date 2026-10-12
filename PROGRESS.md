@@ -11,7 +11,6 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 |---|---|---|---|
 | Wave 2 backend — PRD gaps: user management via Keycloak admin API + per-site client scoping, incident_filed, amended values in reports, override history, xlsx, route snapshots, channel registry, site floor plans, retention job, realm-wide SOS | `muhamhad-pc1/claude-be-features` | 2026-10-12 | branch `agent/muhamhad-pc1/be-features`; migration 007 |
 | Wave 2 web — hardening (WEB-*) + UIs for ops alerts, audit log, platform-admin, flags | `muhamhad-pc1/claude-web` | 2026-10-12 | branch `agent/muhamhad-pc1/web-hardening` |
-| Wave 2 mobile — hardening (MOB-2..11) + guard session token + signed QR client | `muhamhad-pc1/claude-mobile` | 2026-10-12 | branch `agent/muhamhad-pc1/mobile-hardening` |
 
 ## Migration numbers
 
@@ -67,7 +66,9 @@ Infra / Ops
 - [ ] Load test 2 sites / 10 guards (M7)
 
 Mobile (D-024) — open audit items, see docs/audit-2026-10.md
-- [ ] MOB-2..MOB-9, MOB-11 (sign-out/discard protection, lock-screen SOS, server time offset, outbox poison items, encrypted storage, release signing, kiosk guide, site time zone)
+- [ ] Backend `POST /device/telemetry` (tablet health beacon, D-039) + show tablet health in Settings → Devices
+- [ ] Backend `gps_lat`/`gps_lng` on incidents (tablet already collects a fix)
+- [ ] First real APK on a tablet: private-CA TLS, camera/QR, kiosk mode (runbook §3)
 
 ## Done
 
@@ -87,3 +88,4 @@ Mobile (D-024) — open audit items, see docs/audit-2026-10.md
 | Hardening wave 1 — backend security: Go 1.26 + deps + govulncheck, replay ownership, settings exfil guard, platform-admin, token/azp binding, limits + rate limits, append-only audit + GET /audit, write-once photos + EXIF strip, per-kind photo access, plausibility flags (D-031..D-033) | `muhamhad-pc1/claude-be-sec` | 2026-10-12 | merge e2314d6 |
 | Hardening wave 1 — infra/ops/CI: SERVER_HOST + private CA + preflight, healthchecks, nginx (DNS, headers, CSP, rate limits, admin allow-list, :9443), Silo, enforced staff OTP, least privilege, monitoring/alerting, restic off-site backups, deploy/restore scripts, SHA-pinned CI, Trivy, e2e stack job, GHCR CD (D-034) | `muhamhad-pc1/claude-infra` | 2026-10-12 | merge e906804, 05e9cf1 |
 | Wave 2 backend — server-verified guard sessions, signed checkpoint QR, patrol schedules + `patrol_not_started` + compliance report (D-036..D-038) | `muhamhad-pc1/claude-be-field` | 2026-10-12 | merge agent/muhamhad-pc1/be-field |
+| Wave 2 mobile — hardening MOB-2..MOB-11 (protected sign-out, lock-screen SOS, server time offset, outbox failure handling, encrypted local data, release signing + new app id, bundled CA, site time zone, EXIF strip) + guard-session and signed-QR client; 63 tests (D-039) | `muhamhad-pc1/claude-mobile` | 2026-10-12 | merge d916d4f |

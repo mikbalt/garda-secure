@@ -356,3 +356,25 @@ in PRD §9 (OQ-x). New entries go at the bottom with the next free number.
   session per expected patrol, late starts recorded within 12 h. Missed patrols
   raise `patrol_not_started` even when the tablet is offline. Compliance = on
   time / decided (`GET /reports/patrol-compliance`, KPI, monthly recap).
+
+### D-039 — Tablet app hardening (audit MOB-2..MOB-11)
+- **Date:** 2026-10-12 · **Status:** Accepted
+- App id `id.co.securepatrol.tablet` (installs as a new app: drain the old
+  app's outbox, then uninstall it). Release builds only with the release key
+  (`android/key.properties` from CI secrets); never debug-signed by accident.
+- Local data: field-level AES-256-GCM (key in secure storage) for every cached
+  value and outbox body/token — chosen over SQLCipher (no native build to verify
+  here); `allowBackup=false`, data-extraction rules exclude everything.
+- TLS: system CAs only; a private CA is bundled into the APK as a Flutter asset
+  (`SECUREPATROL_CA_PEM` secret in CI), because Dart's TLS ignores the Android
+  network-security config. `http://` servers refused outside debug builds.
+- Protected actions: device sign-out, server change and discarding outbox items
+  need a supervisor PIN or the device account password, and are refused while
+  items are queued. SOS works from the lock screen without a PIN (flagged
+  `guard_unverified`). Unlock is refused after 7 days without a roster sync.
+- Outbox: priority then local sequence; server-time offset applied to event
+  times; poison items parked after 50 attempts / 3 days; replayed "already
+  done" answers count as sent; device-level 403s pause the queue; 429 honours
+  Retry-After.
+- Health beacon every 15 min to `POST /device/telemetry` (backend endpoint to
+  be added); crashes kept in a local ring buffer.

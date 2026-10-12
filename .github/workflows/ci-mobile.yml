@@ -152,6 +152,19 @@ jobs:
             echo "keyPassword=$KEY_PASSWORD"
           } > android/key.properties
 
+      - name: Bundle the installation's private CA (optional)
+        if: env.HAS_SIGNING == 'true'
+        env:
+          CA_PEM: ${{ secrets.SECUREPATROL_CA_PEM }}
+        run: |
+          if [ -n "$CA_PEM" ]; then
+            mkdir -p assets/certs
+            printf '%s\n' "$CA_PEM" > assets/certs/securepatrol-ca.crt
+            echo "Bundled private CA ($(grep -c 'BEGIN CERTIFICATE' assets/certs/securepatrol-ca.crt) cert)."
+          else
+            echo "::notice::SECUREPATROL_CA_PEM not set: the APK trusts system CAs only (fine with a public certificate)."
+          fi
+
       - name: flutter build apk --release
         if: env.HAS_SIGNING == 'true'
         env:
