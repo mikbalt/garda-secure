@@ -48,13 +48,14 @@ export function ShiftModal({ site, shift, defaultDate, defaultGuardId, onClose }
   }
 
   const save = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const body = {
         guard_id: guardId,
         start_time: zonedToUtcIso(date, start, tz),
         end_time: zonedToUtcIso(nextDay ? addDays(date, 1) : date, end, tz),
       }
-      return shift ? apiClient.put(`/shifts/${shift.id}`, body) : apiClient.post('/shifts', { ...body, site_id: site.id })
+      if (shift) await apiClient.put(`/shifts/${shift.id}`, body)
+      else await apiClient.post('/shifts', { ...body, site_id: site.id })
     },
     onSuccess: () => {
       toast.success(t('common.saved'))

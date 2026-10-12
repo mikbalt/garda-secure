@@ -14,7 +14,7 @@ import { useSite } from '../../context/site'
 import { useI18n, translateMaybe } from '../../i18n/context'
 import { formatDateTime } from '../../lib/time'
 import { CHANNEL_ICON, CHANNEL_TONE, EVENT_META, displayRecipient } from './channelMeta'
-import { relativeTime } from './format'
+import { deliveryErrorText, relativeTime } from './format'
 import { SectionHeader } from './kit'
 import type { DeliveryStatus, NotificationLogEntry } from '../../types'
 
@@ -28,8 +28,13 @@ const chipTone: Record<Filter, string> = {
   sent: 'bg-emerald-500',
 }
 
-/** Delivery log of all sites of the realm (FR-NOT-04). */
-export function LogTab() {
+/**
+ * Delivery log (FR-NOT-04): `site` = all sites of the realm (admin);
+ * `ops` = install-wide operations alerts (platform-admin, D-027).
+ */
+export function LogTab({ mode = 'site' }: { mode?: 'site' | 'ops' }) {
+  const ops = mode === 'ops'
+  const base = ops ? '/notifications/ops-log' : '/notifications/log'
   const { t, lang } = useI18n()
   const { sites, site } = useSite()
   const qc = useQueryClient()
@@ -41,16 +46,16 @@ export function LogTab() {
 
   // The latest 200 deliveries; status chips filter (and count) client-side.
   const { data, isLoading, error, refetch, isFetching } = useQuery({
-    queryKey: ['notification-log', siteFilter],
-    queryFn: () => apiGet<NotificationLogEntry[]>('/notifications/log', { site_id: siteFilter, limit: 200 }),
+    queryKey: ops ? ['ops-log'] : ['notification-log', siteFilter],
+    queryFn: () => apiGet<NotificationLogEntry[]>(base, ops ? { limit: 200 } : { site_id: siteFilter, limit: 200 }),
     refetchInterval: 30_000,
   })
 
   const retry = useMutation({
-    mutationFn: (id: string) => apiClient.post(`/notifications/log/${id}/retry`),
+    mutationFn: (id: string) => apiClient.post(`${base}/${id}/retry`),
     onSuccess: () => {
       toast.success(t('log.retried'))
-      qc.invalidateQueries({ queryKey: ['notification-log'] })
+      qc.invalidateQueries({ queryKey: ops ? ['ops-log'] : ['notification-log'] })
     },
     onError,
   })
@@ -87,7 +92,7 @@ export function LogTab() {
               <span className="truncate tabular-nums">{displayRecipient(r.channel, r.recipient)}</span>
             </p>
             <p className="truncate text-xs text-gray-500" title={r.subject}>
-              {sites.length > 1 && r.site_id ? `${siteName(r.site_id)} · ` : ''}
+              {!ops && sites.length > 1 && r.site_id ? `${siteName(r.site_id)} · ` : ''}
               {r.subject}
             </p>
           </div>
@@ -100,7 +105,7 @@ export function LogTab() {
       cell: (r) => (
         <div className="min-w-[8rem]">
           <StatusBadge status={r.status} />
-          {r.last_error && <p className="mt-1 max-w-[14rem] break-words text-xs text-red-700">{r.last_error}</p>}
+          {r.last_error && <p className="mt-1 max-w-[14rem] break-words text-xs text-red-700">{deliveryErrorText(r.last_error, lang)}</p>}
         </div>
       ),
     },
@@ -127,8 +132,8 @@ export function LogTab() {
   return (
     <>
       <SectionHeader
-        title={t('adm.set.log')}
-        description={t('adm.log.intro')}
+        title={ops ? t('plat.opsLog') : t('adm.set.log')}
+        description={ops ? t('plat.opsLogIntro') : t('adm.log.intro')}
         actions={
           <Button variant="secondary" onClick={() => refetch()} loading={isFetching && !isLoading}>
             {!(isFetching && !isLoading) && <RotateCw className="h-4 w-4" aria-hidden="true" />}
@@ -154,14 +159,14 @@ export function LogTab() {
               >
                 {f && <span className={`h-2 w-2 rounded-full ${chipTone[f]}`} aria-hidden="true" />}
                 {label(f)}
-                <span className={`tabular-nums ${on ? 'text-white/70' : 'text-gray-400'}`}>{n}</span>
+                <span className={`tabular-nums ${on ? 'text-white/80' : 'text-gray-600'}`}>{n}</span>
               </button>
             )
           })}
         </div>
-        {sites.length > 1 && (
+        {!ops && sites.length > 1 && (
           <div className="flex items-center gap-2">
-            <label htmlFor="log-site" className="text-sm text-gray-500">
+            <label htmlFor="log-site" className="text-sm text-gray-600">
               {t('common.site')}
             </label>
             <Select id="log-site" value={siteFilter} onChange={(e) => setSiteFilter(e.target.value)} className="w-48">
@@ -177,9 +182,9 @@ export function LogTab() {
       </div>
 
       {!isLoading && !error && all.length === 0 ? (
-        <EmptyState icon={History} title={t('adm.log.emptyTitle')} message={t('adm.log.empty')}>
-          <Link to="/settings?tab=rules" className={buttonClass('secondary', 'md')}>
-            {t('adm.log.toRules')}
+        <EmptyState icon={History} title={t('adm.log.emptyTitle')} message={ops ? t('plat.opsLogEmpty') : t('adm.log.empty')}>
+          <Link to={ops ? '/settings?tab=ops' : '/settings?tab=rules'} className={buttonClass('secondary', 'md')}>
+            {ops ? t('plat.toOpsRules') : t('adm.log.toRules')}
           </Link>
         </EmptyState>
       ) : (
@@ -191,7 +196,7 @@ export function LogTab() {
           error={error}
           onRetry={() => refetch()}
           empty={t('adm.log.emptyFilter', { status: label(status).toLowerCase() })}
-          caption={t('adm.set.log')}
+          caption={ops ? t('plat.opsLog') : t('adm.set.log')}
           rowClassName={(r) => (r.status === 'failed' ? 'bg-red-50/30' : '')}
         />
       )}

@@ -27,7 +27,7 @@ export interface SetupStep {
 export function useSetupProgress() {
   const { can } = useAuth()
   const { sites, siteId, site, isLoading: sitesLoading } = useSite()
-  const enabled = can('viewSettings') && !!siteId
+  const enabled = can('viewSetup') && !!siteId
   const opts = { enabled, staleTime: 15_000 }
 
   const guards = useQuery({ queryKey: ['guards', siteId], queryFn: () => apiGet<Guard[]>('/guards', { site_id: siteId }), ...opts })
@@ -79,7 +79,7 @@ export function useSetupProgress() {
   const done = steps.filter((s) => s.state === 'done').length
   const isLoading = sitesLoading || (enabled && [guards, templates, routes, devices, rules].some((q) => q.isLoading))
   return {
-    enabled: can('viewSettings'),
+    enabled: can('viewSetup'),
     site,
     steps,
     done,

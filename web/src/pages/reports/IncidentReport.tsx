@@ -65,7 +65,7 @@ export function IncidentReport({ site, title }: { site: Site; title: string }) {
     { key: 'status', header: t('common.status'), cell: (r) => <StatusBadge status={r.status} /> },
     { key: 'guard', header: t('adm.rep.reportedBy'), cell: (r) => <span className="whitespace-nowrap">{r.guard_name || '—'}</span> },
     { key: 'desc', header: t('common.description'), cell: (r) => <p className="min-w-[16rem] max-w-md whitespace-pre-wrap text-gray-700">{r.description ?? '—'}</p> },
-    { key: 'photos', header: t('inc.photos'), numeric: true, cell: (r) => r.photo_object_keys.length || <span className="text-gray-400">0</span> },
+    { key: 'photos', header: t('inc.photos'), numeric: true, cell: (r) => r.photo_object_keys.length || <span className="text-gray-500">0</span> },
   ]
 
   return (

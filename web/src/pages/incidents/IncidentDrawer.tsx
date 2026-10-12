@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { FilePen, FileText, ImageOff, Plus } from 'lucide-react'
 import apiClient, { apiGet } from '../../api/client'
 import { TableSkeleton } from '../../components/LoadingSkeleton'
+import { FlagBadges } from '../../components/FlagBadges'
+import { canOpenInTab, mediaUrl } from '../../lib/media'
 import { SeverityBadge, StatusBadge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { Field, FormError, Input, Select, Textarea } from '../../components/ui/Form'
@@ -31,29 +33,36 @@ function SectionTitle({ id, children, action }: { id: string; children: string; 
 
 function PhotoGrid({ photos }: { photos: Photo[] }) {
   const { t } = useI18n()
-  if (photos.length === 0) return <p className="rounded-xl border border-dashed border-gray-300 px-4 py-5 text-center text-sm text-gray-500">{t('ops.inc.noPhotos')}</p>
+  if (photos.length === 0) return <p className="rounded-xl border border-dashed border-gray-300 px-4 py-5 text-center text-sm text-gray-600">{t('ops.inc.noPhotos')}</p>
   return (
     <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-      {photos.map((p, i) => (
-        <li key={p.key} className="aspect-square overflow-hidden rounded-xl border border-gray-200 bg-gray-100">
-          {p.uploaded && p.url ? (
-            <a
-              href={p.url}
-              target="_blank"
-              rel="noreferrer"
-              className="group block h-full focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500"
-              aria-label={`${t('ops.inc.photoAlt', { n: i + 1 })} — ${t('common.openFull')}`}
-            >
-              <img src={p.url} alt="" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" loading="lazy" />
-            </a>
-          ) : (
-            <div className="flex h-full flex-col items-center justify-center gap-1.5 p-2 text-center text-xs text-gray-500">
-              <ImageOff className="h-6 w-6 text-gray-400" aria-hidden="true" />
-              {t('common.pendingUpload')}
-            </div>
-          )}
-        </li>
-      ))}
+      {photos.map((p, i) => {
+        // Only https:/blob:/same-origin URLs are rendered (WEB-9).
+        const url = p.uploaded ? mediaUrl(p.url) : undefined
+        const alt = t('ops.inc.photoAlt', { n: i + 1 })
+        return (
+          <li key={p.key} className="aspect-square overflow-hidden rounded-xl border border-gray-200 bg-gray-100">
+            {url && canOpenInTab(url) ? (
+              <a
+                href={url}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="group block h-full focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500"
+                aria-label={`${alt} — ${t('common.openFull')}`}
+              >
+                <img src={url} alt="" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" loading="lazy" />
+              </a>
+            ) : url ? (
+              <img src={url} alt={alt} className="h-full w-full object-cover" loading="lazy" />
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center gap-1.5 p-2 text-center text-xs text-gray-600">
+                <ImageOff className="h-6 w-6 text-gray-500" aria-hidden="true" />
+                {p.uploaded ? t('plat.photoBlocked') : t('common.pendingUpload')}
+              </div>
+            )}
+          </li>
+        )
+      })}
     </ul>
   )
 }
@@ -187,6 +196,7 @@ export function IncidentDrawer({ site, id, onClose }: { site: Site; id: string; 
             <div className="flex flex-wrap items-center gap-2">
               <SeverityBadge severity={inc.severity} />
               <StatusBadge status={inc.status} />
+              <FlagBadges flags={inc.flags} />
             </div>
             <p className="mt-2 text-lg font-semibold tracking-tight text-gray-900">{incidentTypeLabel(lang, inc.type)}</p>
             <p className="text-sm text-gray-500">

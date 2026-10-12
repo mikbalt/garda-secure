@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Camera, ChevronRight, Clock4, MapPin, ShieldAlert, SlidersHorizontal, UserRound, X } from 'lucide-react'
 import { apiGet } from '../../api/client'
 import { TableSkeleton } from '../../components/LoadingSkeleton'
+import { FlagIndicator } from '../../components/FlagIndicator'
 import { SeverityBadge, StatusBadge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { Select } from '../../components/ui/Form'
@@ -32,6 +33,7 @@ function IncidentRow({ inc, tz, onOpen }: { inc: Incident; tz: string; onOpen: (
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm font-semibold text-gray-900">{incidentTypeLabel(lang, inc.type)}</p>
             <SeverityBadge severity={inc.severity} />
+            {(inc.flags?.length ?? 0) > 0 && <FlagIndicator flags={inc.flags!} />}
           </div>
           {inc.description && <p className="mt-0.5 line-clamp-1 text-sm text-gray-600">{inc.description}</p>}
           <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
@@ -43,7 +45,7 @@ function IncidentRow({ inc, tz, onOpen }: { inc: Incident; tz: string; onOpen: (
         </div>
         <div className="flex shrink-0 items-center gap-2 self-center">
           <StatusBadge status={inc.status} />
-          <ChevronRight className="h-4 w-4 text-gray-300 transition-colors group-hover:text-gray-500" aria-hidden="true" />
+          <ChevronRight className="h-4 w-4 text-gray-500 transition-colors group-hover:text-gray-600" aria-hidden="true" />
         </div>
       </button>
     </li>
@@ -158,7 +160,7 @@ export function IncidentsTab({ site }: { site: Site }) {
             {groups.map(([day, items]) => (
               <section key={day} aria-label={dayLabel(day)} className="border-t border-gray-100 first:border-t-0">
                 <h3 className="border-b border-gray-100 bg-gray-50/80 px-5 py-2 text-xs font-semibold text-gray-500">
-                  {dayLabel(day)} <span className="font-normal text-gray-400">· {items.length}</span>
+                  {dayLabel(day)} <span className="font-normal text-gray-500">· {items.length}</span>
                 </h3>
                 <ul className="divide-y divide-gray-100">
                   {items.map((i) => (

@@ -9,6 +9,10 @@
 #   KEYCLOAK_CLIENT_ID  public web client              (default securepatrol-web)
 #   KEYCLOAK_REALMS     comma list "realm:Label,..."   (default securepatrol)
 #   DEMO                "true" = run on built-in sample data, no backend/Keycloak
+#                       (refused by the app when API_URL/KEYCLOAK_URL is an
+#                       absolute URL, i.e. a real server is configured)
+#   DEMO_FORCE          "true" = allow DEMO even with absolute URLs
+#   IDLE_LOGOUT_MINUTES sign out after N minutes without input (default 30, 0 = off)
 set -eu
 
 OUT="${SP_CONFIG_PATH:-/usr/share/nginx/html/config.js}"
@@ -39,6 +43,13 @@ for item in ${KEYCLOAK_REALMS:-securepatrol}; do
 done
 IFS=$old_ifs
 
+idle="${IDLE_LOGOUT_MINUTES:-30}"
+case "$idle" in
+  ''|*[!0-9]*)
+    echo "securepatrol: IDLE_LOGOUT_MINUTES must be a whole number, using 30" >&2
+    idle=30 ;;
+esac
+
 cat > "$OUT" <<EOF
 // Generated at container start by /docker-entrypoint.d/40-securepatrol-config.sh
 window.__SP_CONFIG__ = {
@@ -46,7 +57,9 @@ window.__SP_CONFIG__ = {
   "keycloakUrl": "$(esc "${KEYCLOAK_URL:-/auth}")",
   "keycloakClientId": "$(esc "${KEYCLOAK_CLIENT_ID:-securepatrol-web}")",
   "realms": [$realms],
-  "demo": $( [ "${DEMO:-false}" = "true" ] && echo true || echo false )
+  "demo": $( [ "${DEMO:-false}" = "true" ] && echo true || echo false ),
+  "demoForce": $( [ "${DEMO_FORCE:-false}" = "true" ] && echo true || echo false ),
+  "idleLogoutMinutes": $idle
 };
 EOF
 

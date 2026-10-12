@@ -191,6 +191,7 @@ services:
       KEYCLOAK_URL: ${KEYCLOAK_PUBLIC_URL}
       KEYCLOAK_CLIENT_ID: securepatrol-web
       KEYCLOAK_REALMS: ${WEB_KEYCLOAK_REALMS}
+      IDLE_LOGOUT_MINUTES: ${IDLE_LOGOUT_MINUTES:-30}
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:80/"]
       interval: 15s

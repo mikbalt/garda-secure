@@ -3,6 +3,7 @@ import { useMutation, useQueryClient, type UseQueryResult } from '@tanstack/reac
 import { CalendarSearch, CheckCheck, CircleCheckBig, CloudOff } from 'lucide-react'
 import apiClient from '../../api/client'
 import { TableSkeleton } from '../../components/LoadingSkeleton'
+import { FlagBadges } from '../../components/FlagBadges'
 import { MediaPhotoButton } from '../../components/MediaPhoto'
 import { Badge, StatusBadge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
@@ -55,7 +56,16 @@ export function ReviewTab({ site, query, onOpenDay }: Props) {
 
   const columns: Column<AttendanceRecord>[] = [
     { key: 'guard', header: t('common.guard'), cell: (r) => <PersonCell name={r.guard_name || '—'} sub={formatLongDay(dayOf(r), lang)} /> },
-    { key: 'status', header: t('ppl.att.recordedAs'), cell: (r) => <StatusBadge status={r.status} /> },
+    {
+      key: 'status',
+      header: t('ppl.att.recordedAs'),
+      cell: (r) => (
+        <span className="flex flex-wrap items-center gap-1.5">
+          <StatusBadge status={r.status} />
+          <FlagBadges flags={r.flags} />
+        </span>
+      ),
+    },
     {
       key: 'in',
       header: t('att.clockIn'),
@@ -70,9 +80,7 @@ export function ReviewTab({ site, query, onOpenDay }: Props) {
     {
       key: 'received',
       header: t('ppl.att.received'),
-      cell: (r) => (
-<span className="whitespace-nowrap text-gray-600">{formatDateTime(r.created_at, tz, lang)}</span>
-      ),
+      cell: (r) => <span className="whitespace-nowrap text-gray-600">{formatDateTime(r.received_at ?? r.created_at, tz, lang)}</span>,
     },
     {
       key: 'selfie',
@@ -124,7 +132,8 @@ export function ReviewTab({ site, query, onOpenDay }: Props) {
         </span>
         <div className="min-w-0">
           <p className="font-semibold">{t('ppl.att.reviewWhy')}</p>
-          <p className="mt-0.5 text-violet-900/80">{t('ppl.att.reviewWhyBody')}</p>
+          <p className="mt-0.5 text-violet-900">{t('ppl.att.reviewWhyBody')}</p>
+          <p className="mt-1 text-violet-900">{t('flag.reviewWhy')}</p>
         </div>
       </div>
       {body}
@@ -151,7 +160,8 @@ export function ReviewTab({ site, query, onOpenDay }: Props) {
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-gray-900">{target.guard_name || '—'}</p>
                 <p className="text-xs text-gray-500">
-                  {t('att.clockIn')} {formatDateTime(target.clock_in_at, tz, lang)} · {t('ppl.att.received')} {formatDateTime(target.created_at, tz, lang)}
+                  {t('att.clockIn')} {formatDateTime(target.clock_in_at, tz, lang)} · {t('ppl.att.received')}{' '}
+                  {formatDateTime(target.received_at ?? target.created_at, tz, lang)}
                 </p>
               </div>
               <StatusBadge status={target.status} />

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronRight, History } from 'lucide-react'
+import { ChevronRight, Flag, History } from 'lucide-react'
 import { apiGet } from '../../api/client'
 import { TableSkeleton } from '../../components/LoadingSkeleton'
 import { StatusBadge } from '../../components/ui/Badge'
@@ -94,12 +94,17 @@ export function SessionsTab({ site }: { site: Site }) {
                             {t('ops.pat.breachShort', { n: r.sla_breaches })}
                           </span>
                         )}
+                        {(r.flagged_scans ?? 0) > 0 && (
+                          <span className="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900 ring-1 ring-inset ring-amber-300">
+                            {t('flag.scansFlagged', { n: r.flagged_scans ?? 0 })}
+                          </span>
+                        )}
                       </div>
                     </button>
                   </li>
                 ))}
               </ul>
-              <div className="scroll-thin relative hidden overflow-x-auto rounded-2xl border border-gray-200/80 bg-white shadow-card sm:block">
+              <div tabIndex={0} className="scroll-thin relative hidden overflow-x-auto rounded-2xl border border-gray-200/80 bg-white shadow-card focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 sm:block">
                 <table className="min-w-full text-sm">
                   <caption className="sr-only">{t('ops.pat.tabHistory')}</caption>
                   <thead className="border-b border-gray-200 bg-gray-50/80">
@@ -134,7 +139,7 @@ export function SessionsTab({ site }: { site: Site }) {
                         <td className="whitespace-nowrap px-4 py-3">
                           <div className="text-gray-800">
                             {formatTime(r.started_at, tz)} – {r.ended_at ? formatTime(r.ended_at, tz) : '…'}
-                            {r.ended_at && <span className="ml-1.5 text-xs text-gray-400">{fmtDuration(Date.parse(r.ended_at) - Date.parse(r.started_at), t)}</span>}
+                            {r.ended_at && <span className="ml-1.5 text-xs text-gray-500">{fmtDuration(Date.parse(r.ended_at) - Date.parse(r.started_at), t)}</span>}
                           </div>
                           <div className="text-xs text-gray-500">{formatDay(localDateOf(r.started_at, tz), lang)}</div>
                         </td>
@@ -145,7 +150,7 @@ export function SessionsTab({ site }: { site: Site }) {
                           <div className="flex w-44 items-center gap-2">
                             <MiniBar pct={r.completion_pct} label={`${r.route_name} — ${r.guard_name}`} />
                             <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-gray-600">
-                              {Math.round(r.completion_pct)}% <span className="text-gray-400">· {r.scanned_count}/{r.total_checkpoints}</span>
+                              {Math.round(r.completion_pct)}% <span className="text-gray-500">· {r.scanned_count}/{r.total_checkpoints}</span>
                             </span>
                           </div>
                         </td>
@@ -155,10 +160,16 @@ export function SessionsTab({ site }: { site: Site }) {
                               {r.sla_breaches}
                             </span>
                           ) : (
-                            <span className="text-gray-400">0</span>
+                            <span className="text-gray-500">0</span>
+                          )}
+                          {(r.flagged_scans ?? 0) > 0 && (
+                            <span className="ml-1.5 inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900 ring-1 ring-inset ring-amber-300">
+                              <Flag className="h-3 w-3" aria-hidden="true" />
+                              {t('flag.scansFlagged', { n: r.flagged_scans ?? 0 })}
+                            </span>
                           )}
                         </td>
-                        <td className="px-2 py-3 text-gray-300">
+                        <td className="px-2 py-3 text-gray-400">
                           <ChevronRight className="h-4 w-4" aria-hidden="true" />
                         </td>
                       </tr>

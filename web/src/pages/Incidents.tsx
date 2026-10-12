@@ -3,7 +3,7 @@ import { ShieldAlert } from 'lucide-react'
 import { apiGet } from '../api/client'
 import { RequireSite } from '../components/RequireSite'
 import { PageHeader } from '../components/ui/States'
-import { Tabs, type TabItem } from '../components/ui/Tabs'
+import { MaybeTabPanel, Tabs, type TabItem } from '../components/ui/Tabs'
 import { useAuth } from '../hooks/useAuth'
 import { useTabParam } from '../hooks/useTabParam'
 import { useT } from '../i18n/context'
@@ -43,13 +43,13 @@ function IncidentsContent({ site }: { site: Site }) {
   )
   return (
     <>
-      {tabs.length > 1 && <Tabs label={t('inc.title')} tabs={tabs} active={tab} onChange={setTab} />}
-      <div className={tabs.length > 1 ? 'pt-5' : ''}>
+      {tabs.length > 1 && <Tabs idBase="inc" label={t('inc.title')} tabs={tabs} active={tab} onChange={setTab} />}
+      <MaybeTabPanel tabbed={tabs.length > 1} idBase="inc" active={tab} className={tabs.length > 1 ? 'pt-5' : ''}>
         {tab === 'incidents' && <IncidentsTab site={site} />}
         {tab === 'sos' && <SosTab site={site} />}
         {tab === 'defects' && <DefectsTab site={site} />}
         {tab === 'visitors' && <VisitorsTab site={site} />}
-      </div>
+      </MaybeTabPanel>
     </>
   )
 }

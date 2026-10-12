@@ -234,7 +234,7 @@ export function RangePicker({ value, onChange, today }: { value: Range; onChange
       <div role="group" aria-label={t('adm.rep.quickRange')}>
         <p className="mb-1.5 text-sm font-medium text-gray-700" aria-hidden="true">
           {t('adm.rep.quickRange')}
-          {days > 0 && <span className="ml-1.5 font-normal text-gray-400">· {t('adm.rep.nDays', { n: days })}</span>}
+          {days > 0 && <span className="ml-1.5 font-normal text-gray-500">· {t('adm.rep.nDays', { n: days })}</span>}
         </p>
         <div className="flex flex-wrap gap-1 rounded-lg bg-gray-100 p-0.5">
           {presets.map((p) => {

@@ -48,7 +48,9 @@ golangci-lint run --build-tags integration && gosec -quiet ./... && govulncheck 
 If Go is not installed, a portable toolchain works: download `go1.26.x` zip,
 put its `bin` on PATH and set `GOTOOLCHAIN=local`.
 
-Web (from `web/`): `npm ci && npm run lint && npx tsc --noEmit && npm run build`
+Web (from `web/`): `npm ci && npm run lint && npx tsc --noEmit && npm test && npm run build`;
+e2e smoke (demo build + production CSP + axe): `npm run e2e` (locally
+`PW_CHANNEL=chrome` uses the installed Chrome instead of Playwright's).
 
 Infra (from `infra/`): `cp .env.example .env`, then
 `docker compose -f docker-compose.yml -f docker-compose.app.yml up -d`.
@@ -94,8 +96,14 @@ Infra (from `infra/`): `cp .env.example .env`, then
   Keycloak (`src/demo/mockApi.ts`). Keep the mock in sync when you change the API.
 - API client base URL is `VITE_API_URL` and **already includes `/api/v1`**; call
   paths like `/sites`, `/attendance/daily`.
-- All UI strings go through i18n (English + Bahasa Indonesia).
+- All UI strings go through i18n (English + Bahasa Indonesia); every API error
+  `code` gets a translation in `src/i18n/errors.ts` (parity is unit-tested).
 - Every site-scoped page uses the global site selector.
+- Roles/capabilities live in `src/lib/roles.ts` (incl. `platform-admin` and photo
+  access per kind); add a capability there, not ad-hoc role checks.
+- Render URLs from the API (photos, downloads) only through `lib/media.ts`
+  (`https:`/`blob:`/same-origin). No inline scripts, `eval` or foreign origins —
+  the nginx CSP forbids them and the e2e run enforces it.
 
 ## Don'ts
 

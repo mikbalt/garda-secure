@@ -1,6 +1,6 @@
 import { ArrowRight, Building2, ClipboardCheck, Loader2, Route, ShieldCheck, Siren } from 'lucide-react'
 import { config } from '../config'
-import { useI18n } from '../i18n/context'
+import { useI18n, type Key } from '../i18n/context'
 import type { Lang } from '../lib/time'
 
 function LangToggle({ dark = false }: { dark?: boolean }) {
@@ -12,9 +12,10 @@ function LangToggle({ dark = false }: { dark?: boolean }) {
           key={l}
           type="button"
           aria-pressed={lang === l}
+          aria-label={l === 'id' ? t('lang.id') : t('lang.en')}
           onClick={() => setLang(l)}
           className={`rounded-md px-2.5 py-1 text-xs font-semibold uppercase transition-colors ${
-            lang === l ? (dark ? 'bg-white text-gray-900' : 'bg-white text-gray-900 shadow-card') : dark ? 'text-gray-300 hover:text-white' : 'text-gray-500 hover:text-gray-800'
+            lang === l ? (dark ? 'bg-white text-gray-900' : 'bg-white text-gray-900 shadow-card') : dark ? 'text-gray-200 hover:text-white' : 'text-gray-600 hover:text-gray-900'
           }`}
         >
           {l}
@@ -33,15 +34,15 @@ export function BrandMark({ size = 'md' }: { size?: 'md' | 'lg' }) {
   )
 }
 
-const FEATURES = [
-  { icon: Route, id: 'Patroli dengan QR & batas waktu per titik', en: 'QR patrols with per-checkpoint time limits' },
-  { icon: ClipboardCheck, id: 'Kehadiran & rekap bulanan untuk penggajian', en: 'Attendance and monthly payroll recap' },
-  { icon: Siren, id: 'SOS & insiden langsung ke supervisor', en: 'SOS and incidents straight to supervisors' },
+const FEATURES: { icon: typeof Route; label: Key }[] = [
+  { icon: Route, label: 'org.feature.patrol' },
+  { icon: ClipboardCheck, label: 'org.feature.attendance' },
+  { icon: Siren, label: 'org.feature.sos' },
 ]
 
 /** "Choose organisation" screen shown before Keycloak when several realms exist. */
 export function RealmPicker({ onChoose }: { onChoose: (realm: string) => void }) {
-  const { t, lang } = useI18n()
+  const { t } = useI18n()
   return (
     <main className="grid min-h-full bg-white lg:grid-cols-[1fr_minmax(28rem,36rem)]">
       <section className="relative hidden overflow-hidden bg-ink-900 p-12 text-white lg:flex lg:flex-col">
@@ -53,15 +54,15 @@ export function RealmPicker({ onChoose }: { onChoose: (realm: string) => void })
         </div>
         <div className="relative mt-auto max-w-lg">
           <h2 className="text-4xl font-semibold leading-tight tracking-tight">
-            {lang === 'id' ? 'Operasional keamanan, dalam satu layar.' : 'Security operations, on one screen.'}
+            {t('org.hero')}
           </h2>
           <ul className="mt-8 space-y-4">
-            {FEATURES.map(({ icon: Icon, id, en }) => (
-              <li key={id} className="flex items-center gap-3 text-gray-300">
+            {FEATURES.map(({ icon: Icon, label }) => (
+              <li key={label} className="flex items-center gap-3 text-gray-200">
                 <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.06] text-primary-200 ring-1 ring-white/10">
                   <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
                 </span>
-                {lang === 'id' ? id : en}
+                {t(label)}
               </li>
             ))}
           </ul>
@@ -78,7 +79,7 @@ export function RealmPicker({ onChoose }: { onChoose: (realm: string) => void })
         </div>
         <div className="mx-auto my-auto w-full max-w-sm py-10">
           <h1 className="text-2xl font-semibold tracking-tight text-gray-900">{t('org.choose')}</h1>
-          <p className="mb-6 mt-2 text-sm text-gray-500">{t('org.chooseHint')}</p>
+          <p className="mb-6 mt-2 text-sm text-gray-600">{t('org.chooseHint')}</p>
           <ul className="space-y-2.5">
             {config.realms.map((r) => (
               <li key={r.id}>
@@ -91,7 +92,7 @@ export function RealmPicker({ onChoose }: { onChoose: (realm: string) => void })
                     <Building2 className="h-5 w-5" aria-hidden="true" />
                   </span>
                   <span className="flex-1 font-medium text-gray-900">{r.label}</span>
-                  <ArrowRight className="h-4 w-4 text-gray-300 transition-transform group-hover:translate-x-0.5 group-hover:text-primary-500" aria-hidden="true" />
+                  <ArrowRight className="h-4 w-4 text-gray-500 transition-transform group-hover:translate-x-0.5 group-hover:text-primary-500" aria-hidden="true" />
                 </button>
               </li>
             ))}
@@ -107,7 +108,7 @@ export function LoadingScreen({ label }: { label: string }) {
   return (
     <main role="status" aria-live="polite" className="flex min-h-full flex-col items-center justify-center gap-5 bg-gray-50">
       <BrandMark size="lg" />
-      <span className="inline-flex items-center gap-2 text-sm text-gray-500">
+      <span className="inline-flex items-center gap-2 text-sm text-gray-600">
         <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
         {label}
       </span>

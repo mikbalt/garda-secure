@@ -41,7 +41,7 @@ function DefectCard({ d, now, busy, onMove }: { d: DefectReport; now: number; bu
           <p className="truncate text-sm font-semibold text-gray-900">{title}</p>
           {d.location && (
             <p className="mt-0.5 flex items-center gap-1 text-xs text-gray-500">
-              <MapPin className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden="true" />
+              <MapPin className="h-3.5 w-3.5 shrink-0 text-gray-500" aria-hidden="true" />
               <span className="truncate">{d.location}</span>
             </p>
           )}

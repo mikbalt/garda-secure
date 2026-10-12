@@ -35,7 +35,7 @@ export function MonthlyReport({ site, title }: { site: Site; title: string }) {
   const attendance = ratio(present + late, present + late + absent)
   const patrolAvg = average(rows.filter((r) => r.patrol_sessions > 0).map((r) => r.patrol_completion_pct))
 
-  const muted = (n: number, warn = false) => (n > 0 ? <span className={warn ? 'font-medium text-red-700' : ''}>{n}</span> : <span className="text-gray-400">0</span>)
+  const muted = (n: number, warn = false) => (n > 0 ? <span className={warn ? 'font-medium text-red-700' : ''}>{n}</span> : <span className="text-gray-500">0</span>)
 
   const columns: Column<MonthlyRecapRow>[] = [
     {
@@ -56,7 +56,7 @@ export function MonthlyReport({ site, title }: { site: Site; title: string }) {
     { key: 'pending', header: t('adm.rep.upcoming'), numeric: true, cell: (r) => muted(r.pending) },
     { key: 'hours', header: t('rep.totalHours'), numeric: true, cell: (r) => <span className="font-medium text-gray-900">{formatNumber(r.total_hours, lang, 1)}</span> },
     { key: 'patrols', header: t('rep.patrols'), numeric: true, cell: (r) => r.patrol_sessions },
-    { key: 'patrolPct', header: t('rep.patrolPct'), numeric: true, cell: (r) => (r.patrol_sessions > 0 ? <PctCell value={r.patrol_completion_pct} /> : <span className="text-gray-400">—</span>) },
+    { key: 'patrolPct', header: t('rep.patrolPct'), numeric: true, cell: (r) => (r.patrol_sessions > 0 ? <PctCell value={r.patrol_completion_pct} /> : <span className="text-gray-500">—</span>) },
   ]
 
   return (

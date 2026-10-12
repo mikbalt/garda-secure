@@ -12,7 +12,7 @@ import {
 import { useT } from '../../i18n/context'
 
 const control =
-  'block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm transition-colors placeholder:text-gray-400 hover:border-gray-400 focus:border-primary-500 focus:outline-none focus:ring-4 focus:ring-primary-500/15 disabled:bg-gray-50 disabled:text-gray-500 aria-[invalid=true]:border-red-500 aria-[invalid=true]:focus:ring-red-500/15'
+  'block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm transition-colors placeholder:text-gray-500 hover:border-gray-400 focus:border-primary-500 focus:outline-none focus:ring-4 focus:ring-primary-500/15 disabled:bg-gray-50 disabled:text-gray-500 aria-[invalid=true]:border-red-500 aria-[invalid=true]:focus:ring-red-500/15'
 
 interface FieldProps {
   label: string
@@ -50,7 +50,7 @@ export function Field({ label, children, hint, error, required, optional, classN
             *
           </span>
         )}
-        {optional && <span className="font-normal text-gray-400"> ({t('common.optional')})</span>}
+        {optional && <span className="font-normal text-gray-500"> ({t('common.optional')})</span>}
       </label>
       {control}
       {hint && (

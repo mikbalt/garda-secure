@@ -38,6 +38,9 @@ export function initKeycloak(realm: string): Promise<boolean> {
   currentRealm = realm
   const instance = new Keycloak({ url: config.keycloakUrl, realm, clientId: config.keycloakClientId })
   keycloak = instance
+  // CSP (WEB-2): no session-check iframe and no silent check-sso, so keycloak-js
+  // creates no iframes at all (frame-src 'self' would allow a same-origin one);
+  // token calls go to KEYCLOAK_URL, which must be same-origin (connect-src 'self').
   const promise = instance
     .init({ onLoad: 'login-required', checkLoginIframe: false, pkceMethod: 'S256' })
     .then((authenticated) => {

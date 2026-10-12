@@ -29,7 +29,7 @@ function RouteCard({ route, canEdit, onEdit, onQr }: { route: PatrolRoute; canEd
       <div className="flex items-start gap-3 px-5 pt-5">
         <span
           className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ring-1 ${
-            route.active ? 'bg-primary-50 text-primary-600 ring-primary-100' : 'bg-gray-100 text-gray-400 ring-gray-200'
+            route.active ? 'bg-primary-50 text-primary-600 ring-primary-100' : 'bg-gray-100 text-gray-500 ring-gray-200'
           }`}
         >
           <RouteIcon className="h-[18px] w-[18px]" aria-hidden="true" />
@@ -44,7 +44,7 @@ function RouteCard({ route, canEdit, onEdit, onQr }: { route: PatrolRoute; canEd
       </div>
 
       <div className="mx-5 mt-3 flex items-start gap-2 rounded-lg bg-gray-50 px-3 py-2 text-xs">
-        <Timer className="mt-px h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden="true" />
+        <Timer className="mt-px h-3.5 w-3.5 shrink-0 text-gray-500" aria-hidden="true" />
         <div>
           <p className="font-medium text-gray-700">{slaText}</p>
           {total > 0 && <p className="text-gray-500">{t('ops.pat.roundTime', { d: fmtDuration(total * 60_000, t) })}</p>}
@@ -56,7 +56,7 @@ function RouteCard({ route, canEdit, onEdit, onQr }: { route: PatrolRoute; canEd
           <li key={c.id} className="flex items-center gap-2.5 text-sm">
             <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-100 text-[11px] font-semibold tabular-nums text-gray-600">{i + 1}</span>
             <span className="min-w-0 flex-1 truncate text-gray-800">{c.name}</span>
-            <span className="shrink-0 text-xs tabular-nums text-gray-400">{c.sla_minutes ? t('ops.dur.m', { m: c.sla_minutes }) : '—'}</span>
+            <span className="shrink-0 text-xs tabular-nums text-gray-500">{c.sla_minutes ? t('ops.dur.m', { m: c.sla_minutes }) : '—'}</span>
           </li>
         ))}
         {cps.length > PREVIEW && <li className="pl-7 text-xs text-gray-500">{t('ops.pat.moreCps', { n: cps.length - PREVIEW })}</li>}

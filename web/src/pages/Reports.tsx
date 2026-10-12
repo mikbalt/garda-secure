@@ -24,7 +24,7 @@ function ReportCard({ def }: { def: ReportDef }) {
         <span className={`flex h-11 w-11 items-center justify-center rounded-xl ring-1 ${toneClass[def.tone]}`}>
           <Icon className="h-5 w-5" aria-hidden="true" />
         </span>
-        <ArrowRight className="h-4 w-4 text-gray-300 transition-all group-hover:translate-x-0.5 group-hover:text-primary-500" aria-hidden="true" />
+        <ArrowRight className="h-4 w-4 text-gray-400 transition-all group-hover:translate-x-0.5 group-hover:text-primary-500" aria-hidden="true" />
       </div>
       <h2 className="mt-4 text-[15px] font-semibold text-gray-900">{t(def.title)}</h2>
       <p className="mt-1 flex-1 text-sm leading-relaxed text-gray-600">{t(def.question)}</p>
@@ -33,7 +33,7 @@ function ReportCard({ def }: { def: ReportDef }) {
           <Users className="h-3.5 w-3.5" aria-hidden="true" />
           {t(def.audience)}
         </span>
-        <span className="inline-flex items-center gap-2 text-gray-400">
+        <span className="inline-flex items-center gap-2 text-gray-500">
           <span className="inline-flex items-center gap-1">
             <FileSpreadsheet className="h-3.5 w-3.5" aria-hidden="true" />
             CSV

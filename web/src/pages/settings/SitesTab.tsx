@@ -46,20 +46,20 @@ function SiteCard({ site, current, tablets, onEdit, onSelect }: { site: Site; cu
           </div>
           {site.client_id && <p className="text-xs font-medium text-gray-500">{site.client_id}</p>}
           <p className="mt-1.5 flex items-start gap-1.5 text-sm text-gray-600">
-            <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden="true" />
-            <span className="min-w-0">{site.address || <span className="text-gray-400">{t('adm.site.noAddress')}</span>}</span>
+            <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-500" aria-hidden="true" />
+            <span className="min-w-0">{site.address || <span className="text-gray-500">{t('adm.site.noAddress')}</span>}</span>
           </p>
           <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
             <span className="inline-flex items-center gap-1.5">
-              <Globe2 className="h-3.5 w-3.5 text-gray-400" aria-hidden="true" />
+              <Globe2 className="h-3.5 w-3.5 text-gray-500" aria-hidden="true" />
               {site.timezone}
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <Clock className="h-3.5 w-3.5 text-gray-400" aria-hidden="true" />
+              <Clock className="h-3.5 w-3.5 text-gray-500" aria-hidden="true" />
               {t('adm.site.localNow', { time: formatTime(new Date().toISOString(), site.timezone) })}
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <Tablet className="h-3.5 w-3.5 text-gray-400" aria-hidden="true" />
+              <Tablet className="h-3.5 w-3.5 text-gray-500" aria-hidden="true" />
               {t('adm.site.tablets', { n: tablets })}
             </span>
           </p>

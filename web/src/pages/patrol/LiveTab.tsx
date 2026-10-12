@@ -79,7 +79,7 @@ function LiveCard({ patrol, tz, now, onOpen }: { patrol: LivePatrol; tz: string;
           </div>
         )}
 
-        <span className="mt-auto flex w-full items-center justify-end gap-1 pt-3 text-xs font-medium text-primary-600 opacity-80 group-hover:opacity-100">
+        <span className="mt-auto flex w-full items-center justify-end gap-1 pt-3 text-xs font-medium text-primary-700 group-hover:text-primary-800">
           {t('ops.pat.openTimeline')}
           <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
         </span>

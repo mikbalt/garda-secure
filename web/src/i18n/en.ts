@@ -2,6 +2,7 @@ import { uxEn } from './ux.en'
 import { peopleEn } from './people.en'
 import { opsEn } from './ops.en'
 import { adminEn } from './admin.en'
+import { platformEn } from './platform.en'
 
 /** English dictionary. Keys are the source of truth for the `Key` type. */
 export const en = {
@@ -428,6 +429,7 @@ export const en = {
   ...peopleEn,
   ...opsEn,
   ...adminEn,
+  ...platformEn,
 } as const
 
 export type Key = keyof typeof en
