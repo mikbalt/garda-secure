@@ -334,6 +334,9 @@ func (h *Handler) listDevices(c *fiber.Ctx) error {
 	if p := middleware.GetPrincipal(c); p.SitesRestricted {
 		devices = slices.DeleteFunc(devices, func(d model.Device) bool { return d.SiteID != nil && !p.CanSeeSite(*d.SiteID) })
 	}
+	if err := h.withHealth(c, devices); err != nil {
+		return h.fail(c, err)
+	}
 	return c.JSON(devices)
 }
 

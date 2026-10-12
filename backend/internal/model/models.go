@@ -100,6 +100,10 @@ type Device struct {
 	LastSeenAt     *time.Time `json:"last_seen_at,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
+	// Latest health beacon of the tablet (POST /device/telemetry); filled
+	// in by GET /devices only.
+	Health   json.RawMessage `json:"health,omitempty"`
+	HealthAt *time.Time      `json:"health_at,omitempty"`
 }
 
 // ShiftTemplate is a recurring schedule from which concrete shifts are generated.
@@ -244,11 +248,14 @@ type Incident struct {
 	// the latest amendment of each field, else the original (F7). Amended
 	// is true once an amendment exists; Original* hold the filed values of
 	// fields whose effective value differs.
-	Amended             bool    `json:"amended"`
-	OriginalType        *string `json:"original_type,omitempty"`
-	OriginalSeverity    *string `json:"original_severity,omitempty"`
-	OriginalDescription *string `json:"original_description,omitempty"`
-	OriginalLocation    *string `json:"original_location,omitempty"`
+	// Optional position where the incident was filed (tablet GPS).
+	GPSLat              *float64 `json:"gps_lat,omitempty"`
+	GPSLng              *float64 `json:"gps_lng,omitempty"`
+	Amended             bool     `json:"amended"`
+	OriginalType        *string  `json:"original_type,omitempty"`
+	OriginalSeverity    *string  `json:"original_severity,omitempty"`
+	OriginalDescription *string  `json:"original_description,omitempty"`
+	OriginalLocation    *string  `json:"original_location,omitempty"`
 }
 
 // IncidentAmendment is a supervisor-approved correction to an incident.

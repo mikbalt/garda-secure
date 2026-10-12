@@ -24,7 +24,7 @@ func incidentCols(src string) string {
 	return `id, site_id, guard_id, device_id, ` + eff + `type, ` + eff + `severity, ` + eff + `description,
 	photo_object_keys, ` + eff + `location, status, occurred_at, created_at, updated_at, received_at, flags,
 	COALESCE((SELECT g.name FROM guards g WHERE g.id = ` + src + `.guard_id), ''),
-	type, severity, description, location, ` + amended
+	type, severity, description, location, ` + amended + `, gps_lat, gps_lng`
 }
 
 var (
@@ -39,7 +39,7 @@ func scanIncident(row pgx.Row) (model.Incident, error) {
 	err := row.Scan(&i.ID, &i.SiteID, &i.GuardID, &i.DeviceID, &i.Type, &i.Severity, &i.Description,
 		&i.PhotoObjectKeys, &i.Location, &i.Status, &i.OccurredAt, &i.CreatedAt, &i.UpdatedAt,
 		&i.ReceivedAt, &i.Flags, &i.GuardName, &origType, &origSeverity, &origDescription, &origLocation,
-		&i.Amended)
+		&i.Amended, &i.GPSLat, &i.GPSLng)
 	if i.PhotoObjectKeys == nil {
 		i.PhotoObjectKeys = []string{}
 	}
@@ -119,12 +119,12 @@ func CreateIncident(ctx context.Context, db DBTX, i model.Incident, clientID *st
 	out, err := scanIncident(db.QueryRow(ctx, `
 		INSERT INTO incidents
 		  (id, site_id, guard_id, device_id, type, severity, description, photo_object_keys,
-		   location, status, occurred_at, flags)
-		VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, 'open', $10, $11)
+		   location, status, occurred_at, flags, gps_lat, gps_lng)
+		VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, 'open', $10, $11, $12, $13)
 		ON CONFLICT (id) DO NOTHING
 		RETURNING `+incidentRetColumn,
 		clientID, i.SiteID, i.GuardID, i.DeviceID, i.Type, i.Severity, i.Description,
-		i.PhotoObjectKeys, i.Location, i.OccurredAt, flagsOrEmpty(i.Flags)))
+		i.PhotoObjectKeys, i.Location, i.OccurredAt, flagsOrEmpty(i.Flags), i.GPSLat, i.GPSLng))
 	if err == nil {
 		return &out, true, nil
 	}

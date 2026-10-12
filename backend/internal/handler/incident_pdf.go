@@ -51,6 +51,9 @@ func (h *Handler) incidentPDF(c *fiber.Ctx) error {
 		{"Guard", inc.GuardName},
 		{"Location", withOriginal(deref(inc.Location), inc.OriginalLocation)},
 	}
+	if g := gpsText(inc.GPSLat, inc.GPSLng); g != "" {
+		kv = append(kv, [2]string{"GPS", g})
+	}
 	if len(inc.Flags) > 0 {
 		kv = append(kv, [2]string{"Flags", strings.Join(inc.Flags, ", ")})
 	}

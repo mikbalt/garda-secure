@@ -75,6 +75,7 @@ func (h *Handler) Register(api fiber.Router) {
 	dev.Get("/shifts", append(field, h.deviceShifts)...)
 	dev.Get("/status", append(field, h.deviceStatus)...)
 	dev.Get("/sos", device, h.deviceSos)
+	dev.Post("/telemetry", device, h.deviceTelemetry)
 	dev.Post("/guard-sessions", device, h.createGuardSession)
 
 	sites := api.Group("/sites")

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -197,6 +198,7 @@ func (h *Handler) reportIncidents(c *fiber.Ctx) error {
 			{Name: "Guard", Kind: export.Text}, {Name: "Location", Kind: export.Text},
 			{Name: "Description", Kind: export.Text, Width: 2.6}, {Name: "Photos", Kind: export.Int},
 			{Name: "Amended", Kind: export.Text, Width: 0.6}, {Name: "Original values", Kind: export.Text, Width: 1.3},
+			{Name: "GPS", Kind: export.Text, Width: 1.1},
 			{Name: "ID", Kind: export.Text, Width: 1.6},
 		},
 	}
@@ -211,7 +213,7 @@ func (h *Handler) reportIncidents(c *fiber.Ctx) error {
 		row := []any{
 			r.OccurredAt.In(loc), r.Type, r.Severity, r.Status, r.GuardName, r.Location, r.Description,
 			len(r.PhotoObjectKeys), amended, originalValues(r.OriginalType, r.OriginalSeverity,
-				r.OriginalDescription, r.OriginalLocation),
+				r.OriginalDescription, r.OriginalLocation), gpsText(r.GPSLat, r.GPSLng),
 		}
 		if format != export.FormatPDF {
 			row = append(row, r.ID)
@@ -219,6 +221,14 @@ func (h *Handler) reportIncidents(c *fiber.Ctx) error {
 		t.Rows = append(t.Rows, row)
 	}
 	return h.sendExport(c, format, "incidents", t)
+}
+
+// gpsText renders an optional position as "lat,lng".
+func gpsText(lat, lng *float64) string {
+	if lat == nil || lng == nil {
+		return ""
+	}
+	return strconv.FormatFloat(*lat, 'f', 6, 64) + "," + strconv.FormatFloat(*lng, 'f', 6, 64)
 }
 
 // originalValues summarises the filed values an amendment replaced.

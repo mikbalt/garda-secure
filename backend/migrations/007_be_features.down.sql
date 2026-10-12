@@ -9,6 +9,8 @@ DROP INDEX IF EXISTS idx_attendance_retention;
 DROP TABLE IF EXISTS site_floorplans;
 ALTER TABLE patrol_sessions DROP COLUMN IF EXISTS route_snapshot;
 DROP VIEW IF EXISTS incidents_effective;
+ALTER TABLE devices   DROP COLUMN IF EXISTS health_at, DROP COLUMN IF EXISTS health;
+ALTER TABLE incidents DROP COLUMN IF EXISTS gps_lng, DROP COLUMN IF EXISTS gps_lat;
 DROP TABLE IF EXISTS attendance_overrides;
 DROP INDEX IF EXISTS idx_sos_unacknowledged;
 

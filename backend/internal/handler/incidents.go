@@ -107,7 +107,7 @@ func (h *Handler) getIncident(c *fiber.Ctx) error {
 	})
 }
 
-// POST /incidents (tablet) {id?, type, severity, description?, location?, photo_object_keys[], occurred_at?}
+// POST /incidents (tablet) {id?, type, severity, description?, location?, photo_object_keys[], occurred_at?, gps_lat?, gps_lng?}
 func (h *Handler) createIncident(c *fiber.Ctx) error {
 	var b struct {
 		ID              *string    `json:"id"`
@@ -117,11 +117,16 @@ func (h *Handler) createIncident(c *fiber.Ctx) error {
 		Location        *string    `json:"location"`
 		PhotoObjectKeys []string   `json:"photo_object_keys"`
 		OccurredAt      *time.Time `json:"occurred_at"`
+		GPSLat          *float64   `json:"gps_lat"`
+		GPSLng          *float64   `json:"gps_lng"`
 	}
 	if err := parse(c, &b); err != nil {
 		return h.fail(c, err)
 	}
 	if err := optionalUUID(b.ID); err != nil {
+		return h.fail(c, err)
+	}
+	if err := service.CheckGPS(b.GPSLat, b.GPSLng); err != nil {
 		return h.fail(c, err)
 	}
 	b.Type = strings.TrimSpace(strings.ToLower(b.Type))
@@ -164,7 +169,7 @@ func (h *Handler) createIncident(c *fiber.Ctx) error {
 		inc, isNew, err = repository.CreateIncident(c.Context(), tx, model.Incident{
 			SiteID: site.ID, GuardID: guard.ID, DeviceID: deviceID(c), Type: b.Type, Severity: b.Severity,
 			Description: nilIfEmpty(b.Description), Location: nilIfEmpty(b.Location),
-			PhotoObjectKeys: b.PhotoObjectKeys, OccurredAt: at,
+			PhotoObjectKeys: b.PhotoObjectKeys, OccurredAt: at, GPSLat: b.GPSLat, GPSLng: b.GPSLng,
 			Flags: append(service.TimeFlags(at, service.Now()), service.GuardFlags(middleware.GetGuardAuth(c), at)...),
 		}, nilIfEmpty(b.ID))
 		if err != nil {

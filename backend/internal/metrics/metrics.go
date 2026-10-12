@@ -80,6 +80,13 @@ var (
 		Help: "Unix time of the last successful run per job.",
 	}, []string{"job"})
 
+	// DeviceOutboxPending is the outbox backlog each tablet last reported
+	// (POST /device/telemetry); API process, label = device ID.
+	DeviceOutboxPending = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "sp_device_outbox_pending",
+		Help: "Pending outbox items last reported by each tablet (health beacon).",
+	}, []string{"device"})
+
 	// RetentionItems counts records/objects handled by the retention job
 	// (kind = visitor_log, visitor_photo, selfie, attendance_gps, scan_gps,
 	// notification_log, incident_photo, defect_photo, checkpoint_photo,
@@ -99,7 +106,7 @@ var (
 
 // RegisterAPI registers the API metrics and the Go/process collectors.
 func RegisterAPI(r prometheus.Registerer) {
-	r.MustRegister(HTTPRequests, HTTPDuration)
+	r.MustRegister(HTTPRequests, HTTPDuration, DeviceOutboxPending)
 	registerRuntime(r)
 }
 

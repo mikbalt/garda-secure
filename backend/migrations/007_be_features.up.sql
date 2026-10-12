@@ -34,6 +34,16 @@ CREATE TABLE attendance_overrides (
 CREATE INDEX idx_attendance_overrides_record ON attendance_overrides(attendance_id, created_at);
 CREATE INDEX idx_attendance_overrides_shift  ON attendance_overrides(shift_id, created_at);
 
+-- -- Incident position from the tablet (optional; evidence, kept) -----------
+ALTER TABLE incidents
+    ADD COLUMN gps_lat DOUBLE PRECISION CHECK (gps_lat BETWEEN -90 AND 90),
+    ADD COLUMN gps_lng DOUBLE PRECISION CHECK (gps_lng BETWEEN -180 AND 180);
+
+-- -- Tablet health beacon: latest report per device (POST /device/telemetry) --
+ALTER TABLE devices
+    ADD COLUMN health    JSONB,
+    ADD COLUMN health_at TIMESTAMPTZ;
+
 -- -- F7: effective incident values = latest amendment per field ---------------
 -- Originals stay immutable (D-009); reports, filters and exports read this view.
 CREATE VIEW incidents_effective AS
