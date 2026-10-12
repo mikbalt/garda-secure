@@ -161,7 +161,7 @@ func main() {
 	if cfg.CORSAllowedOrigins != "" {
 		app.Use(cors.New(cors.Config{
 			AllowOrigins: cfg.CORSAllowedOrigins,
-			AllowHeaders: "Origin, Content-Type, Accept, Authorization, " + middleware.GuardHeader,
+			AllowHeaders: "Origin, Content-Type, Accept, Authorization, " + middleware.GuardHeader + ", " + middleware.GuardTokenHeader,
 			AllowMethods: "GET,POST,PUT,PATCH,DELETE,OPTIONS",
 		}))
 	}

@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/securepatrol/backend/internal/fieldauth"
 	"github.com/securepatrol/backend/internal/model"
 	"github.com/securepatrol/backend/internal/repository"
 )
@@ -21,8 +22,15 @@ const MaxCheckpoints = 500
 const StaleSessionAge = 12 * time.Hour
 
 // NormalizeRoute validates checkpoints, assigns missing IDs and renumbers
-// order_index 0..n-1 following the submitted order.
-func NormalizeRoute(r *model.Route) error {
+// order_index 0..n-1 following the submitted order. prev is the stored route
+// on an update (nil on create).
+//
+// QR codes (D-035), with qr != nil: a new checkpoint without a custom code
+// gets a signed payload (version 1); a checkpoint that was signed stays
+// signed with its version (the submitted qr_code is ignored); a legacy
+// checkpoint keeps its custom code, or becomes signed when the code is
+// cleared. With qr == nil plain "SP-…" codes are generated (legacy).
+func NormalizeRoute(r *model.Route, prev *model.Route, qr *fieldauth.QRSigner) error {
 	r.Name = strings.TrimSpace(r.Name)
 	if r.Name == "" {
 		return BadRequest("name_required", "route name is required")
@@ -39,17 +47,22 @@ func NormalizeRoute(r *model.Route) error {
 	sort.SliceStable(r.Checkpoints, func(i, j int) bool {
 		return r.Checkpoints[i].OrderIndex < r.Checkpoints[j].OrderIndex
 	})
+	stored := map[string]model.Checkpoint{}
+	if prev != nil {
+		for _, cp := range prev.Checkpoints {
+			stored[cp.ID] = cp
+		}
+	}
 	ids, codes := map[string]bool{}, map[string]bool{}
 	for i := range r.Checkpoints {
 		cp := &r.Checkpoints[i]
 		cp.Name = strings.TrimSpace(cp.Name)
 		cp.QRCode = strings.TrimSpace(cp.QRCode)
+		old, existed := stored[cp.ID]
 		if cp.ID == "" {
 			cp.ID = uuid.NewString()
 		}
-		if cp.QRCode == "" {
-			cp.QRCode = "SP-" + strings.ToUpper(strings.ReplaceAll(cp.ID, "-", "")[:12])
-		}
+		assignQR(cp, old, existed, qr)
 		if cp.Name == "" {
 			return BadRequest("checkpoint_name_required", "checkpoint %d has no name", i+1)
 		}
@@ -178,6 +191,7 @@ type StartSessionInput struct {
 	RouteID  string
 	At       *time.Time
 	Guard    *model.Guard
+	Auth     *fieldauth.GuardAuth // guard token proof; nil = unverified
 	Site     *model.Site
 	DeviceID *string
 }
@@ -203,6 +217,7 @@ func StartSession(ctx context.Context, pool *pgxpool.Pool, in StartSessionInput)
 	}
 	s, created, err := repository.CreateSession(ctx, pool, model.PatrolSession{
 		RouteID: route.ID, SiteID: in.Site.ID, GuardID: in.Guard.ID, DeviceID: in.DeviceID, StartedAt: at,
+		Flags: GuardFlags(in.Auth, at),
 	}, in.ID)
 	if err != nil {
 		return nil, false, err
@@ -218,14 +233,17 @@ type ScanInput struct {
 	ID             *string
 	SessionID      string
 	CheckpointID   string // either the checkpoint ID …
-	QRCode         string // … or the scanned QR payload
+	QRCode         string // … or a legacy plain QR code …
+	QRPayload      string // … or the raw scanned text (signed SP1:<id>:<sig> or plain)
 	Method         string // qr | manual
 	PhotoObjectKey *string
 	At             *time.Time
 	GPSLat, GPSLng *float64
 	Guard          *model.Guard
+	Auth           *fieldauth.GuardAuth // guard token proof; nil = unverified
 	Site           *model.Site
 	DeviceID       *string
+	QR             *fieldauth.QRSigner
 }
 
 // RecordScan validates a scan against the session's route (FR-PAT-02/03).
@@ -267,14 +285,7 @@ func RecordScan(ctx context.Context, pool *pgxpool.Pool, in ScanInput) (*model.C
 	if err != nil {
 		return nil, false, err
 	}
-	var cp *model.Checkpoint
-	for i := range route.Checkpoints {
-		c := &route.Checkpoints[i]
-		if (in.CheckpointID != "" && c.ID == in.CheckpointID) || (in.QRCode != "" && c.QRCode == in.QRCode) {
-			cp = c
-			break
-		}
-	}
+	cp, qrFlag := resolveCheckpoint(route, in)
 	if cp == nil {
 		return nil, false, BadRequest("unknown_checkpoint", "checkpoint is not part of this route")
 	}
@@ -283,6 +294,10 @@ func RecordScan(ctx context.Context, pool *pgxpool.Pool, in ScanInput) (*model.C
 	if err != nil {
 		return nil, false, err
 	}
+	if qrFlag != "" {
+		flags = append(flags, qrFlag)
+	}
+	flags = append(flags, GuardFlags(in.Auth, at)...)
 	sessionID := s.ID
 	scan, created, err := repository.InsertScan(ctx, pool, model.CheckpointScan{
 		SessionID: &sessionID, RouteID: route.ID, CheckpointID: cp.ID, GuardID: in.Guard.ID,
@@ -296,6 +311,72 @@ func RecordScan(ctx context.Context, pool *pgxpool.Pool, in ScanInput) (*model.C
 		return nil, false, err
 	}
 	return scan, created, nil
+}
+
+// resolveCheckpoint finds the scanned checkpoint of the route and the QR
+// verification flag of a QR scan (D-035):
+//   - a signed payload (qr_payload, or an SP1: text in qr_code) names the
+//     checkpoint; a signature that does not match its current version is
+//     accepted but flagged qr_invalid;
+//   - a plain code matches a legacy checkpoint's qr_code: qr_unsigned;
+//   - a checkpoint_id alone proves no scan: qr_unsigned.
+//
+// Manual check-ins (photo required) get no QR flag.
+func resolveCheckpoint(route *model.Route, in ScanInput) (*model.Checkpoint, string) {
+	byID := func(id string) *model.Checkpoint {
+		for i := range route.Checkpoints {
+			if route.Checkpoints[i].ID == id {
+				return &route.Checkpoints[i]
+			}
+		}
+		return nil
+	}
+	byLegacyCode := func(code string) *model.Checkpoint {
+		for i := range route.Checkpoints {
+			if c := &route.Checkpoints[i]; !c.QRSigned && c.QRCode == code {
+				return c
+			}
+		}
+		return nil
+	}
+	qrFlag := func(f string) string {
+		if in.Method == "manual" {
+			return ""
+		}
+		return f
+	}
+	payload := strings.TrimSpace(in.QRPayload)
+	if payload == "" && strings.HasPrefix(in.QRCode, fieldauth.QRPrefix) {
+		payload = in.QRCode
+	}
+	switch {
+	case payload != "":
+		id, sig, ok := fieldauth.ParseQR(payload)
+		if !ok { // raw text of a legacy plain code
+			if cp := byLegacyCode(payload); cp != nil {
+				return cp, qrFlag(FlagQRUnsigned)
+			}
+			return nil, ""
+		}
+		cp := byID(id)
+		if cp == nil {
+			return nil, ""
+		}
+		if cp.QRSigned && in.QR != nil && in.QR.Valid(cp.ID, cp.QRVersion, sig) {
+			return cp, ""
+		}
+		return cp, qrFlag(FlagQRInvalid)
+	case in.QRCode != "":
+		if cp := byLegacyCode(in.QRCode); cp != nil {
+			return cp, qrFlag(FlagQRUnsigned)
+		}
+		return nil, ""
+	case in.CheckpointID != "":
+		if cp := byID(in.CheckpointID); cp != nil {
+			return cp, qrFlag(FlagQRUnsigned)
+		}
+	}
+	return nil, ""
 }
 
 // scanFlags runs the time, GPS and speed plausibility checks of a scan
@@ -351,4 +432,63 @@ func EndSession(ctx context.Context, pool *pgxpool.Pool, sessionID string, site 
 		return repository.GetSession(ctx, pool, s.ID) // ended concurrently
 	}
 	return out, err
+}
+
+// assignQR decides a checkpoint's QR code on save (see NormalizeRoute).
+func assignQR(cp *model.Checkpoint, old model.Checkpoint, existed bool, qr *fieldauth.QRSigner) {
+	custom := cp.QRCode != "" && !strings.HasPrefix(cp.QRCode, fieldauth.QRPrefix)
+	cp.QRSigned, cp.QRVersion = false, 0
+	if existed {
+		cp.QRVersion = old.QRVersion
+	}
+	switch {
+	case qr == nil:
+		if !custom {
+			cp.QRCode = "SP-" + strings.ToUpper(strings.ReplaceAll(cp.ID, "-", "")[:12])
+		}
+		return
+	case existed && old.QRSigned:
+		cp.QRSigned = true
+	case custom:
+		return // legacy custom code (kept or newly typed)
+	default:
+		cp.QRSigned = true
+		cp.QRVersion = old.QRVersion + 1 // new checkpoint: 1; cleared legacy code: next version
+	}
+	cp.QRCode = qr.Payload(cp.ID, cp.QRVersion)
+}
+
+// RegenerateQR switches every checkpoint of a route to a signed code with a
+// new version, so all previously printed codes of the route stop verifying.
+func RegenerateQR(r *model.Route, qr *fieldauth.QRSigner) {
+	for i := range r.Checkpoints {
+		cp := &r.Checkpoints[i]
+		cp.QRSigned = true
+		cp.QRVersion++
+		cp.QRCode = qr.Payload(cp.ID, cp.QRVersion)
+	}
+}
+
+// DecorateQR fills in the current signed payload of every signed checkpoint
+// (web responses; the stored text may predate a key change).
+func DecorateQR(r *model.Route, qr *fieldauth.QRSigner) {
+	for i := range r.Checkpoints {
+		if cp := &r.Checkpoints[i]; cp.QRSigned && qr != nil {
+			cp.QRCode = qr.Payload(cp.ID, cp.QRVersion)
+		}
+	}
+}
+
+// HideSignedQR blanks the payload of signed checkpoints in a session's
+// progress before it goes to a tablet: tablets must never learn valid
+// payloads (they would let a guard "scan" without being there).
+func HideSignedQR(p *SessionProgress) {
+	if p == nil {
+		return
+	}
+	for i := range p.Checkpoints {
+		if p.Checkpoints[i].QRSigned {
+			p.Checkpoints[i].QRCode = ""
+		}
+	}
 }

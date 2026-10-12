@@ -10,14 +10,19 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
 
+	"github.com/securepatrol/backend/internal/fieldauth"
 	"github.com/securepatrol/backend/internal/model"
 	"github.com/securepatrol/backend/internal/repository"
 )
 
-// GuardHeader carries the ID of the guard operating a shared tablet. The
-// guard unlocked the tablet with a PIN checked locally; the API only checks
-// that the guard is active and assigned to the device's site.
+// GuardHeader carries the ID of the guard operating a shared tablet. The API
+// checks that the guard is active and assigned to the device's site.
 const GuardHeader = "X-Guard-ID"
+
+// GuardTokenHeader optionally carries the guard token from
+// POST /device/guard-sessions (server-verified PIN, D-035). Without it the
+// guard is unverified and new records are flagged guard_unverified.
+const GuardTokenHeader = "X-Guard-Token" // #nosec G101 -- a header name, not a credential
 
 // Denial is an authorization failure to render as JSON.
 type Denial struct {
@@ -45,6 +50,13 @@ func GetDevice(c *fiber.Ctx) *model.Device {
 func GetGuard(c *fiber.Ctx) *model.Guard {
 	g, _ := c.Locals("guard").(*model.Guard)
 	return g
+}
+
+// GetGuardAuth returns what the request proved about the acting guard (nil =
+// no valid guard token: unverified).
+func GetGuardAuth(c *fiber.Ctx) *fieldauth.GuardAuth {
+	a, _ := c.Locals("guard_auth").(*fieldauth.GuardAuth)
+	return a
 }
 
 // LoadDevice resolves the device record for principals with the device role.
@@ -106,8 +118,12 @@ func CheckActiveDevice(c *fiber.Ctx) *Denial {
 }
 
 // ResolveGuard loads the guard in X-Guard-ID, checks they may act on this
-// device and stores them in the request locals.
-func ResolveGuard(c *fiber.Ctx, pool *pgxpool.Pool) *Denial {
+// device and stores them in the request locals, then evaluates an
+// X-Guard-Token: none → unverified; signed by us for this guard, device and
+// site → GuardAuth (verified per record by event time); anything else →
+// 403 guard_token_invalid, unless lenient (SOS), where it counts as
+// unverified.
+func ResolveGuard(c *fiber.Ctx, pool *pgxpool.Pool, tokens *fieldauth.GuardTokens, lenient bool) *Denial {
 	d := GetDevice(c)
 	guardID := c.Get(GuardHeader)
 	if guardID == "" {
@@ -124,6 +140,18 @@ func ResolveGuard(c *fiber.Ctx, pool *pgxpool.Pool) *Denial {
 		return &Denial{fiber.StatusForbidden, "guard is not allowed on this device", "guard_not_allowed"}
 	}
 	c.Locals("guard", g)
+	tok := c.Get(GuardTokenHeader)
+	if tok == "" || tokens == nil {
+		return nil
+	}
+	claims, err := tokens.Parse(tok)
+	if err != nil || claims.GuardID != g.ID || claims.DeviceID != d.ID || claims.SiteID != *d.SiteID {
+		if lenient {
+			return nil
+		}
+		return &Denial{fiber.StatusForbidden, "guard token is not valid for this guard and device; resend without it", "guard_token_invalid"}
+	}
+	c.Locals("guard_auth", tokens.Auth(claims, time.Now()))
 	return nil
 }
 
@@ -137,13 +165,24 @@ func RequireActiveDevice() fiber.Handler {
 	}
 }
 
-// RequireGuard requires an active device acting for a valid guard.
-func RequireGuard(pool *pgxpool.Pool) fiber.Handler {
+// RequireGuard requires an active device acting for a valid guard; an
+// invalid guard token is rejected (403 guard_token_invalid).
+func RequireGuard(pool *pgxpool.Pool, tokens *fieldauth.GuardTokens) fiber.Handler {
+	return requireGuard(pool, tokens, false)
+}
+
+// RequireGuardLenient is RequireGuard for SOS: an invalid guard token never
+// rejects the request, the guard just counts as unverified.
+func RequireGuardLenient(pool *pgxpool.Pool, tokens *fieldauth.GuardTokens) fiber.Handler {
+	return requireGuard(pool, tokens, true)
+}
+
+func requireGuard(pool *pgxpool.Pool, tokens *fieldauth.GuardTokens, lenient bool) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		if d := CheckActiveDevice(c); d != nil {
 			return d.Send(c)
 		}
-		if d := ResolveGuard(c, pool); d != nil {
+		if d := ResolveGuard(c, pool, tokens, lenient); d != nil {
 			return d.Send(c)
 		}
 		return c.Next()
@@ -152,14 +191,14 @@ func RequireGuard(pool *pgxpool.Pool) fiber.Handler {
 
 // RequireRolesOrGuard admits web principals holding one of roles, or an
 // active tablet acting for a valid guard.
-func RequireRolesOrGuard(pool *pgxpool.Pool, roles ...string) fiber.Handler {
+func RequireRolesOrGuard(pool *pgxpool.Pool, tokens *fieldauth.GuardTokens, roles ...string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		p := GetPrincipal(c)
 		if p != nil && p.HasRole(RoleDevice) {
 			if d := CheckActiveDevice(c); d != nil {
 				return d.Send(c)
 			}
-			if d := ResolveGuard(c, pool); d != nil {
+			if d := ResolveGuard(c, pool, tokens, false); d != nil {
 				return d.Send(c)
 			}
 			return c.Next()

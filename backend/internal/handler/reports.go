@@ -22,6 +22,20 @@ func itoa(n int) string { return strconv.Itoa(n) }
 
 func ftoa(f float64) string { return strconv.FormatFloat(f, 'f', 1, 64) }
 
+func optPct(p *float64) string {
+	if p == nil {
+		return ""
+	}
+	return ftoa(*p)
+}
+
+func yesNo(b bool) string {
+	if b {
+		return "yes"
+	}
+	return ""
+}
+
 // GET /reports/attendance/daily?site_id=&date=&format=csv (FR-REP-01)
 func (h *Handler) reportDailyAttendance(c *fiber.Ctx) error {
 	site, err := h.siteFor(c, c.Query("site_id"))
@@ -71,7 +85,11 @@ func (h *Handler) reportMonthlyRecap(c *fiber.Ctx) error {
 	}
 	month := from.In(loc).Format("2006-01")
 	if !wantsCSV(c) {
-		return c.JSON(fiber.Map{"site_id": site.ID, "month": month, "rows": rows})
+		compliance, err := repository.PatrolComplianceTotals(c.Context(), h.DB, site.ID, from, to)
+		if err != nil {
+			return h.fail(c, err)
+		}
+		return c.JSON(fiber.Map{"site_id": site.ID, "month": month, "rows": rows, "patrol_compliance": compliance})
 	}
 	out := make([][]string, 0, len(rows))
 	for _, r := range rows {
@@ -109,12 +127,12 @@ func (h *Handler) reportPatrolSessions(c *fiber.Ctx) error {
 		out = append(out, []string{
 			r.RouteName, r.GuardName, fmtTime(&r.StartedAt, loc), fmtTime(r.EndedAt, loc), r.Status,
 			itoa(r.TotalCheckpoints), itoa(r.ScannedCount), itoa(r.TotalCheckpoints - r.ScannedCount),
-			itoa(r.SLABreaches), ftoa(r.CompletionPct),
+			itoa(r.SLABreaches), ftoa(r.CompletionPct), fmtTime(r.DueAt, loc), yesNo(r.DueAt != nil && r.LateStart),
 		})
 	}
 	return sendCSV(c, "patrol-sessions.csv",
 		[]string{"Route", "Guard", "Started", "Ended", "Status", "Checkpoints", "Scanned", "Missed",
-			"SLA breaches", "Completion %"}, out)
+			"SLA breaches", "Completion %", "Scheduled for", "Late start"}, out)
 }
 
 // GET /reports/incidents?site_id=&from=&to=&type=&severity=&status=&format=csv (FR-REP-03)
@@ -171,11 +189,12 @@ func (h *Handler) reportGuardKPI(c *fiber.Ctx) error {
 	for _, r := range rows {
 		out = append(out, []string{
 			r.GuardName, ftoa(r.AttendanceRatePct), ftoa(r.OnTimeRatePct), ftoa(r.PatrolCompletePct),
-			itoa(r.IncidentsFiled), itoa(r.SLABreaches),
+			itoa(r.IncidentsFiled), itoa(r.SLABreaches), itoa(r.ScheduledPatrols), optPct(r.ScheduleCompliancePct),
 		})
 	}
 	return sendCSV(c, "guard-kpi.csv",
-		[]string{"Guard", "Attendance %", "On-time %", "Patrol completion %", "Incidents", "SLA breaches"}, out)
+		[]string{"Guard", "Attendance %", "On-time %", "Patrol completion %", "Incidents", "SLA breaches",
+			"Scheduled patrols", "Schedule compliance %"}, out)
 }
 
 // GET /dashboard/summary?site_id=

@@ -3,17 +3,19 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/securepatrol/backend/internal/model"
 )
 
-const guardColumns = `id, keycloak_user_id, name, employee_id, site_id, role, pin_hash, status, created_at, updated_at`
+const guardColumns = `id, keycloak_user_id, name, employee_id, site_id, role, pin_hash, status, created_at, updated_at,
+	pin_failed_attempts, pin_locked_until`
 
 func scanGuard(row pgx.Row) (model.Guard, error) {
 	var g model.Guard
 	err := row.Scan(&g.ID, &g.KeycloakUserID, &g.Name, &g.EmployeeID, &g.SiteID,
-		&g.Role, &g.PinHash, &g.Status, &g.CreatedAt, &g.UpdatedAt)
+		&g.Role, &g.PinHash, &g.Status, &g.CreatedAt, &g.UpdatedAt, &g.PinFailedAttempts, &g.PinLockedUntil)
 	g.HasPin = g.PinHash != nil && *g.PinHash != ""
 	return g, err
 }
@@ -96,10 +98,12 @@ func EmployeeIDTaken(ctx context.Context, db DBTX, realm, employeeID, exceptGuar
 	return taken, nil
 }
 
-// SetGuardPinHash stores a new bcrypt PIN hash for a guard.
+// SetGuardPinHash stores a new bcrypt PIN hash for a guard and clears any
+// PIN lockout.
 func SetGuardPinHash(ctx context.Context, db DBTX, id, hash string) error {
-	tag, err := db.Exec(ctx,
-		`UPDATE guards SET pin_hash = $2, updated_at = now() WHERE id = $1`, id, hash)
+	tag, err := db.Exec(ctx, `
+		UPDATE guards SET pin_hash = $2, pin_failed_attempts = 0, pin_locked_until = NULL, updated_at = now()
+		WHERE id = $1`, id, hash)
 	if err != nil {
 		return fmt.Errorf("SetGuardPinHash: %w", err)
 	}
@@ -125,4 +129,25 @@ func ListRoster(ctx context.Context, db DBTX, siteID string) ([]model.RosterGuar
 		err := r.Scan(&g.ID, &g.Name, &g.EmployeeID, &g.Role, &g.PinHash)
 		return g, err
 	})
+}
+
+// GetGuardForUpdate loads a guard and locks its row for the transaction
+// (serialises server PIN checks of one guard).
+func GetGuardForUpdate(ctx context.Context, db DBTX, id string) (*model.Guard, error) {
+	g, err := scanGuard(db.QueryRow(ctx, `SELECT `+guardColumns+` FROM guards WHERE id = $1 FOR UPDATE`, id))
+	if err != nil {
+		return nil, mapNoRows(err)
+	}
+	return &g, nil
+}
+
+// SetGuardPinFailures stores the consecutive wrong-PIN count and lockout of
+// a guard (0 / nil after a successful check).
+func SetGuardPinFailures(ctx context.Context, db DBTX, id string, attempts int, lockedUntil *time.Time) error {
+	_, err := db.Exec(ctx,
+		`UPDATE guards SET pin_failed_attempts = $2, pin_locked_until = $3 WHERE id = $1`, id, attempts, lockedUntil)
+	if err != nil {
+		return fmt.Errorf("SetGuardPinFailures: %w", err)
+	}
+	return nil
 }

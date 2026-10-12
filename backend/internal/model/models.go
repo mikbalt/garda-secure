@@ -18,6 +18,10 @@ type Guard struct {
 	Status         string    `json:"status"` // active | inactive
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
+	// PinLockedUntil is set while server PIN checks are locked after too
+	// many wrong PINs (guard sessions, D-035).
+	PinLockedUntil    *time.Time `json:"pin_locked_until,omitempty"`
+	PinFailedAttempts int        `json:"-"`
 }
 
 // RosterGuard is the guard view a tablet caches for offline PIN unlock.
@@ -158,9 +162,13 @@ type AttendanceRecord struct {
 
 // Checkpoint is an individual stop on a patrol route (stored as JSONB inside Route).
 type Checkpoint struct {
-	ID         string   `json:"id"`
-	Name       string   `json:"name"`
-	QRCode     string   `json:"qr_code"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	QRCode string `json:"qr_code"`
+	// QRSigned: qr_code is the signed payload SP1:<id>:<sig> of QRVersion
+	// (server-generated); false = legacy plain code (D-035).
+	QRSigned   bool     `json:"qr_signed"`
+	QRVersion  int      `json:"qr_version"`
 	SLAMinutes *int     `json:"sla_minutes,omitempty"` // nil = no SLA enforced
 	OrderIndex int      `json:"order_index"`
 	Lat        *float64 `json:"lat,omitempty"`
@@ -188,6 +196,7 @@ type PatrolSession struct {
 	EndedAt   *time.Time `json:"ended_at,omitempty"`
 	Status    string     `json:"status"` // in_progress | completed | abandoned
 	CreatedAt time.Time  `json:"created_at"`
+	Flags     []string   `json:"flags"` // e.g. guard_unverified
 }
 
 // CheckpointScan records a guard scanning a checkpoint during a patrol.
@@ -252,6 +261,7 @@ type DefectReport struct {
 	Status         string    `json:"status"` // open | in_progress | resolved
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
+	Flags          []string  `json:"flags"` // e.g. guard_unverified
 }
 
 // VisitorLog records a visitor or vehicle entering a site.
@@ -271,6 +281,7 @@ type VisitorLog struct {
 	Purpose        *string    `json:"purpose,omitempty"`
 	PhotoObjectKey *string    `json:"photo_object_key,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
+	Flags          []string   `json:"flags"` // e.g. guard_unverified
 }
 
 // SosAlert records a panic/SOS event triggered by a guard.

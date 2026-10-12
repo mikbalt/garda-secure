@@ -27,6 +27,16 @@ const (
 // SetAuditBefore.
 const localsAuditBefore = "audit.before"
 
+// localsAuditGuard holds the guard a request concerned without acting as
+// them (e.g. a server PIN check), set with SetAuditGuard.
+const localsAuditGuard = "audit.guard"
+
+// SetAuditGuard records the guard a request is about (e.g. a failed PIN
+// check) in its audit row when no guard is acting.
+func SetAuditGuard(c *fiber.Ctx, guardID string) {
+	c.Locals(localsAuditGuard, guardID)
+}
+
 // SetAuditBefore records the state of the resource before a change. v is
 // marshalled immediately, so later mutation of v does not matter. The
 // response body becomes the "after" state when the request succeeds.
@@ -72,6 +82,9 @@ func Audit(pool *pgxpool.Pool) fiber.Handler {
 		}
 		if g := GetGuard(c); g != nil {
 			a.GuardID = ptr(strings.Clone(g.ID))
+			a.UserID += " guard:" + *a.GuardID
+		} else if id, isStr := c.Locals(localsAuditGuard).(string); isStr && id != "" {
+			a.GuardID = ptr(strings.Clone(id))
 			a.UserID += " guard:" + *a.GuardID
 		}
 		if names := c.Route().Params; len(names) > 0 {

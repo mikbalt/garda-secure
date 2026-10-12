@@ -72,12 +72,15 @@ func UpdateRoute(ctx context.Context, db DBTX, r model.Route) (*model.Route, err
 
 // ── Sessions ─────────────────────────────────────────────────────────────────
 
-const sessionColumns = `id, route_id, site_id, guard_id, device_id, started_at, ended_at, status, created_at`
+const sessionColumns = `id, route_id, site_id, guard_id, device_id, started_at, ended_at, status, created_at, flags`
 
 func scanSession(row pgx.Row) (model.PatrolSession, error) {
 	var s model.PatrolSession
 	err := row.Scan(&s.ID, &s.RouteID, &s.SiteID, &s.GuardID, &s.DeviceID,
-		&s.StartedAt, &s.EndedAt, &s.Status, &s.CreatedAt)
+		&s.StartedAt, &s.EndedAt, &s.Status, &s.CreatedAt, &s.Flags)
+	if s.Flags == nil {
+		s.Flags = []string{}
+	}
 	return s, err
 }
 
@@ -87,11 +90,11 @@ func scanSessionRows(rows pgx.Rows) (model.PatrolSession, error) { return scanSe
 // idempotent: a retry returns the existing session and created=false.
 func CreateSession(ctx context.Context, db DBTX, s model.PatrolSession, clientID *string) (*model.PatrolSession, bool, error) {
 	out, err := scanSession(db.QueryRow(ctx, `
-		INSERT INTO patrol_sessions (id, route_id, site_id, guard_id, device_id, started_at)
-		VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6)
+		INSERT INTO patrol_sessions (id, route_id, site_id, guard_id, device_id, started_at, flags)
+		VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (id) DO NOTHING
 		RETURNING `+sessionColumns,
-		clientID, s.RouteID, s.SiteID, s.GuardID, s.DeviceID, s.StartedAt))
+		clientID, s.RouteID, s.SiteID, s.GuardID, s.DeviceID, s.StartedAt, flagsOrEmpty(s.Flags)))
 	if err == nil {
 		return &out, true, nil
 	}

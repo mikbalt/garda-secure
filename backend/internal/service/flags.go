@@ -4,13 +4,13 @@ import (
 	"math"
 	"time"
 
+	"github.com/securepatrol/backend/internal/fieldauth"
 	"github.com/securepatrol/backend/internal/model"
 )
 
-// Plausibility flags on field records (BE-S1). They do not reject anything:
-// they make records that may have been forged visible to supervisors.
-// Server-verified guard identity and signed QR codes await a product
-// decision.
+// Plausibility flags on field records (BE-S1, D-035). They do not reject
+// anything: they make records that may have been forged visible to
+// supervisors.
 const (
 	// FlagLateSync: the record reached the server more than LateSyncAfter
 	// after its event time (offline queue or a backdated client clock).
@@ -28,7 +28,26 @@ const (
 	// FlagTooFast: the guard would have moved faster than MaxWalkSpeed from
 	// the previous checkpoint scanned in the session.
 	FlagTooFast = "too_fast"
+	// FlagGuardUnverified: the record was made without a valid guard token
+	// (PIN only checked on the tablet, e.g. offline). On a clock-in it also
+	// sets needs_review.
+	FlagGuardUnverified = "guard_unverified"
+	// FlagQRInvalid: a signed checkpoint QR payload failed verification
+	// (forged, or printed before the codes were regenerated).
+	FlagQRInvalid = "qr_invalid"
+	// FlagQRUnsigned: a QR scan carried no signed payload (legacy plain
+	// code, or only a checkpoint ID).
+	FlagQRUnsigned = "qr_unsigned"
 )
+
+// GuardFlags returns [guard_unverified] unless auth verifies the acting
+// guard for a record with the given event time.
+func GuardFlags(auth *fieldauth.GuardAuth, event time.Time) []string {
+	if auth.VerifiedAt(event, Now()) {
+		return nil
+	}
+	return []string{FlagGuardUnverified}
+}
 
 // Thresholds of the plausibility checks.
 const (

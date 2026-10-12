@@ -1,5 +1,6 @@
 // Package jobs runs the periodic background work inside the worker process:
-// shift generation, absent auto-flag, SLA checks, monthly recap and backups.
+// shift generation, absent auto-flag, SLA checks, scheduled patrols, monthly
+// recap and backups.
 package jobs
 
 import (
@@ -84,6 +85,8 @@ func (s *Scheduler) jobs() []job {
 		{"abandon_sessions", 15 * time.Minute, time.Hour, s.AbandonStaleSessions},
 		{"flag_absent", time.Minute, 4 * time.Minute, s.FlagAbsent},
 		{"sla_check", 30 * time.Second, 2 * time.Minute, s.CheckSLA},
+		{"patrol_expectations", time.Hour, 30 * time.Minute, s.MaterialiseExpectations},
+		{"patrol_not_started", time.Minute, 4 * time.Minute, s.CheckPatrolExpectations},
 		{"monthly_recap", 10 * time.Minute, 40 * time.Minute, s.MonthlyRecap},
 		{"backups", time.Minute, backupTimeout, s.Backups},
 	}
@@ -376,13 +379,22 @@ func (s *Scheduler) recapSite(ctx context.Context, site *model.Site) error {
 	if err != nil {
 		return err
 	}
-	subject, _ := notification.Render(notification.EventMonthlyRecap, site.Config().Language,
+	compliance, err := repository.PatrolComplianceTotals(ctx, s.pool, site.ID, from, to)
+	if err != nil {
+		return err
+	}
+	lang := site.Config().Language
+	subject, _ := notification.Render(notification.EventMonthlyRecap, lang,
 		map[string]string{"site": site.Name, "month": month})
+	text := recapText(site, month, rows, s.cfg.AppPublicURL)
+	if line := recapCompliance(compliance, lang, false); line != "" {
+		text = line + "\n" + text
+	}
 	_, err = s.notifier.Publish(ctx, notification.Event{
 		Type: notification.EventMonthlyRecap, Site: site, DedupeKey: "recap:" + site.ID + ":" + month,
 		Subject:  subject,
-		Body:     recapHTML(site, month, rows, s.cfg.AppPublicURL),
-		TextBody: recapText(site, month, rows, s.cfg.AppPublicURL),
+		Body:     recapHTML(site, month, rows, s.cfg.AppPublicURL) + recapCompliance(compliance, lang, true),
+		TextBody: text,
 	})
 	return err
 }
