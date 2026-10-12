@@ -165,6 +165,7 @@ func (h *Handler) Register(api fiber.Router) {
 	admin := web(rolesAdmin...)
 	notif := api.Group("/notifications")
 	notif.Get("/event-types", admin, h.eventTypes)
+	notif.Get("/channels", admin, h.listChannels)
 	notif.Get("/rules", admin, h.listRules)
 	notif.Post("/rules", admin, h.createRule)
 	notif.Put("/rules/:id", admin, h.updateRule)

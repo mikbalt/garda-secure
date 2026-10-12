@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"strconv"
 	"sync"
 	"time"
@@ -99,25 +98,17 @@ func NewWorker(pool *pgxpool.Pool, rdb *redis.Client, st *settings.Store, n *Not
 	}
 }
 
-func defaultChannels() map[string]Channel {
-	return map[string]Channel{
-		"email": emailChannel{},
-		"whatsapp": whatsAppChannel{client: &http.Client{
-			Timeout: sendTimeout,
-			// Never follow redirects: the token must only go to the
-			// allow-listed API URL.
-			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-		}},
-	}
-}
+// defaultChannels returns a sender for every registered channel (F10).
+func defaultChannels() map[string]Channel { return senders() }
 
 // SendTest delivers a test message immediately, bypassing the queue, so an
 // admin can verify channel settings from the web UI.
 func SendTest(ctx context.Context, st *settings.Store, channel, recipient string) error {
-	ch, ok := defaultChannels()[channel]
+	spec, ok := Channels[channel]
 	if !ok {
 		return fmt.Errorf("%w: unsupported channel %q", ErrNotConfigured, channel)
 	}
+	ch := spec.New()
 	cfg, err := st.Channels(ctx)
 	if err != nil {
 		return err

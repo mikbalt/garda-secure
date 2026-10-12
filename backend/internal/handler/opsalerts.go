@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"slices"
 	"strconv"
 	"strings"
@@ -19,7 +20,7 @@ import (
 
 // GET /notifications/ops-event-types
 func (h *Handler) opsEventTypes(c *fiber.Ctx) error {
-	return c.JSON(fiber.Map{"event_types": notification.OpsEventTypes, "channels": []string{"email", "whatsapp"}})
+	return c.JSON(fiber.Map{"event_types": notification.OpsEventTypes, "channels": notification.ChannelNames()})
 }
 
 // GET /notifications/ops-rules
@@ -115,31 +116,19 @@ func (h *Handler) retryOpsNotification(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"status": "queued"})
 }
 
-// normalizeRecipient validates a recipient for a channel; WhatsApp numbers
-// become digits in international format (08… → 628…, D-023).
+// normalizeRecipient validates a recipient for a registered channel
+// (notification.Channels, F10); WhatsApp numbers become digits in
+// international format (08... -> 628..., D-023).
 func normalizeRecipient(channel, recipient string) (string, error) {
-	recipient = strings.TrimSpace(recipient)
-	switch channel {
-	case "email":
-		if !strings.Contains(recipient, "@") {
-			return "", service.BadRequest("invalid_recipient", "recipient must be an e-mail address")
-		}
-		return recipient, nil
-	case "whatsapp":
-		digits := strings.Map(func(r rune) rune {
-			if r >= '0' && r <= '9' {
-				return r
-			}
-			return -1
-		}, recipient)
-		if strings.HasPrefix(digits, "0") {
-			digits = "62" + digits[1:]
-		}
-		if len(digits) < 8 {
-			return "", service.BadRequest("invalid_recipient", "recipient must be a phone number in international format, e.g. 62812…")
-		}
-		return digits, nil
-	default:
-		return "", service.BadRequest("invalid_channel", "channel must be email or whatsapp")
+	out, err := notification.NormalizeRecipient(channel, recipient)
+	switch {
+	case errors.Is(err, notification.ErrUnknownChannel):
+		return "", service.BadRequest("invalid_channel", "channel must be one of %s", strings.Join(notification.ChannelNames(), ", "))
+	case errors.Is(err, notification.ErrInvalidRecipient):
+		msg := strings.TrimPrefix(err.Error(), notification.ErrInvalidRecipient.Error()+": ")
+		return "", service.BadRequest("invalid_recipient", "%s", msg)
+	case err != nil:
+		return "", err
 	}
+	return out, nil
 }

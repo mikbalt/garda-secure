@@ -25,7 +25,17 @@ import (
 // ── Notification rules ───────────────────────────────────────────────────────
 
 func (h *Handler) eventTypes(c *fiber.Ctx) error {
-	return c.JSON(fiber.Map{"event_types": notification.EventTypes, "channels": []string{"email", "whatsapp"}})
+	return c.JSON(fiber.Map{"event_types": notification.EventTypes, "channels": notification.ChannelNames()})
+}
+
+// GET /notifications/channels — registered delivery channels and whether
+// the install-wide settings configure them (F10).
+func (h *Handler) listChannels(c *fiber.Ctx) error {
+	cfg, err := h.Settings.Channels(c.Context())
+	if err != nil {
+		return h.fail(c, err)
+	}
+	return c.JSON(notification.ChannelStates(cfg))
 }
 
 func (h *Handler) listRules(c *fiber.Ctx) error {
@@ -52,34 +62,14 @@ func (h *Handler) createRule(c *fiber.Ctx) error {
 	if !slices.Contains(notification.EventTypes, b.EventType) {
 		return h.fail(c, service.BadRequest("invalid_event_type", "unknown event type %q", b.EventType))
 	}
-	b.Recipient = strings.TrimSpace(b.Recipient)
 	if err := service.CheckLengths(service.S("recipient", b.Recipient, 320)); err != nil {
 		return h.fail(c, err)
 	}
-	switch b.Channel {
-	case "email":
-		if !strings.Contains(b.Recipient, "@") {
-			return h.fail(c, service.BadRequest("invalid_recipient", "recipient must be an e-mail address"))
-		}
-	case "whatsapp":
-		digits := strings.Map(func(r rune) rune {
-			if r >= '0' && r <= '9' {
-				return r
-			}
-			return -1
-		}, b.Recipient)
-		// Indonesian local format 08xx… → international 628xx… (WhatsApp needs
-		// the country code).
-		if strings.HasPrefix(digits, "0") {
-			digits = "62" + digits[1:]
-		}
-		if len(digits) < 8 {
-			return h.fail(c, service.BadRequest("invalid_recipient", "recipient must be a phone number in international format, e.g. 62812…"))
-		}
-		b.Recipient = digits
-	default:
-		return h.fail(c, service.BadRequest("invalid_channel", "channel must be email or whatsapp"))
+	recipient, err := normalizeRecipient(b.Channel, b.Recipient)
+	if err != nil {
+		return h.fail(c, err)
 	}
+	b.Recipient = recipient
 	rule, err := repository.CreateNotificationRule(c.Context(), h.DB, model.NotificationRule{
 		SiteID: site.ID, EventType: b.EventType, Channel: b.Channel, Recipient: b.Recipient, Enabled: true,
 	})
