@@ -31,8 +31,8 @@ const (
 	// EventIncidentFiled fires for every new incident, whatever its severity
 	// (F8, D-035); incident_high is staged next to it for high/critical.
 	EventIncidentFiled = "incident_filed"
-	EventDefectOpened = "defect_opened"
-	EventMonthlyRecap = "monthly_recap"
+	EventDefectOpened  = "defect_opened"
+	EventMonthlyRecap  = "monthly_recap"
 )
 
 // EventTypes lists every site event a rule can subscribe to.

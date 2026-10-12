@@ -13,7 +13,6 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
-	"github.com/securepatrol/backend/internal/middleware"
 	"github.com/securepatrol/backend/internal/model"
 	"github.com/securepatrol/backend/internal/netguard"
 	"github.com/securepatrol/backend/internal/notification"
@@ -121,8 +120,8 @@ func (h *Handler) deleteRule(c *fiber.Ctx) error {
 
 // ── Delivery log (FR-NOT-04) ─────────────────────────────────────────────────
 
-// realmSiteIDs returns the IDs of the caller's sites, or just one when
-// site_id is given.
+// realmSiteIDs returns the IDs of the caller's sites (realm, narrowed to the
+// allowed sites, F4), or just one when site_id is given.
 func (h *Handler) realmSiteIDs(c *fiber.Ctx) ([]string, error) {
 	if id := c.Query("site_id"); id != "" {
 		site, err := h.siteFor(c, id)
@@ -131,15 +130,7 @@ func (h *Handler) realmSiteIDs(c *fiber.Ctx) ([]string, error) {
 		}
 		return []string{site.ID}, nil
 	}
-	sites, err := repository.ListSitesByRealm(c.Context(), h.DB, middleware.GetPrincipal(c).Realm)
-	if err != nil {
-		return nil, err
-	}
-	ids := make([]string, len(sites))
-	for i, s := range sites {
-		ids[i] = s.ID
-	}
-	return ids, nil
+	return h.visibleSiteIDs(c)
 }
 
 func (h *Handler) listNotificationLog(c *fiber.Ctx) error {

@@ -15,6 +15,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 )
 
@@ -40,6 +41,19 @@ type Principal struct {
 	Realm    string
 	ClientID string
 	Roles    []string
+	// Sites lists the site IDs a web user is limited to (Keycloak user
+	// attribute "sites" mapped into the access-token claim "sites", D-035).
+	// SitesRestricted is false when the claim is absent or empty: the user
+	// sees every site of the realm. A claim whose values are all invalid
+	// restricts the user to no site at all (fail closed).
+	Sites           []string
+	SitesRestricted bool
+}
+
+// CanSeeSite reports whether a site of the principal's realm is within the
+// principal's allowed sites.
+func (p *Principal) CanSeeSite(siteID string) bool {
+	return !p.SitesRestricted || slices.Contains(p.Sites, strings.ToLower(siteID))
 }
 
 // HasRole reports whether the principal holds any of the given roles.
@@ -269,6 +283,9 @@ func (v *Validator) Parse(tokenStr string) (*Principal, error) {
 		return nil, fmt.Errorf("token issued to client %q is not accepted", p.ClientID)
 	}
 	p.Roles = v.bindRoles(p.ClientID, extractRoles(claims))
+	if p.ClientID == v.webClient {
+		p.Sites, p.SitesRestricted = extractSites(claims["sites"])
+	}
 	return p, nil
 }
 
@@ -304,6 +321,37 @@ func extractRoles(claims jwt.MapClaims) []string {
 		add(ra["roles"])
 	}
 	return roles
+}
+
+// extractSites reads the "sites" claim: a list of site UUIDs or a single
+// string (a single-valued attribute mapper). Invalid entries are dropped,
+// but any non-empty claim restricts the principal.
+func extractSites(v any) ([]string, bool) {
+	var raw []string
+	switch t := v.(type) {
+	case string:
+		raw = strings.FieldsFunc(t, func(r rune) bool { return r == ',' || r == ' ' })
+	case []interface{}:
+		for _, e := range t {
+			if s, ok := e.(string); ok {
+				raw = append(raw, strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == ' ' })...)
+			}
+		}
+	}
+	if len(raw) == 0 {
+		return nil, false
+	}
+	out := []string{}
+	for _, s := range raw {
+		u, err := uuid.Parse(strings.TrimSpace(s))
+		if err != nil {
+			continue
+		}
+		if id := u.String(); !slices.Contains(out, id) {
+			out = append(out, id)
+		}
+	}
+	return out, true
 }
 
 // JWT returns a Fiber middleware that requires a valid bearer token and sets

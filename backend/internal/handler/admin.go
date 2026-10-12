@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -22,7 +23,10 @@ func (h *Handler) me(c *fiber.Ctx) error {
 	p := middleware.GetPrincipal(c)
 	out := fiber.Map{
 		"subject": p.Subject, "username": p.Username, "realm": p.Realm,
-		"client_id": p.ClientID, "roles": p.Roles,
+		"client_id": p.ClientID, "roles": p.Roles, "sites": p.Sites, "sites_restricted": p.SitesRestricted,
+	}
+	if p.Sites == nil {
+		out["sites"] = []string{}
 	}
 	if d := middleware.GetDevice(c); d != nil {
 		out["device"] = d
@@ -84,7 +88,7 @@ func (b *siteBody) validate() error {
 }
 
 func (h *Handler) listSites(c *fiber.Ctx) error {
-	sites, err := repository.ListSitesByRealm(c.Context(), h.DB, middleware.GetPrincipal(c).Realm)
+	sites, err := h.visibleSites(c)
 	if err != nil {
 		return h.fail(c, err)
 	}
@@ -228,6 +232,9 @@ func (h *Handler) listGuards(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	if p := middleware.GetPrincipal(c); p.SitesRestricted {
+		guards = slices.DeleteFunc(guards, func(g model.Guard) bool { return g.SiteID == nil || !p.CanSeeSite(*g.SiteID) })
+	}
 	return c.JSON(guards)
 }
 
@@ -322,6 +329,11 @@ func (h *Handler) listDevices(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	// Site-scoped admins see the tablets of their sites and unassigned ones
+	// (to approve them).
+	if p := middleware.GetPrincipal(c); p.SitesRestricted {
+		devices = slices.DeleteFunc(devices, func(d model.Device) bool { return d.SiteID != nil && !p.CanSeeSite(*d.SiteID) })
+	}
 	return c.JSON(devices)
 }
 
@@ -330,7 +342,7 @@ func (h *Handler) updateDevice(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
-	if d.KeycloakRealm != middleware.GetPrincipal(c).Realm {
+	if p := middleware.GetPrincipal(c); d.KeycloakRealm != p.Realm || (d.SiteID != nil && !p.CanSeeSite(*d.SiteID)) {
 		return h.fail(c, repository.ErrNotFound)
 	}
 	middleware.SetAuditBefore(c, d)
