@@ -3,7 +3,7 @@ import { useI18n, type Key } from '../i18n/context'
 import { demoRole } from '../keycloak'
 import { STORAGE_KEYS, writeStored } from '../lib/storage'
 
-const ROLES = ['admin', 'supervisor', 'hr', 'client-readonly'] as const
+const ROLES = ['admin', 'supervisor', 'hr', 'client-readonly', 'platform-admin'] as const
 
 async function reset(mode?: 'sample' | 'empty') {
   const { resetDemo } = await import('../demo/mockApi')
@@ -19,10 +19,10 @@ export function DemoBar() {
       <span className="inline-flex items-center gap-1.5 font-medium">
         <FlaskConical className="h-3.5 w-3.5" aria-hidden="true" />
         <span className="hidden md:inline">{t('demo.banner')}</span>
-        <span className="md:hidden">Demo</span>
+        <span className="md:hidden">{t('demo.short')}</span>
       </span>
       <label className="inline-flex items-center gap-1.5">
-        <span className="text-white/80">{t('demo.viewAs')}</span>
+        <span className="text-white">{t('demo.viewAs')}</span>
         <select
           value={role}
           onChange={(e) => {
@@ -33,7 +33,7 @@ export function DemoBar() {
         >
           {ROLES.map((r) => (
             <option key={r} value={r}>
-              {t(r === 'supervisor' ? 'role.supervisor' : (`role.${r}` as Key))}
+              {t(`role.${r}` as Key)}
             </option>
           ))}
         </select>

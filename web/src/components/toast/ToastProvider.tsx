@@ -54,12 +54,19 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={api}>
       {children}
       <div className="pointer-events-none fixed bottom-4 right-4 z-[60] flex w-full max-w-sm flex-col gap-2 no-print">
-        <div role="alert" aria-live="assertive" className="flex flex-col gap-2">
-          {errors.map(render)}
+        {/* Live regions carry text only; the visible toasts (with their close buttons) are outside them (WEB-6). */}
+        <div role="alert" className="sr-only">
+          {errors.map((x) => (
+            <p key={x.id}>{x.message}</p>
+          ))}
         </div>
-        <div role="status" aria-live="polite" className="flex flex-col gap-2">
-          {others.map(render)}
+        <div role="status" className="sr-only">
+          {others.map((x) => (
+            <p key={x.id}>{x.message}</p>
+          ))}
         </div>
+        <div className="flex flex-col gap-2">{errors.map(render)}</div>
+        <div className="flex flex-col gap-2">{others.map(render)}</div>
       </div>
     </ToastContext.Provider>
   )
