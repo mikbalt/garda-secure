@@ -1,0 +1,169 @@
+name: CI — E2E stack
+
+# Boots the complete production stack (all compose files, TLS nginx, Keycloak
+# realm import, monitoring, off-site backup) on the runner and checks it from
+# the outside like a browser/tablet would (INF-C3). Deploys require this
+# workflow to be green for the release commit (cd-deploy.yml).
+on:
+  push:
+    paths:
+      - 'backend/**'
+      - 'web/**'
+      - 'infra/**'
+      - '.github/workflows/ci-e2e-stack.yml'
+  pull_request:
+    paths:
+      - 'backend/**'
+      - 'web/**'
+      - 'infra/**'
+      - '.github/workflows/ci-e2e-stack.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-e2e-stack-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: infra
+
+jobs:
+  e2e:
+    name: Boot stack + smoke tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      REALM: securepatrol-client1
+      CACERT: nginx/certs/ca.pem
+      BASE: https://localhost
+      PREFLIGHT_ALLOW_LOCALHOST: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Generate .env, private CA + certificate, preflight
+        run: |
+          sh scripts/gen-env.sh localhost
+          mkdir -p "$RUNNER_TEMP/offsite"
+          sed -i "s|^OFFSITE_BACKUP_REPO=.*|OFFSITE_BACKUP_REPO=$RUNNER_TEMP/offsite|" .env
+          make certs
+          make preflight
+
+      - name: Build images (api/worker, web, backup-offsite)
+        run: docker compose build api web backup-offsite
+
+      - name: Start the stack (docker compose up --wait)
+        run: docker compose up -d --wait --wait-timeout 900
+
+      - name: Configure Keycloak (redirect URIs, OTP flow) — idempotent, run twice
+        run: |
+          sh scripts/keycloak-config.sh
+          sh scripts/keycloak-config.sh
+
+      - name: Seed a tablet (device) user — CI only
+        run: |
+          echo "DEVICE_PW=Ci$(openssl rand -hex 12)A1" >> "$GITHUB_ENV"
+          docker compose exec -T keycloak sh -c '/opt/keycloak/bin/kcadm.sh config credentials --config /tmp/ci.config --server http://127.0.0.1:8080/auth --realm master --user "$KEYCLOAK_ADMIN" --password "$KEYCLOAK_ADMIN_PASSWORD"'
+
+      - name: Create the device user
+        run: |
+          kc() { docker compose exec -T keycloak /opt/keycloak/bin/kcadm.sh "$@" --config /tmp/ci.config; }
+          kc create users -r "$REALM" -s username=tablet-ci -s enabled=true
+          printf '%s\n' "$DEVICE_PW" | docker compose exec -T keycloak sh -c \
+            'read -r pw; /opt/keycloak/bin/kcadm.sh set-password --config /tmp/ci.config -r "$1" --username tablet-ci --new-password "$pw"' sh "$REALM"
+          kc add-roles -r "$REALM" --uusername tablet-ci --rolename device
+          # keycloak-config.sh results
+          kc get "realms/$REALM" --fields browserFlow | jq -e '.browserFlow == "browser-mfa"'
+          kc get clients -r "$REALM" -q clientId=securepatrol-web --fields redirectUris \
+            | jq -e '.[0].redirectUris == ["https://localhost/*"]'
+          kc get roles/admin/composites -r "$REALM" | jq -e 'any(.[]; .name == "mfa-required")'
+
+      - name: Public endpoints through nginx (TLS verified against the private CA)
+        run: |
+          set -x
+          curl -fsS --cacert "$CACERT" "$BASE/health"
+          curl -fsS --cacert "$CACERT" "$BASE/ready"
+          curl -fsS --cacert "$CACERT" "$BASE/" | grep -qi '<div id="root">'
+          curl -fsS --cacert "$CACERT" "$BASE/config.js" | grep -q "$REALM"
+          curl -fsS --cacert "$CACERT" "$BASE/auth/realms/$REALM/.well-known/openid-configuration" \
+            | jq -e --arg iss "$BASE/auth/realms/$REALM" '.issuer == $iss'
+          # Security headers on the app (INF-N4 / WEB-2)
+          h=$(curl -fsS -o /dev/null -D - --cacert "$CACERT" "$BASE/")
+          for name in Content-Security-Policy Strict-Transport-Security X-Content-Type-Options Referrer-Policy Permissions-Policy; do
+            echo "$h" | grep -qi "^$name:" || { echo "missing $name" >&2; exit 1; }
+          done
+          # server_tokens off: no version number
+          echo "$h" | tr -d '\r' | grep -qix 'server: nginx'
+
+      - name: Token round-trip (tablet password grant) + authenticated API calls
+        run: |
+          token=$(curl -fsS --cacert "$CACERT" \
+            -d grant_type=password -d client_id=securepatrol-tablet -d username=tablet-ci \
+            --data-urlencode "password=$DEVICE_PW" -d scope=openid \
+            "$BASE/auth/realms/$REALM/protocol/openid-connect/token" | jq -er .access_token)
+          echo "::add-mask::$token"
+          curl -fsS --cacert "$CACERT" -H "Authorization: Bearer $token" "$BASE/api/v1/me" \
+            | jq -e '.roles | index("device")'
+          code=$(curl -sS -o /tmp/register.json -w '%{http_code}' --cacert "$CACERT" \
+            -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+            -d '{"name":"ci-tablet"}' "$BASE/api/v1/device/register")
+          cat /tmp/register.json
+          case "$code" in 200|201) ;; *) echo "register returned $code" >&2; exit 1 ;; esac
+          # No token -> 401
+          test "$(curl -s -o /dev/null -w '%{http_code}' --cacert "$CACERT" "$BASE/api/v1/me")" = 401
+
+      - name: Internal-only endpoints are NOT reachable through nginx
+        run: |
+          expect() { # url code [method]
+            got=$(curl -s -o /dev/null -w '%{http_code}' --cacert "$CACERT" -X "${3:-GET}" "$1")
+            echo "$1 ${3:-GET} -> $got"
+            [ "$got" = "$2" ] || { echo "expected $2" >&2; exit 1; }
+          }
+          expect "$BASE/metrics" 404
+          expect "$BASE/api/metrics" 404
+          expect "$BASE/auth/metrics" 404
+          expect "$BASE/auth/health/ready" 404
+          expect "$BASE:9443/" 403
+          expect "$BASE:9443/minio/v2/metrics/cluster" 403
+          expect "$BASE:9443/minio/health/live" 403
+          expect "$BASE:9443/securepatrol-backups/x" 403
+          expect "$BASE:9443/securepatrol-photos/x" 403 PUT
+          expect "$BASE:9443/securepatrol-photos/x" 403 DELETE
+
+      - name: Metrics on the internal network (API, worker, Prometheus targets)
+        run: |
+          docker compose exec -T api wget -qO- http://127.0.0.1:8080/metrics | grep -q '^sp_http_requests_total'
+          docker compose exec -T notification-worker wget -qO- http://127.0.0.1:9091/metrics \
+            | grep -q '^sp_worker_heartbeat_timestamp_seconds'
+          for _ in $(seq 1 18); do
+            down=$(docker compose exec -T prometheus wget -qO- 'http://127.0.0.1:9090/api/v1/query?query=up' \
+              | jq -r '[.data.result[] | select(.metric.job | test("^(api|worker|keycloak|minio|node|postgres|redis|blackbox|alertmanager)$")) | select(.value[1] != "1") | .metric.job] | join(",")')
+            n=$(docker compose exec -T prometheus wget -qO- 'http://127.0.0.1:9090/api/v1/query?query=up' | jq '.data.result | length')
+            [ "$n" -ge 10 ] && [ -z "$down" ] && { echo "all targets up ($n)"; exit 0; }
+            echo "waiting for targets (down: $down, total: $n)"; sleep 10
+          done
+          docker compose exec -T prometheus wget -qO- 'http://127.0.0.1:9090/api/v1/targets' | jq '.data.activeTargets[] | {job: .labels.job, health, lastError}'
+          exit 1
+
+      - name: Backups — pre-deploy dumps and off-site restic run
+        run: |
+          docker inspect --format '{{.State.ExitCode}}' "$(docker compose ps -a -q minio-init)" | grep -qx 0
+          sh scripts/backup-db.sh ci
+          ls -l backups/*-ci/
+          docker compose exec -T backup-offsite /usr/local/bin/entrypoint.sh run
+          docker compose exec -T backup-offsite /usr/local/bin/entrypoint.sh snapshots
+          docker compose exec -T backup-offsite cat /status/securepatrol_offsite.prom | grep -q 'sp_offsite_backup_last_result 1'
+
+      - name: Diagnostics
+        if: failure()
+        run: |
+          docker compose ps -a
+          docker compose logs --no-color --timestamps --tail=300
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v --remove-orphans

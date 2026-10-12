@@ -1,63 +1,109 @@
-# Infrastructure services. Run alone for local backend/web development, or
-# together with docker-compose.app.yml for the full stack:
-#   docker compose -f docker-compose.yml -f docker-compose.app.yml up -d
+# Infrastructure services. Alone (`make up-infra`, i.e.
+# `docker compose -f docker-compose.yml up -d`) for local backend/web
+# development; in production COMPOSE_FILE in .env adds docker-compose.app.yml
+# (api, worker, web, TLS nginx) and docker-compose.ops.yml (monitoring,
+# off-site backup), so a plain `docker compose up -d` starts everything.
+#
+# Images are pinned to a minor/patch version (Dependabot proposes updates).
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+x-hardening: &hardening
+  security_opt:
+    - no-new-privileges:true
+
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16.15-alpine
     restart: always
+    <<: *hardening
+    logging: *logging
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      KC_DB_NAME: ${KC_DB_NAME:-keycloak}
+      # Consumed by postgres/init/01-roles.sh on the first start only.
+      APP_DB_USER: ${APP_DB_USER}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+      KC_DB_NAME: ${KC_DB_NAME}
+      KC_DB_USER: ${KC_DB_USER}
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD}
+      PG_MONITOR_PASSWORD: ${PG_MONITOR_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
     ports:
-      - "127.0.0.1:5432:5432" # local dev only; not exposed on the LAN
+      - "127.0.0.1:5432:5432" # local dev / admin only; not exposed on the LAN
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      # TCP on 127.0.0.1: the init-time server listens on the socket only, so
+      # this stays unhealthy until the real server accepts connections.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 20s
+      start_period: 30s
     networks:
       - securepatrol
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.11-alpine
     restart: always
-    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
+    <<: *hardening
+    logging: *logging
+    # The password goes into a 0600 config file instead of the command line
+    # (argv is visible to every user on the host via ps).
+    command:
+      - sh
+      - -c
+      - >-
+        umask 077 &&
+        printf 'requirepass %s\nappendonly yes\n' "$$REDIS_PASSWORD" > /tmp/redis.conf &&
+        chown redis:redis /tmp/redis.conf &&
+        exec docker-entrypoint.sh redis-server /tmp/redis.conf
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
     volumes:
       - redisdata:/data
     ports:
       - "127.0.0.1:6379:6379"
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" --no-auth-warning ping | grep -q PONG"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$${REDIS_PASSWORD}\" redis-cli -h 127.0.0.1 ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
-    environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
     networks:
       - securepatrol
 
+  # MinIO-compatible object storage. MinIO Inc. stopped publishing community
+  # images (minio/minio is gone from Docker Hub), so this is the maintained
+  # community fork "Silo" by Pigsty (same MINIO_* env, /minio/* routes and
+  # data format), pinned by digest. See docs/runbook.md §9 for alternatives.
   minio:
-    image: minio/minio:latest
+    image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z@sha256:635197cb9f36d01bee221d34d1c7d7960f6a95c48b0b6c01d99cd13bdae51a46
     restart: always
-    command: server /data --console-address :9001
+    <<: *hardening
+    logging: *logging
+    mem_limit: ${MINIO_MEM_LIMIT:-1g}
+    command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-      MINIO_PROMETHEUS_AUTH_TYPE: public # metrics only reachable inside the compose network
+      # Metrics stay on the internal network: nginx :9443 only proxies the
+      # photos bucket, the S3 port is bound to 127.0.0.1.
+      MINIO_PROMETHEUS_AUTH_TYPE: public
+      MINIO_BROWSER_REDIRECT: "false"
     volumes:
       - miniodata:/data
     ports:
-      - "127.0.0.1:9000:9000"  # S3 API; browsers reach it through nginx :9443
-      - "127.0.0.1:9001:9001"  # console
+      - "127.0.0.1:9000:9000"  # S3 API; browsers reach photos through nginx :9443
+      - "127.0.0.1:9001:9001"  # console (SSH tunnel)
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:9000/minio/health/live"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -65,36 +111,75 @@ services:
     networks:
       - securepatrol
 
+  # One-shot: buckets, versioning, retention lifecycle and (opt-in)
+  # least-privilege users. Idempotent; runs on every `up`.
+  minio-init:
+    image: pgsty/mc:RELEASE.2026-09-16T00-00-00Z@sha256:cfc83108c3abb371f8fb84d99c1fdc88f8c237e022409b0081fb7c0a3be634dd
+    restart: "no"
+    <<: *hardening
+    logging: *logging
+    entrypoint: ["/bin/sh", "/init/minio-init.sh"]
+    environment:
+      MC_HOST_sp: http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio:9000
+      MINIO_BUCKET_PHOTOS: ${MINIO_BUCKET_PHOTOS}
+      MINIO_BUCKET_BACKUPS: ${MINIO_BUCKET_BACKUPS}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-35}
+      MINIO_APP_ACCESS_KEY: ${MINIO_APP_ACCESS_KEY:-}
+      MINIO_APP_SECRET_KEY: ${MINIO_APP_SECRET_KEY:-}
+      MINIO_OFFSITE_ACCESS_KEY: ${MINIO_OFFSITE_ACCESS_KEY:-}
+      MINIO_OFFSITE_SECRET_KEY: ${MINIO_OFFSITE_SECRET_KEY:-}
+    volumes:
+      - ./minio:/init:ro
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      - securepatrol
+
   keycloak:
-    image: quay.io/keycloak/keycloak:24.0
+    # Keycloak 24 is out of support; the 26.x migration path is in the
+    # runbook (§9, INF-D8). Pinned to the last 24 patch release.
+    image: quay.io/keycloak/keycloak:24.0.5
     restart: always
+    <<: *hardening
+    logging: *logging
+    mem_limit: ${KEYCLOAK_MEM_LIMIT:-1536m}
     # `start` (production mode) behind the TLS-terminating nginx; realms in
-    # ./keycloak/realms are imported on first start only.
-    command: start --import-realm
+    # ./keycloak/realms are imported on first start only — afterwards
+    # `make keycloak-config` keeps redirect URIs / MFA in sync.
+    command: ["start", "--import-realm"]
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/${KC_DB_NAME:-keycloak}
-      KC_DB_USERNAME: ${POSTGRES_USER}
-      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${KC_DB_NAME}
+      KC_DB_USERNAME: ${KC_DB_USER}
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD}
       KC_HTTP_ENABLED: "true"
       KC_HTTP_RELATIVE_PATH: /auth
+      # Only nginx (and 127.0.0.1:8081) can reach Keycloak, so trusting its
+      # X-Forwarded-* headers is safe.
       KC_PROXY_HEADERS: xforwarded
       # Must equal the API's KEYCLOAK_PUBLIC_URL: it becomes the token issuer.
       KC_HOSTNAME_URL: ${KEYCLOAK_PUBLIC_URL}
       KC_HOSTNAME_ADMIN_URL: ${KEYCLOAK_PUBLIC_URL}
+      KC_HOSTNAME_STRICT: "true"
+      # The API fetches JWKS via http://keycloak:8080 (back channel).
       KC_HOSTNAME_STRICT_BACKCHANNEL: "false"
       KC_HEALTH_ENABLED: "true"
+      # Keycloak 24 serves /auth/health and /auth/metrics on the main port;
+      # nginx blocks both, Prometheus scrapes them internally.
+      KC_METRICS_ENABLED: "true"
+      TZ: UTC
     volumes:
       - ./keycloak/realms:/opt/keycloak/data/import:ro
     ports:
-      - "127.0.0.1:8081:8080" # direct access for local dev; use https://<host>/auth otherwise
+      - "127.0.0.1:8081:8080" # local dev / SSH tunnel; use https://<host>/auth otherwise
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && printf 'GET /auth/health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK'"]
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /auth/health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK'"]
       interval: 20s
       timeout: 10s
       retries: 10
@@ -102,40 +187,17 @@ services:
     networks:
       - securepatrol
 
+  # Infra-only mode placeholder; docker-compose.app.yml swaps in the TLS
+  # config and public ports.
   nginx:
-    image: nginx:1.27-alpine
+    image: nginx:1.30-alpine
     restart: always
+    <<: *hardening
+    logging: *logging
     volumes:
       - ./nginx/nginx-infra-only.conf:/etc/nginx/nginx.conf:ro
     ports:
-      - "80:80"
-    networks:
-      - securepatrol
-
-  grafana:
-    image: grafana/grafana:11.2.0
-    restart: always
-    environment:
-      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD}
-    volumes:
-      - grafanadata:/var/lib/grafana
-    ports:
-      - "127.0.0.1:3001:3000"
-    networks:
-      - securepatrol
-
-  prometheus:
-    image: prom/prometheus:v2.54.1
-    restart: always
-    volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheusdata:/prometheus
-    ports:
-      - "127.0.0.1:9090:9090"
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.path=/prometheus"
-      - "--storage.tsdb.retention.time=30d"
+      - "127.0.0.1:80:80"
     networks:
       - securepatrol
 
@@ -143,9 +205,10 @@ volumes:
   pgdata:
   redisdata:
   miniodata:
-  grafanadata:
-  prometheusdata:
 
 networks:
   securepatrol:
     driver: bridge
+    ipam:
+      config:
+        - subnet: ${SP_DOCKER_SUBNET:-172.28.0.0/24}

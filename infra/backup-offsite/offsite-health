@@ -1,0 +1,4 @@
+#!/bin/sh
+# Container healthcheck: the scheduler is alive. Backup success itself is
+# alerted on via sp_offsite_backup_last_success_timestamp_seconds.
+pgrep crond >/dev/null

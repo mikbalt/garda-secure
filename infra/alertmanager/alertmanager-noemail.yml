@@ -1,0 +1,8 @@
+# Used when ALERT_EMAIL_TO is empty: alerts are only visible in the
+# Alertmanager UI (http://127.0.0.1:9093 via SSH tunnel) and Grafana.
+# Configure ALERT_EMAIL_TO + ALERT_SMTP_* in .env for real notifications.
+route:
+  receiver: "null"
+  group_by: [alertname]
+receivers:
+  - name: "null"

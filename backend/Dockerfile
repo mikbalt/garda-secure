@@ -30,7 +30,8 @@ COPY --from=builder /app/migrations   /migrations
 
 USER app
 
-EXPOSE 8080
+# 8080 = API (+ /metrics, internal only); 9091 = worker /health + /metrics.
+EXPOSE 8080 9091
 
 # `securepatrol` runs the API; `securepatrol worker` runs notifications + jobs.
 ENTRYPOINT ["/app/securepatrol"]

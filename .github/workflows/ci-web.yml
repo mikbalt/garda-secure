@@ -21,15 +21,18 @@ defaults:
   run:
     working-directory: web
 
+# Actions are pinned by commit SHA (INF-C2); Dependabot keeps them current.
 jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          node-version: '20'
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
@@ -39,42 +42,78 @@ jobs:
     name: TypeScript Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          node-version: '20'
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
       - run: npm run typecheck
 
+  audit:
+    name: npm audit (production deps)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      # INF-C4 / WEB-1: fail on high/critical advisories in shipped packages.
+      - run: npm audit --omit=dev --audit-level=high
+
   build:
     name: Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          node-version: '20'
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
       - run: npm run build
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: web-dist
           path: web/dist/
 
   docker-build:
-    name: Docker Build
+    name: Docker Build + Trivy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Build image
         run: docker build -t securepatrol/web:${{ github.sha }} .
-      - name: Runtime config is generated at start
+      - name: Runtime config + security headers (read-only root fs, as in production)
         run: |
-          cid=$(docker run -d -e KEYCLOAK_REALMS="securepatrol-client1:Client 1" securepatrol/web:${{ github.sha }})
-          sleep 3
-          docker exec "$cid" cat /usr/share/nginx/html/config.js | tee /dev/stderr | grep -q '"securepatrol-client1"'
-          docker rm -f "$cid"
+          cid=$(docker run -d --read-only --tmpfs /tmp --tmpfs /run --tmpfs /var/cache/nginx \
+            -e KEYCLOAK_REALMS="securepatrol-client1:Client 1" securepatrol/web:${{ github.sha }})
+          trap 'docker logs "$cid"; docker rm -f "$cid" >/dev/null' EXIT
+          for _ in $(seq 1 20); do
+            docker exec "$cid" wget -q -O /dev/null http://127.0.0.1/ && break
+            sleep 1
+          done
+          docker exec "$cid" wget -q -O - http://127.0.0.1/config.js | tee /dev/stderr | grep -q '"securepatrol-client1"'
+          headers=$(docker exec "$cid" wget -S -q -O /dev/null http://127.0.0.1/ 2>&1)
+          echo "$headers"
+          for h in Content-Security-Policy X-Content-Type-Options X-Frame-Options Referrer-Policy Permissions-Policy; do
+            echo "$headers" | grep -qi "$h:" || { echo "missing header $h" >&2; exit 1; }
+          done
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: securepatrol/web:${{ github.sha }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
