@@ -211,3 +211,11 @@ in PRD §9 (OQ-x). New entries go at the bottom with the next free number.
 - Two tablet endpoints added to the API: `GET /device/status` (acting guard's
   current shift, open attendance and running patrol) and `GET /device/sos`
   (unacknowledged SOS of the site, so supervisors on any tablet see them).
+
+### D-025 — Ops alerts are platform-admin only
+- **Date:** 2026-10-12 · **Status:** Accepted
+- The install-wide operations alerts (`/notifications/ops-event-types`,
+  `/notifications/ops-rules`, `/notifications/ops-log`, from the reliability
+  work) need the `platform-admin` role, like the channel settings and backups
+  (security work, BE-S3). They cover every tenant, so a realm `admin` must not
+  read or receive them. Per-realm notification rules and logs stay `admin`.

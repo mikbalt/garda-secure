@@ -49,6 +49,7 @@ type SiteConfig struct {
 	AbsentAfterMinutes   int    `json:"absent_after_minutes"`    // no clock-in by start + this → absent
 	IdleLockMinutes      int    `json:"idle_lock_minutes"`       // tablet auto-lock
 	Language             string `json:"language"`                // notification language: id | en
+	ScanRadiusMeters     int    `json:"scan_radius_m"`           // scans with GPS farther from the checkpoint are flagged gps_far; 0 = off
 }
 
 // DefaultSiteConfig returns the configuration applied when a site has no overrides.
@@ -60,6 +61,7 @@ func DefaultSiteConfig() SiteConfig {
 		AbsentAfterMinutes:   30,
 		IdleLockMinutes:      5,
 		Language:             "id",
+		ScanRadiusMeters:     150,
 	}
 }
 
@@ -148,6 +150,10 @@ type AttendanceRecord struct {
 	ReviewedBy      *string    `json:"reviewed_by,omitempty"`
 	ReviewedAt      *time.Time `json:"reviewed_at,omitempty"`
 	CreatedAt       time.Time  `json:"created_at"`
+	// ReceivedAt is when the clock-in reached the server; Flags are
+	// plausibility findings (service.Flag*).
+	ReceivedAt *time.Time `json:"received_at,omitempty"`
+	Flags      []string   `json:"flags"`
 }
 
 // Checkpoint is an individual stop on a patrol route (stored as JSONB inside Route).
@@ -198,6 +204,7 @@ type CheckpointScan struct {
 	PhotoObjectKey *string   `json:"photo_object_key,omitempty"`
 	GPSLat         *float64  `json:"gps_lat,omitempty"`
 	GPSLng         *float64  `json:"gps_lng,omitempty"`
+	Flags          []string  `json:"flags"` // plausibility findings, e.g. gps_far, too_fast
 }
 
 // Incident records a security event filed by a guard. The original is
@@ -217,6 +224,8 @@ type Incident struct {
 	OccurredAt      time.Time `json:"occurred_at"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
+	ReceivedAt      time.Time `json:"received_at"` // server receipt time
+	Flags           []string  `json:"flags"`
 }
 
 // IncidentAmendment is a supervisor-approved correction to an incident.
@@ -277,6 +286,7 @@ type SosAlert struct {
 	GPSLng         *float64   `json:"gps_lng,omitempty"`
 	AcknowledgedBy *string    `json:"acknowledged_by,omitempty"`
 	AcknowledgedAt *time.Time `json:"acknowledged_at,omitempty"`
+	Flags          []string   `json:"flags"`
 }
 
 // NotificationRule routes an event type at a site to a channel recipient.
@@ -323,14 +333,55 @@ type Backup struct {
 	KeycloakSizeBytes *int64  `json:"keycloak_size_bytes,omitempty"`
 }
 
-// AuditLog records admin/mutating actions for compliance.
+// ── Ownership of records created by idempotent tablet sync (BE-S2) ──────────
+
+// Owner returns the scope (site) and guard that created the record.
+func (r *AttendanceRecord) Owner() (string, string) { return r.SiteID, r.GuardID }
+
+// Owner returns the site and guard of the session.
+func (s *PatrolSession) Owner() (string, string) { return s.SiteID, s.GuardID }
+
+// Owner returns the session (scans have no site column) and guard.
+func (s *CheckpointScan) Owner() (string, string) {
+	if s.SessionID == nil {
+		return "", s.GuardID
+	}
+	return *s.SessionID, s.GuardID
+}
+
+// Owner returns the site and guard of the incident.
+func (i *Incident) Owner() (string, string) { return i.SiteID, i.GuardID }
+
+// Owner returns the site and guard of the defect report.
+func (d *DefectReport) Owner() (string, string) { return d.SiteID, d.GuardID }
+
+// Owner returns the site and guard of the visitor log.
+func (v *VisitorLog) Owner() (string, string) { return v.SiteID, v.GuardID }
+
+// Owner returns the site and guard of the SOS alert.
+func (a *SosAlert) Owner() (string, string) { return a.SiteID, a.GuardID }
+
+// AuditLog records a mutating API request for compliance (NFR-05). Rows
+// are append-only.
 type AuditLog struct {
-	ID         string    `json:"id"`
-	UserID     string    `json:"user_id"`
-	Action     string    `json:"action"`
-	ResourceID *string   `json:"resource_id,omitempty"`
-	IP         string    `json:"ip"`
-	UserAgent  string    `json:"user_agent"`
-	StatusCode int       `json:"status_code"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID           string          `json:"id"`
+	UserID       string          `json:"user_id"` // "realm/actor[ guard:<id>]" (legacy display)
+	Realm        *string         `json:"realm,omitempty"`
+	Actor        *string         `json:"actor,omitempty"` // username, or subject
+	GuardID      *string         `json:"guard_id,omitempty"`
+	Roles        []string        `json:"roles"`
+	Action       string          `json:"action"` // "METHOD /route/:pattern"
+	Method       *string         `json:"method,omitempty"`
+	Route        *string         `json:"route,omitempty"`
+	ResourceType *string         `json:"resource_type,omitempty"` // e.g. guards, patrol.routes
+	ResourceID   *string         `json:"resource_id,omitempty"`
+	Params       json.RawMessage `json:"params,omitempty"` // route params, e.g. {"shiftId": "…"}
+	RequestID    *string         `json:"request_id,omitempty"`
+	Summary      json.RawMessage `json:"summary,omitempty"` // redacted request body (web writes)
+	Before       json.RawMessage `json:"before,omitempty"`
+	After        json.RawMessage `json:"after,omitempty"`
+	IP           string          `json:"ip"`
+	UserAgent    string          `json:"user_agent"`
+	StatusCode   int             `json:"status_code"`
+	CreatedAt    time.Time       `json:"created_at"`
 }

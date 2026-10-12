@@ -1,10 +1,14 @@
 package storage
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/minio/minio-go/v7"
@@ -79,6 +83,53 @@ func (c *Client) Put(ctx context.Context, bucket, key string, r io.Reader, size 
 		return 0, fmt.Errorf("PutObject(%s/%s): %w", bucket, key, err)
 	}
 	return info.Size, nil
+}
+
+// ErrExists is returned by PutNew when the key is already taken.
+var ErrExists = errors.New("object already exists")
+
+// ObjectInfo describes a stored object.
+type ObjectInfo struct {
+	Size   int64
+	SHA256 string // from the sha256 metadata written by PutNew; "" for older objects
+}
+
+// metaSHA256 is the user-metadata key holding the content hash.
+const metaSHA256 = "Sha256"
+
+// Stat returns an object's size and content hash; ok is false when the
+// object does not exist.
+func (c *Client) Stat(ctx context.Context, bucket, key string) (ObjectInfo, bool, error) {
+	info, err := c.mc.StatObject(ctx, bucket, key, minio.StatObjectOptions{})
+	if err != nil {
+		if minio.ToErrorResponse(err).Code == "NoSuchKey" {
+			return ObjectInfo{}, false, nil
+		}
+		return ObjectInfo{}, false, fmt.Errorf("StatObject(%s/%s): %w", bucket, key, err)
+	}
+	out := ObjectInfo{Size: info.Size}
+	for k, v := range info.UserMetadata {
+		if strings.EqualFold(k, metaSHA256) {
+			out.SHA256 = v
+		}
+	}
+	return out, true, nil
+}
+
+// PutNew stores data under key only if the key is still free (write-once
+// evidence, BE-S4): the PUT is conditional (If-None-Match: *), so a racing
+// writer gets ErrExists. sha256 is stored as object metadata.
+func (c *Client) PutNew(ctx context.Context, bucket, key string, data []byte, contentType, sha256 string) error {
+	opts := minio.PutObjectOptions{ContentType: contentType, UserMetadata: map[string]string{metaSHA256: sha256}}
+	opts.SetMatchETagExcept("*")
+	_, err := c.mc.PutObject(ctx, bucket, key, bytes.NewReader(data), int64(len(data)), opts)
+	if err != nil {
+		if r := minio.ToErrorResponse(err); r.StatusCode == http.StatusPreconditionFailed || r.Code == "PreconditionFailed" {
+			return ErrExists
+		}
+		return fmt.Errorf("PutObject(%s/%s): %w", bucket, key, err)
+	}
+	return nil
 }
 
 // Exists reports whether an object exists.

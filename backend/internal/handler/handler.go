@@ -35,6 +35,8 @@ type Handler struct {
 	Settings *settings.Store
 	Cfg      *config.Config
 	Log      zerolog.Logger
+
+	limiter *middleware.Limiter // set by Mount
 }
 
 // Role groups used in route registration.
@@ -46,8 +48,8 @@ var (
 	rolesAdmin  = []string{middleware.RoleAdmin}
 )
 
-// Register mounts every /api/v1 route. The group must already run the JWT,
-// LoadDevice and Audit middleware.
+// Register mounts every /api/v1 route. The group must already run the
+// middleware chain set up by Mount.
 func (h *Handler) Register(api fiber.Router) {
 	web := func(roles ...string) fiber.Handler { return middleware.RequireRoles(roles...) }
 	device := middleware.RequireActiveDevice()
@@ -155,31 +157,39 @@ func (h *Handler) Register(api fiber.Router) {
 
 	api.Get("/dashboard/summary", web(rolesWeb...), h.dashboardSummary)
 
-	notif := api.Group("/notifications", web(rolesAdmin...))
-	notif.Get("/event-types", h.eventTypes)
-	notif.Get("/rules", h.listRules)
-	notif.Post("/rules", h.createRule)
-	notif.Put("/rules/:id", h.updateRule)
-	notif.Delete("/rules/:id", h.deleteRule)
-	notif.Get("/log", h.listNotificationLog)
-	notif.Post("/log/:id/retry", h.retryNotification)
+	// Install-wide settings, ops alerts and backups: platform-admin only
+	// (BE-S3). Ops alerts cover every tenant, so a realm admin must not
+	// manage or read them. The /notifications group carries no middleware
+	// because the per-realm and ops routes share its prefix.
+	platform := middleware.RequirePlatformAdmin(h.Cfg.PlatformAdminRealms)
+	admin := web(rolesAdmin...)
+	notif := api.Group("/notifications")
+	notif.Get("/event-types", admin, h.eventTypes)
+	notif.Get("/rules", admin, h.listRules)
+	notif.Post("/rules", admin, h.createRule)
+	notif.Put("/rules/:id", admin, h.updateRule)
+	notif.Delete("/rules/:id", admin, h.deleteRule)
+	notif.Get("/log", admin, h.listNotificationLog)
+	notif.Post("/log/:id/retry", admin, h.retryNotification)
 	// Install-wide operations alerts (backup failed/stale, SOS undelivered, ...).
-	notif.Get("/ops-event-types", h.opsEventTypes)
-	notif.Get("/ops-rules", h.listOpsRules)
-	notif.Post("/ops-rules", h.createOpsRule)
-	notif.Put("/ops-rules/:id", h.updateOpsRule)
-	notif.Delete("/ops-rules/:id", h.deleteOpsRule)
-	notif.Get("/ops-log", h.listOpsLog)
-	notif.Post("/ops-log/:id/retry", h.retryOpsNotification)
+	notif.Get("/ops-event-types", platform, h.opsEventTypes)
+	notif.Get("/ops-rules", platform, h.listOpsRules)
+	notif.Post("/ops-rules", platform, h.createOpsRule)
+	notif.Put("/ops-rules/:id", platform, h.updateOpsRule)
+	notif.Delete("/ops-rules/:id", platform, h.deleteOpsRule)
+	notif.Get("/ops-log", platform, h.listOpsLog)
+	notif.Post("/ops-log/:id/retry", platform, h.retryOpsNotification)
 
-	set := api.Group("/settings", web(rolesAdmin...))
+	set := api.Group("/settings", platform)
 	set.Get("/channels", h.getChannels)
 	set.Put("/channels", h.putChannels)
 	set.Post("/channels/test", h.testChannel)
 
-	bk := api.Group("/backups", web(rolesAdmin...))
+	bk := api.Group("/backups", platform)
 	bk.Get("/", h.listBackups)
 	bk.Post("/", h.createBackup)
+
+	api.Get("/audit", web(rolesAdmin...), h.listAudit)
 }
 
 // ── Error handling ───────────────────────────────────────────────────────────
@@ -193,6 +203,9 @@ func (h *Handler) fail(c *fiber.Ctx, err error) error {
 		if se.Code != "" {
 			body["code"] = se.Code
 		}
+		if se.Field != "" {
+			body["field"] = se.Field
+		}
 		return c.Status(se.Status).JSON(body)
 	case errors.Is(err, repository.ErrNotFound), repository.IsInvalidInput(err):
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not found", "code": "not_found"})
@@ -205,7 +218,7 @@ func (h *Handler) fail(c *fiber.Ctx, err error) error {
 	}
 	rid := requestID(c)
 	h.Log.Error().Err(err).Str("request_id", rid).Str("path", c.Path()).Str("method", c.Method()).Msg("request failed")
-	body := fiber.Map{"error": "internal error"}
+	body := fiber.Map{"error": "internal error", "code": "internal"}
 	if rid != "" {
 		body["request_id"] = rid
 	}

@@ -16,8 +16,25 @@ import (
 	"strings"
 	"time"
 
+	"github.com/securepatrol/backend/internal/netguard"
 	"github.com/securepatrol/backend/internal/settings"
 )
+
+// Errors callers can classify (e.g. the settings test endpoint).
+var (
+	ErrNotConfigured    = errors.New("channel is not configured")
+	ErrInvalidRecipient = errors.New("invalid recipient")
+)
+
+// StatusError is a non-2xx answer of an HTTP channel API.
+type StatusError struct {
+	Status int
+	Detail string // response excerpt, for the delivery log only
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("API status %d: %s", e.Status, e.Detail)
+}
 
 // Channel delivers one message to one recipient. New channels (LINE,
 // Telegram in v2) implement this and register in Worker.channels.
@@ -32,11 +49,11 @@ type emailChannel struct{}
 func (emailChannel) Send(ctx context.Context, cfg settings.Channels, to, subject, body string) error {
 	s := cfg.SMTP
 	if s.Host == "" {
-		return errors.New("SMTP is not configured")
+		return fmt.Errorf("%w: SMTP host missing", ErrNotConfigured)
 	}
 	toAddr, err := mail.ParseAddress(to)
 	if err != nil {
-		return fmt.Errorf("invalid e-mail recipient %q", to)
+		return fmt.Errorf("%w: e-mail %q", ErrInvalidRecipient, to)
 	}
 	from := s.From
 	if from == "" {
@@ -69,7 +86,7 @@ func (emailChannel) Send(ctx context.Context, cfg settings.Channels, to, subject
 	}
 	// Port 465 is implicit TLS; anything else upgrades with STARTTLS when the
 	// server offers it.
-	return sendSMTP(ctx, net.JoinHostPort(s.Host, port), s.Host, port == "465", auth,
+	return sendSMTP(ctx, s.Guard, net.JoinHostPort(s.Host, port), s.Host, port == "465", auth,
 		fromAddr.Address, toAddr.Address, msg.Bytes())
 }
 
@@ -80,14 +97,18 @@ const smtpDialTimeout = 15 * time.Second
 
 // sendSMTP delivers one message with every network step bounded by ctx:
 // dial, TLS handshake (implicit or STARTTLS), SMTP dialogue and data.
-func sendSMTP(ctx context.Context, addr, host string, implicitTLS bool, auth smtp.Auth, from, to string, msg []byte) error {
+//
+// The dial goes through guard: relays entered in the UI may not resolve to
+// internal addresses (checked on the connected IP, so DNS rebinding cannot
+// bypass the check made when the settings were saved; audit BE-S).
+func sendSMTP(ctx context.Context, guard netguard.Policy, addr, host string, implicitTLS bool, auth smtp.Auth, from, to string, msg []byte) error {
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, sendTimeout)
 		defer cancel()
 	}
 	tlsCfg := &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}
-	dialer := &net.Dialer{Timeout: smtpDialTimeout}
+	dialer := guard.Dialer(smtpDialTimeout)
 	var conn net.Conn
 	var err error
 	if implicitTLS {
@@ -178,11 +199,11 @@ type whatsAppChannel struct {
 func (w whatsAppChannel) Send(ctx context.Context, cfg settings.Channels, to, subject, body string) error {
 	s := cfg.WhatsApp
 	if s.Token == "" || s.PhoneNumberID == "" {
-		return errors.New("WhatsApp is not configured (token and phone number ID are required)")
+		return fmt.Errorf("%w: WhatsApp token and phone number ID are required", ErrNotConfigured)
 	}
 	phone := digitsOnly(to)
 	if len(phone) < 8 {
-		return fmt.Errorf("invalid WhatsApp recipient %q", to)
+		return fmt.Errorf("%w: WhatsApp %q", ErrInvalidRecipient, to)
 	}
 	text := subject
 	if body != "" && !strings.HasPrefix(strings.TrimSpace(body), "<") {
@@ -230,7 +251,7 @@ func (w whatsAppChannel) Send(ctx context.Context, cfg settings.Channels, to, su
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
 		detail, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Errorf("whatsapp API status %d: %s", resp.StatusCode, strings.TrimSpace(string(detail)))
+		return &StatusError{Status: resp.StatusCode, Detail: strings.TrimSpace(string(detail))}
 	}
 	return nil
 }

@@ -14,8 +14,8 @@ import (
 
 // Install-wide operations alerts: who is told when a backup fails or is
 // stale, an SOS cannot be delivered, or a scheduled job keeps failing. Like
-// the channel settings they are install-wide and editable by any realm's
-// admin (D-005).
+// the channel settings they are install-wide and need the platform-admin
+// role (BE-S3).
 
 // GET /notifications/ops-event-types
 func (h *Handler) opsEventTypes(c *fiber.Ctx) error {

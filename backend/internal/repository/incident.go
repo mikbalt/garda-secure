@@ -13,15 +13,19 @@ import (
 // ── Incidents ────────────────────────────────────────────────────────────────
 
 const incidentColumns = `id, site_id, guard_id, device_id, type, severity, description,
-	photo_object_keys, location, status, occurred_at, created_at, updated_at,
+	photo_object_keys, location, status, occurred_at, created_at, updated_at, received_at, flags,
 	COALESCE((SELECT g.name FROM guards g WHERE g.id = incidents.guard_id), '')`
 
 func scanIncident(row pgx.Row) (model.Incident, error) {
 	var i model.Incident
 	err := row.Scan(&i.ID, &i.SiteID, &i.GuardID, &i.DeviceID, &i.Type, &i.Severity, &i.Description,
-		&i.PhotoObjectKeys, &i.Location, &i.Status, &i.OccurredAt, &i.CreatedAt, &i.UpdatedAt, &i.GuardName)
+		&i.PhotoObjectKeys, &i.Location, &i.Status, &i.OccurredAt, &i.CreatedAt, &i.UpdatedAt,
+		&i.ReceivedAt, &i.Flags, &i.GuardName)
 	if i.PhotoObjectKeys == nil {
 		i.PhotoObjectKeys = []string{}
+	}
+	if i.Flags == nil {
+		i.Flags = []string{}
 	}
 	return i, err
 }
@@ -60,12 +64,12 @@ func CreateIncident(ctx context.Context, db DBTX, i model.Incident, clientID *st
 	out, err := scanIncident(db.QueryRow(ctx, `
 		INSERT INTO incidents
 		  (id, site_id, guard_id, device_id, type, severity, description, photo_object_keys,
-		   location, status, occurred_at)
-		VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, 'open', $10)
+		   location, status, occurred_at, flags)
+		VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, 'open', $10, $11)
 		ON CONFLICT (id) DO NOTHING
 		RETURNING `+incidentColumns,
 		clientID, i.SiteID, i.GuardID, i.DeviceID, i.Type, i.Severity, i.Description,
-		i.PhotoObjectKeys, i.Location, i.OccurredAt))
+		i.PhotoObjectKeys, i.Location, i.OccurredAt, flagsOrEmpty(i.Flags)))
 	if err == nil {
 		return &out, true, nil
 	}
@@ -131,13 +135,16 @@ func ListAmendments(ctx context.Context, db DBTX, incidentID string) ([]model.In
 // ── SOS ──────────────────────────────────────────────────────────────────────
 
 const sosColumns = `id, guard_id, site_id, device_id, fired_at, received_at, gps_lat, gps_lng,
-	acknowledged_by, acknowledged_at,
+	acknowledged_by, acknowledged_at, flags,
 	COALESCE((SELECT g.name FROM guards g WHERE g.id = sos_alerts.guard_id), '')`
 
 func scanSos(row pgx.Row) (model.SosAlert, error) {
 	var a model.SosAlert
 	err := row.Scan(&a.ID, &a.GuardID, &a.SiteID, &a.DeviceID, &a.FiredAt, &a.ReceivedAt,
-		&a.GPSLat, &a.GPSLng, &a.AcknowledgedBy, &a.AcknowledgedAt, &a.GuardName)
+		&a.GPSLat, &a.GPSLng, &a.AcknowledgedBy, &a.AcknowledgedAt, &a.Flags, &a.GuardName)
+	if a.Flags == nil {
+		a.Flags = []string{}
+	}
 	return a, err
 }
 
@@ -148,11 +155,11 @@ func scanSosRows(rows pgx.Rows) (model.SosAlert, error) { return scanSos(rows) }
 // one alert (created=false on repeats).
 func CreateSosAlert(ctx context.Context, db DBTX, a model.SosAlert, clientID *string) (*model.SosAlert, bool, error) {
 	out, err := scanSos(db.QueryRow(ctx, `
-		INSERT INTO sos_alerts (id, guard_id, site_id, device_id, fired_at, gps_lat, gps_lng)
-		VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7)
+		INSERT INTO sos_alerts (id, guard_id, site_id, device_id, fired_at, gps_lat, gps_lng, flags)
+		VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (id) DO NOTHING
 		RETURNING `+sosColumns,
-		clientID, a.GuardID, a.SiteID, a.DeviceID, a.FiredAt, a.GPSLat, a.GPSLng))
+		clientID, a.GuardID, a.SiteID, a.DeviceID, a.FiredAt, a.GPSLat, a.GPSLng, flagsOrEmpty(a.Flags)))
 	if err == nil {
 		return &out, true, nil
 	}

@@ -60,7 +60,7 @@ func TestValidatorMultiRealm(t *testing.T) {
 	base := func() jwt.MapClaims {
 		return jwt.MapClaims{
 			"iss": "https://sp/auth/realms/client2", "sub": "u1", "preferred_username": "ani",
-			"azp": "securepatrol-web", "exp": time.Now().Add(time.Hour).Unix(),
+			"azp": "securepatrol-web", "typ": "Bearer", "exp": time.Now().Add(time.Hour).Unix(),
 			"roles":        []string{"supervisor"},
 			"realm_access": map[string]any{"roles": []string{"hr", "supervisor"}},
 		}
@@ -84,6 +84,9 @@ func TestValidatorMultiRealm(t *testing.T) {
 		"expired":          func(c jwt.MapClaims) { c["exp"] = time.Now().Add(-time.Hour).Unix() },
 		"no expiry":        func(c jwt.MapClaims) { delete(c, "exp") },
 		"no subject":       func(c jwt.MapClaims) { delete(c, "sub") },
+		"ID token":         func(c jwt.MapClaims) { c["typ"] = "ID" },
+		"refresh token":    func(c jwt.MapClaims) { c["typ"] = "Refresh" },
+		"no type":          func(c jwt.MapClaims) { delete(c, "typ") },
 	}
 	for name, mutate := range cases {
 		c := base()
@@ -96,5 +99,41 @@ func TestValidatorMultiRealm(t *testing.T) {
 	other := newTestIssuer(t) // same kid, different key → bad signature
 	if _, err := v.Parse(other.token(t, base())); err == nil {
 		t.Error("token signed by another key accepted")
+	}
+}
+
+func TestRolesBoundToClient(t *testing.T) {
+	ti := newTestIssuer(t)
+	v := NewValidator([]RealmKeys{
+		{Realm: "client1", Issuer: "https://sp/auth/realms/client1", JWKSURL: ti.server.URL},
+	}, []string{"web-x", "tablet-x"}, zerolog.Nop())
+	v.BindClients("web-x", "tablet-x")
+
+	roles := func(azp string, rs ...string) []string {
+		t.Helper()
+		p, err := v.Parse(ti.token(t, jwt.MapClaims{
+			"iss": "https://sp/auth/realms/client1", "sub": "u1", "azp": azp, "typ": "Bearer",
+			"exp": time.Now().Add(time.Hour).Unix(), "roles": rs,
+		}))
+		if err != nil {
+			t.Fatalf("token rejected: %v", err)
+		}
+		slices.Sort(p.Roles)
+		return p.Roles
+	}
+	cases := []struct {
+		name string
+		got  []string
+		want []string
+	}{
+		{"web client keeps web roles", roles("web-x", "admin", "platform-admin", "device"), []string{"admin", "platform-admin"}},
+		{"tablet client keeps only device", roles("tablet-x", "device", "admin", "supervisor"), []string{"device"}},
+		{"web user via tablet client", roles("tablet-x", "admin", "hr"), []string{}},
+		{"device account via web client", roles("web-x", "device"), []string{}},
+	}
+	for _, c := range cases {
+		if !slices.Equal(c.got, c.want) {
+			t.Errorf("%s: roles = %v, want %v", c.name, c.got, c.want)
+		}
 	}
 }

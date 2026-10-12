@@ -27,6 +27,7 @@
   "otpPolicyPeriod": 30,
   "roles": {
     "realm": [
+      { "name": "platform-admin", "description": "Install-wide operator: notification channels and backups; give it only to the operator (see PLATFORM_ADMIN_REALMS)" },
       { "name": "admin", "description": "Operations manager: sites, schedules, guards, devices, reports, system settings" },
       { "name": "supervisor", "description": "Shift supervisor: team status, SOS, incidents, attendance review" },
       { "name": "hr", "description": "HR / payroll: attendance and monthly recap (read-only)" },

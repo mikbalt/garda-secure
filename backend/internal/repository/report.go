@@ -21,6 +21,7 @@ type SessionSummaryRow struct {
 	TotalCheckpoints int        `json:"total_checkpoints"`
 	ScannedCount     int        `json:"scanned_count"`
 	SLABreaches      int        `json:"sla_breaches"`
+	FlaggedScans     int        `json:"flagged_scans"` // scans with plausibility flags
 	CompletionPct    float64    `json:"completion_pct"`
 }
 
@@ -33,7 +34,8 @@ func SessionSummaries(ctx context.Context, db DBTX, siteID string, from, to time
 		       (SELECT COUNT(DISTINCT cs.checkpoint_id) FROM checkpoint_scans cs
 		         WHERE cs.session_id = ps.id
 		           AND cs.checkpoint_id IN (SELECT cp->>'id' FROM jsonb_array_elements(r.checkpoints) cp)) AS scanned,
-		       (SELECT COUNT(*) FROM sla_breaches b WHERE b.session_id = ps.id) AS breaches
+		       (SELECT COUNT(*) FROM sla_breaches b WHERE b.session_id = ps.id) AS breaches,
+		       (SELECT COUNT(*) FROM checkpoint_scans cs WHERE cs.session_id = ps.id AND cardinality(cs.flags) > 0) AS flagged
 		FROM patrol_sessions ps
 		JOIN routes r ON r.id = ps.route_id
 		JOIN guards g ON g.id = ps.guard_id
@@ -45,7 +47,7 @@ func SessionSummaries(ctx context.Context, db DBTX, siteID string, from, to time
 	return collect(rows, func(r pgx.Rows) (SessionSummaryRow, error) {
 		var s SessionSummaryRow
 		err := r.Scan(&s.SessionID, &s.RouteID, &s.RouteName, &s.GuardID, &s.GuardName, &s.StartedAt,
-			&s.EndedAt, &s.Status, &s.TotalCheckpoints, &s.ScannedCount, &s.SLABreaches)
+			&s.EndedAt, &s.Status, &s.TotalCheckpoints, &s.ScannedCount, &s.SLABreaches, &s.FlaggedScans)
 		if s.TotalCheckpoints > 0 {
 			s.CompletionPct = round1(float64(s.ScannedCount) / float64(s.TotalCheckpoints) * 100)
 		}

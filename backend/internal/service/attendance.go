@@ -26,6 +26,9 @@ type ClockInInput struct {
 	// result (new or replayed) — used to stage notifications atomically
 	// with the record (transactional outbox, audit BE-R1).
 	AfterWrite func(ctx context.Context, tx pgx.Tx, res *ClockInResult) error
+	// DeviceLastSeen is when the tablet was last seen before this request
+	// (plausibility check of backdated clock-ins).
+	DeviceLastSeen *time.Time
 }
 
 // ClockInResult reports the stored record and what happened.
@@ -83,8 +86,8 @@ func replayedClockIn(ctx context.Context, tx pgx.Tx, in ClockInInput) (*ClockInR
 	if err != nil {
 		return nil, err
 	}
-	if existing.GuardID != in.Guard.ID {
-		return nil, Conflict("id_conflict", "attendance id already used by another guard")
+	if err := CheckReplay(existing, false, in.Site.ID, in.Guard.ID); err != nil {
+		return nil, err
 	}
 	return &ClockInResult{Record: existing}, nil
 }
@@ -117,6 +120,8 @@ func clockIn(ctx context.Context, tx pgx.Tx, in ClockInInput, at time.Time, cfg 
 		GPSLat: in.GPSLat, GPSLng: in.GPSLng,
 	}
 	p.Status, p.LateMinutes = arrivalStatus(shift.StartTime, at, cfg.LateGraceMinutes)
+	p.ReceivedAt = Now()
+	p.Flags, p.NeedsReview = ClockInFlags(at, p.ReceivedAt, p.Status, in.DeviceLastSeen)
 
 	existing, err := repository.GetAttendanceByShift(ctx, tx, shift.ID)
 	switch {

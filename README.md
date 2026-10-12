@@ -6,7 +6,7 @@ Enterprise-grade security patrol and attendance management system.
 
 ```
 securepatrol/
-├── backend/        # Go 1.22 + Fiber — REST API + notification worker
+├── backend/        # Go 1.26 + Fiber — REST API + notification worker
 ├── web/            # React 18 + Vite + TypeScript — admin web dashboard
 ├── mobile/         # Flutter — iOS/Android tablet app for field guards
 └── infra/          # Docker Compose, Keycloak, Nginx, Prometheus
@@ -73,7 +73,7 @@ see [docs/runbook.md](docs/runbook.md) §7 for the required secrets.
 
 | Layer | Technology |
 |---|---|
-| API | Go 1.22 + Fiber v2 |
+| API | Go 1.26 + Fiber v2 |
 | Auth | Keycloak 24 (OIDC, RBAC, TOTP) |
 | Database | PostgreSQL 16 |
 | Object Storage | MinIO (photos, backups) |

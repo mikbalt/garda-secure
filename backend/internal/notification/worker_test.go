@@ -13,6 +13,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/securepatrol/backend/internal/model"
+	"github.com/securepatrol/backend/internal/netguard"
 	"github.com/securepatrol/backend/internal/repository"
 	"github.com/securepatrol/backend/internal/settings"
 )
@@ -326,7 +327,7 @@ func TestSMTPTimesOutOnSilentServer(t *testing.T) {
 	for _, implicitTLS := range []bool{false, true} {
 		ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 		start := time.Now()
-		err := sendSMTP(ctx, addr, "localhost", implicitTLS, nil, "a@example.com", "b@example.com", []byte("x"))
+		err := sendSMTP(ctx, netguard.AllowAll, addr, "localhost", implicitTLS, nil, "a@example.com", "b@example.com", []byte("x"))
 		cancel()
 		if err == nil {
 			t.Fatalf("implicitTLS=%v: send to a silent server succeeded", implicitTLS)
@@ -417,7 +418,7 @@ func TestSMTPDeliversMessage(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	msg := []byte("Subject: hi\r\n\r\nhello\r\n")
-	if err := sendSMTP(ctx, addr, "localhost", false, nil, "a@example.com", "b@example.com", msg); err != nil {
+	if err := sendSMTP(ctx, netguard.AllowAll, addr, "localhost", false, nil, "a@example.com", "b@example.com", msg); err != nil {
 		t.Fatal(err)
 	}
 	select {

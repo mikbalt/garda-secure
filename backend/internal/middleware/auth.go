@@ -25,7 +25,13 @@ const (
 	RoleHR             = "hr"
 	RoleClientReadonly = "client-readonly"
 	RoleDevice         = "device"
+	// RolePlatformAdmin is the install-wide operator: notification channel
+	// settings and backups. Realm admins without it cannot change them.
+	RolePlatformAdmin = "platform-admin"
 )
+
+// webRoles are the roles honoured only in tokens of the web client.
+var webRoles = []string{RoleAdmin, RoleSupervisor, RoleHR, RoleClientReadonly, RolePlatformAdmin}
 
 // Principal is the authenticated caller, derived from a validated JWT.
 type Principal struct {
@@ -159,12 +165,24 @@ func parseRSAPublicKey(nStr, eStr string) (*rsa.PublicKey, error) {
 type Validator struct {
 	byIssuer       map[string]*keyCache
 	allowedClients []string
+	webClient      string
+	tabletClient   string
 }
+
+// Default client IDs of the web app and the tablet app.
+const (
+	DefaultWebClient    = "securepatrol-web"
+	DefaultTabletClient = "securepatrol-tablet"
+)
 
 // NewValidator builds a validator and starts an hourly key refresh. Keycloak
 // being unreachable at startup is not fatal: keys are fetched on first use.
+// Roles are bound to the default web/tablet clients; see BindClients.
 func NewValidator(realms []RealmKeys, allowedClients []string, log zerolog.Logger) *Validator {
-	v := &Validator{byIssuer: map[string]*keyCache{}, allowedClients: allowedClients}
+	v := &Validator{
+		byIssuer: map[string]*keyCache{}, allowedClients: allowedClients,
+		webClient: DefaultWebClient, tabletClient: DefaultTabletClient,
+	}
 	client := &http.Client{Timeout: 10 * time.Second}
 	for _, r := range realms {
 		kc := &keyCache{realm: r, client: client}
@@ -186,6 +204,21 @@ func NewValidator(realms []RealmKeys, allowedClients []string, log zerolog.Logge
 		}
 	}()
 	return v
+}
+
+// BindClients sets which client may carry which roles: web roles (admin,
+// supervisor, hr, client-readonly, platform-admin) only count in tokens issued
+// to the web client, the device role only in tokens of the tablet client.
+// Roles a token carries for the wrong client are dropped, so e.g. a web user
+// who logs in through the tablet client's password grant (skipping OTP) gets
+// no roles at all.
+func (v *Validator) BindClients(web, tablet string) {
+	if web != "" {
+		v.webClient = web
+	}
+	if tablet != "" {
+		v.tabletClient = tablet
+	}
 }
 
 // Parse validates a raw token and returns its principal.
@@ -219,6 +252,11 @@ func (v *Validator) Parse(tokenStr string) (*Principal, error) {
 	if !ok {
 		return nil, errors.New("invalid claims")
 	}
+	// Keycloak marks access tokens "Bearer"; ID, refresh and offline tokens
+	// carry other types and must not be accepted as credentials.
+	if typ, _ := claims["typ"].(string); typ != "Bearer" {
+		return nil, fmt.Errorf("token type %q is not an access token", typ)
+	}
 
 	p := &Principal{Realm: realm.realm.Realm}
 	p.Subject, _ = claims["sub"].(string)
@@ -230,8 +268,23 @@ func (v *Validator) Parse(tokenStr string) (*Principal, error) {
 	if len(v.allowedClients) > 0 && !slices.Contains(v.allowedClients, p.ClientID) {
 		return nil, fmt.Errorf("token issued to client %q is not accepted", p.ClientID)
 	}
-	p.Roles = extractRoles(claims)
+	p.Roles = v.bindRoles(p.ClientID, extractRoles(claims))
 	return p, nil
+}
+
+// bindRoles keeps only the roles that are valid for the issuing client.
+func (v *Validator) bindRoles(clientID string, roles []string) []string {
+	out := []string{}
+	for _, r := range roles {
+		switch {
+		case r == RoleDevice && clientID == v.tabletClient:
+		case slices.Contains(webRoles, r) && clientID == v.webClient:
+		default:
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
 }
 
 // extractRoles reads realm roles from the flat "roles" claim (our realm
@@ -269,6 +322,21 @@ func JWT(v *Validator) fiber.Handler {
 		c.Locals("userID", p.Subject)
 		c.Locals("username", p.Username)
 		c.Locals("roles", p.Roles)
+		return c.Next()
+	}
+}
+
+// RequirePlatformAdmin allows install-wide actions (channel settings,
+// backups) only for the platform-admin role, and — when realms is not empty —
+// only for platform admins of those realms.
+func RequirePlatformAdmin(realms []string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		p := GetPrincipal(c)
+		if p == nil || !p.HasRole(RolePlatformAdmin) || (len(realms) > 0 && !slices.Contains(realms, p.Realm)) {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error": "install-wide settings need the platform-admin role", "code": "platform_admin_required",
+			})
+		}
 		return c.Next()
 	}
 }

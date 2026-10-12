@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"time"
 
@@ -62,6 +63,9 @@ func (h *Handler) markReviewed(c *fiber.Ctx) error {
 			return h.fail(c, err)
 		}
 	}
+	if err := service.CheckLengths(service.F("note", b.Note, service.MaxReason)); err != nil {
+		return h.fail(c, err)
+	}
 	out, err := repository.MarkAttendanceReviewed(c.Context(), h.DB, rec.ID, actor(c), nilIfEmpty(b.Note))
 	if err != nil {
 		return h.fail(c, err)
@@ -75,6 +79,11 @@ func (h *Handler) overrideAttendance(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	before, err := repository.GetAttendanceByShift(c.Context(), h.DB, shift.ID)
+	if err != nil && !errors.Is(err, repository.ErrNotFound) {
+		return h.fail(c, err)
+	}
+	middleware.SetAuditBefore(c, before) // null when the shift had no record
 	var b struct {
 		Status     string     `json:"status"`
 		Reason     string     `json:"reason"`
@@ -82,6 +91,9 @@ func (h *Handler) overrideAttendance(c *fiber.Ctx) error {
 		ClockOutAt *time.Time `json:"clock_out_at"`
 	}
 	if err := parse(c, &b); err != nil {
+		return h.fail(c, err)
+	}
+	if err := service.CheckLengths(service.S("reason", b.Reason, service.MaxReason)); err != nil {
 		return h.fail(c, err)
 	}
 	out, err := service.OverrideAttendance(c.Context(), h.DB, shift, service.OverrideInput{
@@ -118,6 +130,7 @@ func (h *Handler) clockIn(c *fiber.Ctx) error {
 	res, err := service.ClockIn(c.Context(), h.DB, service.ClockInInput{
 		ID: nilIfEmpty(b.ID), At: b.ClockInAt, Guard: guard, Site: site, DeviceID: deviceID(c),
 		SelfieObjectKey: nilIfEmpty(b.SelfieObjectKey), GPSLat: b.GPSLat, GPSLng: b.GPSLng,
+		DeviceLastSeen: middleware.GetDevice(c).LastSeenAt,
 		// The late notification is staged in the clock-in transaction (BE-R1);
 		// a replay fills it in if it is missing.
 		AfterWrite: func(ctx context.Context, tx pgx.Tx, res *service.ClockInResult) error {

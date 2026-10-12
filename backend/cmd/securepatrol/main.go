@@ -115,8 +115,12 @@ func main() {
 	if err := stg.EnsureBuckets(ctx, []string{cfg.MinioBucketPhotos, cfg.MinioBucketBackups}); err != nil {
 		logger.Fatal().Err(err).Msg("minio bucket setup failed")
 	}
-	if err := stg.EnableVersioning(ctx, cfg.MinioBucketBackups); err != nil {
-		logger.Warn().Err(err).Msg("could not enable versioning on backups bucket")
+	// Photos are write-once through the API (BE-S4); versioning keeps any
+	// out-of-band overwrite recoverable.
+	for _, b := range []string{cfg.MinioBucketBackups, cfg.MinioBucketPhotos} {
+		if err := stg.EnableVersioning(ctx, b); err != nil {
+			logger.Warn().Err(err).Str("bucket", b).Msg("could not enable bucket versioning")
+		}
 	}
 
 	settingsStore, err := settings.NewStore(pool, cfg)
@@ -137,17 +141,10 @@ func main() {
 		realms = append(realms, middleware.RealmKeys{Realm: r, Issuer: cfg.IssuerFor(r), JWKSURL: cfg.JWKSURLFor(r)})
 	}
 	validator := middleware.NewValidator(realms, cfg.KeycloakAllowedClients, logger)
+	validator.BindClients(cfg.KeycloakWebClient, cfg.KeycloakTabletClient)
 
 	// ── Fiber app ────────────────────────────────────────────────────────────
-	app := fiber.New(fiber.Config{
-		AppName:      "SecurePatrol API v1",
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 60 * time.Second,
-		IdleTimeout:  120 * time.Second,
-		BodyLimit:    handler.MaxPhotoBytes + 1<<20, // photo + multipart overhead
-		// Behind nginx: trust X-Forwarded-For for audit IPs.
-		ProxyHeader: fiber.HeaderXForwardedFor,
-	})
+	app := fiber.New(handler.AppConfig(cfg, logger))
 
 	metrics.RegisterAPI(prometheus.DefaultRegisterer)
 	app.Use(requestid.New())
@@ -179,12 +176,7 @@ func main() {
 	h := &handler.Handler{
 		DB: pool, Redis: rdb, Storage: stg, Notifier: notifier, Settings: settingsStore, Cfg: cfg, Log: logger,
 	}
-	api := app.Group("/api/v1",
-		middleware.JWT(validator),
-		middleware.LoadDevice(pool),
-		middleware.Audit(pool),
-	)
-	h.Register(api)
+	h.Mount(app, validator)
 
 	// ── Graceful shutdown ────────────────────────────────────────────────────
 	go func() {

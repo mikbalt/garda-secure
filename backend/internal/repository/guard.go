@@ -81,6 +81,21 @@ func UpdateGuard(ctx context.Context, db DBTX, g model.Guard) (*model.Guard, err
 	return &out, nil
 }
 
+// EmployeeIDTaken reports whether another guard of a realm's sites already
+// uses employeeID (employee IDs are unique per client, BE-S10).
+func EmployeeIDTaken(ctx context.Context, db DBTX, realm, employeeID, exceptGuardID string) (bool, error) {
+	var taken bool
+	err := db.QueryRow(ctx, `
+		SELECT EXISTS (
+		  SELECT 1 FROM guards g JOIN sites s ON s.id = g.site_id
+		  WHERE s.keycloak_realm = $1 AND g.employee_id = $2 AND g.id::text <> $3)`,
+		realm, employeeID, exceptGuardID).Scan(&taken)
+	if err != nil {
+		return false, fmt.Errorf("EmployeeIDTaken: %w", err)
+	}
+	return taken, nil
+}
+
 // SetGuardPinHash stores a new bcrypt PIN hash for a guard.
 func SetGuardPinHash(ctx context.Context, db DBTX, id, hash string) error {
 	tag, err := db.Exec(ctx,

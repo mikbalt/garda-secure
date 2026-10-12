@@ -30,6 +30,28 @@ type Config struct {
 	KeycloakPublicURL      string
 	KeycloakRealms         []string
 	KeycloakAllowedClients []string
+	// Roles are bound to the client a token was issued to (azp): web roles
+	// only count for KeycloakWebClient, the device role only for
+	// KeycloakTabletClient.
+	KeycloakWebClient    string
+	KeycloakTabletClient string
+	// PlatformAdminRealms limits which realms' platform-admin users may change
+	// install-wide settings; empty = any configured realm.
+	PlatformAdminRealms []string
+
+	// TrustedProxies are the proxy IPs/CIDRs whose X-Real-IP header is
+	// believed for the client IP (audit log, rate limits).
+	TrustedProxies []string
+
+	// Outbound channel guards (BE-S3).
+	WhatsAppAPIURLAllowlist []string // URL prefixes a WhatsApp api_url must start with
+	SMTPAllowedPrivateNets  []string // CIDRs/IPs of on-prem relays allowed despite being private
+
+	// Rate limits per minute; 0 disables a limit.
+	RateLimitUserWrites   int // writes per web user
+	RateLimitDeviceWrites int // writes per tablet
+	RateLimitSOS          int // new SOS alerts per tablet
+	RateLimitAuthFailures int // failed authentications per client IP
 
 	CORSAllowedOrigins string
 	AppPublicURL       string
@@ -78,42 +100,65 @@ type Config struct {
 // Returns an error if any required variable is missing.
 func Load() (*Config, error) {
 	cfg := &Config{
-		DatabaseURL:            os.Getenv("DATABASE_URL"),
-		RedisURL:               os.Getenv("REDIS_URL"),
-		MinioEndpoint:          os.Getenv("MINIO_ENDPOINT"),
-		MinioPublicEndpoint:    os.Getenv("MINIO_PUBLIC_ENDPOINT"),
-		MinioUseSSL:            envBool("MINIO_USE_SSL", false),
-		MinioPublicUseSSL:      envBool("MINIO_PUBLIC_USE_SSL", false),
-		MinioAccessKey:         os.Getenv("MINIO_ACCESS_KEY"),
-		MinioSecretKey:         os.Getenv("MINIO_SECRET_KEY"),
-		MinioBucketPhotos:      envOrDefault("MINIO_BUCKET_PHOTOS", "photos"),
-		MinioBucketBackups:     envOrDefault("MINIO_BUCKET_BACKUPS", "backups"),
-		KeycloakURL:            strings.TrimRight(os.Getenv("KEYCLOAK_URL"), "/"),
-		KeycloakPublicURL:      strings.TrimRight(os.Getenv("KEYCLOAK_PUBLIC_URL"), "/"),
-		KeycloakRealms:         splitList(os.Getenv("KEYCLOAK_REALMS")),
-		KeycloakAllowedClients: splitList(envOrDefault("KEYCLOAK_ALLOWED_CLIENTS", "securepatrol-web,securepatrol-tablet")),
-		CORSAllowedOrigins:     os.Getenv("CORS_ALLOWED_ORIGINS"),
-		AppPublicURL:           strings.TrimRight(os.Getenv("APP_PUBLIC_URL"), "/"),
-		SettingsEncryptionKey:  os.Getenv("SETTINGS_ENCRYPTION_KEY"),
-		SMTPHost:               os.Getenv("SMTP_HOST"),
-		SMTPPort:               envOrDefault("SMTP_PORT", "587"),
-		SMTPUser:               os.Getenv("SMTP_USER"),
-		SMTPPassword:           os.Getenv("SMTP_PASSWORD"),
-		SMTPFrom:               os.Getenv("SMTP_FROM"),
-		WhatsAppAPIURL:         envOrDefault("WHATSAPP_API_URL", "https://graph.facebook.com/v18.0"),
-		WhatsAppAPIToken:       os.Getenv("WHATSAPP_API_TOKEN"),
-		WhatsAppPhoneNumberID:  os.Getenv("WHATSAPP_PHONE_NUMBER_ID"),
-		WhatsAppTemplateName:   os.Getenv("WHATSAPP_TEMPLATE_NAME"),
-		WhatsAppTemplateLang:   envOrDefault("WHATSAPP_TEMPLATE_LANG", "id"),
-		MigrationsPath:         envOrDefault("MIGRATIONS_PATH", "/migrations"),
-		LogLevel:               envOrDefault("LOG_LEVEL", "info"),
-		Port:                   envOrDefault("PORT", "8080"),
+		DatabaseURL:             os.Getenv("DATABASE_URL"),
+		RedisURL:                os.Getenv("REDIS_URL"),
+		MinioEndpoint:           os.Getenv("MINIO_ENDPOINT"),
+		MinioPublicEndpoint:     os.Getenv("MINIO_PUBLIC_ENDPOINT"),
+		MinioUseSSL:             envBool("MINIO_USE_SSL", false),
+		MinioPublicUseSSL:       envBool("MINIO_PUBLIC_USE_SSL", false),
+		MinioAccessKey:          os.Getenv("MINIO_ACCESS_KEY"),
+		MinioSecretKey:          os.Getenv("MINIO_SECRET_KEY"),
+		MinioBucketPhotos:       envOrDefault("MINIO_BUCKET_PHOTOS", "photos"),
+		MinioBucketBackups:      envOrDefault("MINIO_BUCKET_BACKUPS", "backups"),
+		KeycloakURL:             strings.TrimRight(os.Getenv("KEYCLOAK_URL"), "/"),
+		KeycloakPublicURL:       strings.TrimRight(os.Getenv("KEYCLOAK_PUBLIC_URL"), "/"),
+		KeycloakRealms:          splitList(os.Getenv("KEYCLOAK_REALMS")),
+		KeycloakAllowedClients:  splitList(envOrDefault("KEYCLOAK_ALLOWED_CLIENTS", "securepatrol-web,securepatrol-tablet")),
+		KeycloakWebClient:       envOrDefault("KEYCLOAK_WEB_CLIENT", "securepatrol-web"),
+		KeycloakTabletClient:    envOrDefault("KEYCLOAK_TABLET_CLIENT", "securepatrol-tablet"),
+		PlatformAdminRealms:     splitList(os.Getenv("PLATFORM_ADMIN_REALMS")),
+		TrustedProxies:          splitList(envOrDefault("TRUSTED_PROXIES", DefaultTrustedProxies)),
+		WhatsAppAPIURLAllowlist: splitList(envOrDefault("WHATSAPP_API_URL_ALLOWLIST", "https://graph.facebook.com/")),
+		SMTPAllowedPrivateNets:  splitList(os.Getenv("SMTP_ALLOWED_PRIVATE_NETS")),
+		CORSAllowedOrigins:      os.Getenv("CORS_ALLOWED_ORIGINS"),
+		AppPublicURL:            strings.TrimRight(os.Getenv("APP_PUBLIC_URL"), "/"),
+		SettingsEncryptionKey:   os.Getenv("SETTINGS_ENCRYPTION_KEY"),
+		SMTPHost:                os.Getenv("SMTP_HOST"),
+		SMTPPort:                envOrDefault("SMTP_PORT", "587"),
+		SMTPUser:                os.Getenv("SMTP_USER"),
+		SMTPPassword:            os.Getenv("SMTP_PASSWORD"),
+		SMTPFrom:                os.Getenv("SMTP_FROM"),
+		WhatsAppAPIURL:          envOrDefault("WHATSAPP_API_URL", "https://graph.facebook.com/v18.0"),
+		WhatsAppAPIToken:        os.Getenv("WHATSAPP_API_TOKEN"),
+		WhatsAppPhoneNumberID:   os.Getenv("WHATSAPP_PHONE_NUMBER_ID"),
+		WhatsAppTemplateName:    os.Getenv("WHATSAPP_TEMPLATE_NAME"),
+		WhatsAppTemplateLang:    envOrDefault("WHATSAPP_TEMPLATE_LANG", "id"),
+		MigrationsPath:          envOrDefault("MIGRATIONS_PATH", "/migrations"),
+		LogLevel:                envOrDefault("LOG_LEVEL", "info"),
+		Port:                    envOrDefault("PORT", "8080"),
 	}
 	if cfg.MinioPublicEndpoint == "" {
 		cfg.MinioPublicEndpoint = cfg.MinioEndpoint
 	}
 	if cfg.KeycloakPublicURL == "" {
 		cfg.KeycloakPublicURL = cfg.KeycloakURL
+	}
+
+	for _, l := range []struct {
+		env string
+		def int
+		dst *int
+	}{
+		{"RATE_LIMIT_USER_WRITES_PER_MIN", 120, &cfg.RateLimitUserWrites},
+		{"RATE_LIMIT_DEVICE_WRITES_PER_MIN", 600, &cfg.RateLimitDeviceWrites},
+		{"RATE_LIMIT_SOS_PER_MIN", 5, &cfg.RateLimitSOS},
+		{"RATE_LIMIT_AUTH_FAILURES_PER_MIN", 30, &cfg.RateLimitAuthFailures},
+	} {
+		n, err := strconv.Atoi(envOrDefault(l.env, strconv.Itoa(l.def)))
+		if err != nil || n < 0 {
+			return nil, fmt.Errorf("%s must be a non-negative integer", l.env)
+		}
+		*l.dst = n
 	}
 
 	hour, err := strconv.Atoi(envOrDefault("BACKUP_HOUR", "2"))
@@ -140,6 +185,10 @@ func Load() (*Config, error) {
 
 	return cfg, nil
 }
+
+// DefaultTrustedProxies are the private ranges Docker networks use; nginx
+// reaches the API from one of them.
+const DefaultTrustedProxies = "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.1/32,::1/128"
 
 // IssuerFor returns the token issuer URL of a realm.
 func (c *Config) IssuerFor(realm string) string {

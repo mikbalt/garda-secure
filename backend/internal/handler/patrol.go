@@ -76,6 +76,7 @@ func (h *Handler) updateRoute(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	middleware.SetAuditBefore(c, r)
 	var b routeBody
 	if err := parse(c, &b); err != nil {
 		return h.fail(c, err)
@@ -203,6 +204,10 @@ func (h *Handler) recordScan(c *fiber.Ctx) error {
 	}
 	if b.CheckpointID == "" && b.QRCode == "" {
 		return h.fail(c, service.BadRequest("checkpoint_required", "checkpoint_id or qr_code is required"))
+	}
+	if err := service.CheckLengths(service.S("checkpoint_id", b.CheckpointID, service.MaxIdentifier),
+		service.S("qr_code", b.QRCode, service.MaxName)); err != nil {
+		return h.fail(c, err)
 	}
 	site, err := h.deviceSite(c)
 	if err != nil {

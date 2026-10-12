@@ -13,6 +13,7 @@ const attendanceColumns = `id, shift_id, guard_id, site_id, clock_in_at, clock_o
 	late_minutes, early_out_minutes, selfie_object_key, gps_lat, gps_lng,
 	clock_out_gps_lat, clock_out_gps_lng, device_id, override_reason, overridden_by,
 	overridden_at, needs_review, review_note, reviewed_by, reviewed_at, created_at,
+	received_at, flags,
 	COALESCE((SELECT g.name FROM guards g WHERE g.id = attendance_records.guard_id), '')`
 
 func scanAttendance(row pgx.Row) (model.AttendanceRecord, error) {
@@ -20,7 +21,11 @@ func scanAttendance(row pgx.Row) (model.AttendanceRecord, error) {
 	err := row.Scan(&r.ID, &r.ShiftID, &r.GuardID, &r.SiteID, &r.ClockInAt, &r.ClockOutAt, &r.Status,
 		&r.LateMinutes, &r.EarlyOutMinutes, &r.SelfieObjectKey, &r.GPSLat, &r.GPSLng,
 		&r.ClockOutGPSLat, &r.ClockOutGPSLng, &r.DeviceID, &r.OverrideReason, &r.OverriddenBy,
-		&r.OverriddenAt, &r.NeedsReview, &r.ReviewNote, &r.ReviewedBy, &r.ReviewedAt, &r.CreatedAt, &r.GuardName)
+		&r.OverriddenAt, &r.NeedsReview, &r.ReviewNote, &r.ReviewedBy, &r.ReviewedAt, &r.CreatedAt,
+		&r.ReceivedAt, &r.Flags, &r.GuardName)
+	if r.Flags == nil {
+		r.Flags = []string{}
+	}
 	return r, err
 }
 
@@ -72,6 +77,9 @@ type ClockInParams struct {
 	SelfieObjectKey *string
 	GPSLat          *float64
 	GPSLng          *float64
+	ReceivedAt      time.Time
+	Flags           []string
+	NeedsReview     bool
 }
 
 // InsertClockIn creates the attendance record of a shift.
@@ -79,11 +87,12 @@ func InsertClockIn(ctx context.Context, db DBTX, p ClockInParams) (*model.Attend
 	r, err := scanAttendance(db.QueryRow(ctx, `
 		INSERT INTO attendance_records
 		  (id, shift_id, guard_id, site_id, device_id, clock_in_at, status, late_minutes,
-		   selfie_object_key, gps_lat, gps_lng)
-		VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		   selfie_object_key, gps_lat, gps_lng, received_at, flags, needs_review, review_note)
+		VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+		        CASE WHEN $14 THEN 'Plausibility check: ' || array_to_string($13::text[], ', ') END)
 		RETURNING `+attendanceColumns,
 		p.ID, p.ShiftID, p.GuardID, p.SiteID, p.DeviceID, p.ClockInAt, p.Status, p.LateMinutes,
-		p.SelfieObjectKey, p.GPSLat, p.GPSLng))
+		p.SelfieObjectKey, p.GPSLat, p.GPSLng, p.ReceivedAt, flagsOrEmpty(p.Flags), p.NeedsReview))
 	if err != nil {
 		return nil, fmt.Errorf("InsertClockIn: %w", err)
 	}
@@ -97,11 +106,11 @@ func ApplyClockInToAbsent(ctx context.Context, db DBTX, recordID string, p Clock
 		UPDATE attendance_records
 		SET clock_in_at = $2, status = $3, late_minutes = $4, selfie_object_key = $5,
 		    gps_lat = $6, gps_lng = $7, device_id = $8,
-		    needs_review = true, review_note = $9
+		    needs_review = true, review_note = $9, received_at = $10, flags = $11
 		WHERE id = $1
 		RETURNING `+attendanceColumns,
 		recordID, p.ClockInAt, p.Status, p.LateMinutes, p.SelfieObjectKey,
-		p.GPSLat, p.GPSLng, p.DeviceID, note))
+		p.GPSLat, p.GPSLng, p.DeviceID, note, p.ReceivedAt, flagsOrEmpty(p.Flags)))
 	if err != nil {
 		return nil, mapNoRows(err)
 	}
@@ -252,6 +261,7 @@ type DailyAttendanceRow struct {
 	NeedsReview     bool       `json:"needs_review"`
 	OverrideReason  *string    `json:"override_reason,omitempty"`
 	SelfieObjectKey *string    `json:"selfie_object_key,omitempty"`
+	Flags           []string   `json:"flags"` // plausibility findings of the clock-in
 }
 
 // DailyAttendance lists every shift of a site starting in [from, to) with its
@@ -262,7 +272,8 @@ func DailyAttendance(ctx context.Context, db DBTX, siteID string, from, to time.
 		       a.id, COALESCE(a.status, 'pending'), a.clock_in_at, a.clock_out_at,
 		       COALESCE(a.late_minutes, 0), COALESCE(a.early_out_minutes, 0),
 		       COALESCE(EXTRACT(EPOCH FROM (a.clock_out_at - a.clock_in_at)) / 3600, 0)::float8,
-		       COALESCE(a.needs_review, false), a.override_reason, a.selfie_object_key
+		       COALESCE(a.needs_review, false), a.override_reason, a.selfie_object_key,
+		       COALESCE(a.flags, '{}')
 		FROM shifts s
 		JOIN guards g ON g.id = s.guard_id
 		LEFT JOIN attendance_records a ON a.shift_id = s.id
@@ -275,7 +286,7 @@ func DailyAttendance(ctx context.Context, db DBTX, siteID string, from, to time.
 		var d DailyAttendanceRow
 		err := r.Scan(&d.ShiftID, &d.GuardID, &d.GuardName, &d.EmployeeID, &d.ShiftStart, &d.ShiftEnd,
 			&d.AttendanceID, &d.Status, &d.ClockInAt, &d.ClockOutAt, &d.LateMinutes, &d.EarlyOutMinutes,
-			&d.HoursWorked, &d.NeedsReview, &d.OverrideReason, &d.SelfieObjectKey)
+			&d.HoursWorked, &d.NeedsReview, &d.OverrideReason, &d.SelfieObjectKey, &d.Flags)
 		return d, err
 	})
 }

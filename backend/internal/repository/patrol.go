@@ -162,12 +162,15 @@ func AbandonStaleSessions(ctx context.Context, db DBTX, maxAge time.Duration) (i
 // ── Scans ────────────────────────────────────────────────────────────────────
 
 const scanColumns = `id, session_id, route_id, checkpoint_id, guard_id, device_id, scanned_at,
-	received_at, method, photo_object_key, gps_lat, gps_lng`
+	received_at, method, photo_object_key, gps_lat, gps_lng, flags`
 
 func scanScan(row pgx.Row) (model.CheckpointScan, error) {
 	var s model.CheckpointScan
 	err := row.Scan(&s.ID, &s.SessionID, &s.RouteID, &s.CheckpointID, &s.GuardID, &s.DeviceID,
-		&s.ScannedAt, &s.ReceivedAt, &s.Method, &s.PhotoObjectKey, &s.GPSLat, &s.GPSLng)
+		&s.ScannedAt, &s.ReceivedAt, &s.Method, &s.PhotoObjectKey, &s.GPSLat, &s.GPSLng, &s.Flags)
+	if s.Flags == nil {
+		s.Flags = []string{}
+	}
 	return s, err
 }
 
@@ -178,12 +181,12 @@ func InsertScan(ctx context.Context, db DBTX, s model.CheckpointScan, clientID *
 	out, err := scanScan(db.QueryRow(ctx, `
 		INSERT INTO checkpoint_scans
 		  (id, session_id, route_id, checkpoint_id, guard_id, device_id, scanned_at, method,
-		   photo_object_key, gps_lat, gps_lng)
-		VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		   photo_object_key, gps_lat, gps_lng, flags)
+		VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		ON CONFLICT (id) DO NOTHING
 		RETURNING `+scanColumns,
 		clientID, s.SessionID, s.RouteID, s.CheckpointID, s.GuardID, s.DeviceID, s.ScannedAt,
-		s.Method, s.PhotoObjectKey, s.GPSLat, s.GPSLng))
+		s.Method, s.PhotoObjectKey, s.GPSLat, s.GPSLng, flagsOrEmpty(s.Flags)))
 	if err == nil {
 		return &out, true, nil
 	}
