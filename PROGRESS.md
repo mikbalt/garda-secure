@@ -9,7 +9,6 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
-| Mobile tablet app v1 (D-024): device login/registration, offline PIN unlock, clock-in/out, QR patrol, incidents/defects/visitors, SOS, offline outbox; backend `GET /device/status`, `GET /device/sos` | `muhamhad-pc1/claude` | 2026-10-09 | Please don't edit `mobile/` until pushed. |
 | Hardening wave 1 — backend reliability: notifications/worker/jobs/backups/observability (audit BE-R*, BE-O1, F2 part, F14) | `muhamhad-pc1/claude-be-rel` | 2026-10-09 | branch `agent/muhamhad-pc1/be-reliability`; migration 004 |
 | Hardening wave 1 — backend security: tenancy replay, settings exfil, JWT, limits/rate limit, audit log, deps + Go upgrade (audit BE-S2..S10) | `muhamhad-pc1/claude-be-sec` | 2026-10-09 | branch `agent/muhamhad-pc1/be-security`; migration 005 |
 | Hardening wave 1 — infra/ops/CI: first-boot fixes, nginx, TLS/preflight, backups off-host, monitoring, CI smoke + supply chain (audit INF-*) | `muhamhad-pc1/claude-infra` | 2026-10-09 | branch `agent/muhamhad-pc1/infra-hardening` |
@@ -66,12 +65,8 @@ Infra / Ops
 - [ ] Let's Encrypt / production TLS notes
 - [ ] Load test 2 sites / 10 guards (M7)
 
-Mobile (deferred — D-017)
-- [ ] Re-enable push/PR triggers in `ci-mobile.yml` once `flutter create` scaffolding (android/, test/) exists
-- [ ] Device registration + offline PIN unlock (D-001), roster sync
-- [ ] Switch to new endpoints (docs/api.md), `X-Guard-ID`, client UUIDs, JPEG photo keys
-- [ ] Fix `connectivity_plus` v6 `List<ConnectivityResult>` check
-- [ ] SOS retry every 10 s with the same `id`
+Mobile (D-024) — open audit items, see docs/audit-2026-10.md
+- [ ] MOB-2..MOB-9, MOB-11 (sign-out/discard protection, lock-screen SOS, server time offset, outbox poison items, encrypted storage, release signing, kiosk guide, site time zone)
 
 ## Done
 
@@ -86,3 +81,4 @@ Mobile (deferred — D-017)
 | CI/CD fixes: gosec pinned, web Docker image job, mobile CI manual-only, tag/manual deploy from `infra/` with health wait; actionlint clean | `muhamhad-pc1/claude` | 2026-10-08 | c3ffc59 |
 | Web UX overhaul (D-022): design system + `web/DESIGN.md`, new shell & navigation, setup guide + welcome flow, Today dashboard, redesigned attendance/roster/guards, patrol/incidents, reports/settings, organisation picker, demo mode, code-split pages; WhatsApp `08…` normalisation (D-023) | `muhamhad-pc1/claude` | 2026-10-09 | this push |
 | Docs: `docs/api.md` (API contract), `docs/runbook.md` (install, users, tablets, backups/restore) | `muhamhad-pc1/claude` | 2026-10-07 | ace9df5 |
+| Mobile tablet app v1 (D-024): setup + device sign-in/approval, offline PIN lock screen, home, clock in/out (selfie+GPS), QR + manual patrol with live SLA, incidents/defects/visitors, SOS (hold 2 s, priority outbox, never parked), offline outbox with retry/backoff + outbox screen, EN/ID; 22 tests + golden screenshots; backend `GET /device/status`, `GET /device/sos` | `muhamhad-pc1/claude` | 2026-10-12 | this commit; MOB-1, MOB-10 fixed |

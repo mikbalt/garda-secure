@@ -1,100 +1,111 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
 import '../../config/env.dart';
+import '../auth/keycloak_service.dart';
 
-class ApiClient {
-  late final Dio _dio;
-  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+/// An API failure the UI can explain.
+class ApiException implements Exception {
+  const ApiException({this.status, this.code, required this.message, this.network = false});
 
-  static const _accessTokenKey = 'access_token';
-  static const _refreshTokenKey = 'refresh_token';
+  /// HTTP status, or null for network failures.
+  final int? status;
 
-  ApiClient() {
-    _dio = Dio(BaseOptions(
-      baseUrl: Env.apiUrl,
-      connectTimeout: const Duration(seconds: 15),
-      receiveTimeout: const Duration(seconds: 30),
-      headers: {'Content-Type': 'application/json'},
-    ));
+  /// Backend machine code, e.g. `device_pending`, `no_shift`.
+  final String? code;
+  final String message;
 
-    _dio.interceptors.add(
-      InterceptorsWrapper(
-        onRequest: _onRequest,
-        onError: _onError,
-      ),
-    );
-  }
+  /// True when the server could not be reached (offline, timeout, DNS…).
+  final bool network;
 
-  Dio get dio => _dio;
+  /// Worth retrying later (offline, server error, throttling, token refresh).
+  bool get retryable => network || status == null || status! >= 500 || status == 401 || status == 408 || status == 429;
 
-  Future<void> _onRequest(
-    RequestOptions options,
-    RequestInterceptorHandler handler,
-  ) async {
-    final token = await _storage.read(key: _accessTokenKey);
-    if (token != null) {
-      options.headers['Authorization'] = 'Bearer $token';
-    }
-    handler.next(options);
-  }
+  @override
+  String toString() => 'ApiException(${status ?? 'network'} ${code ?? ''}: $message)';
 
-  Future<void> _onError(
-    DioException err,
-    ErrorInterceptorHandler handler,
-  ) async {
-    if (err.response?.statusCode == 401) {
-      // Attempt token refresh once
-      try {
-        final refreshToken = await _storage.read(key: _refreshTokenKey);
-        if (refreshToken == null) {
-          handler.next(err);
-          return;
-        }
-
-        final tokenEndpoint =
-            '${Env.keycloakUrl}/realms/${Env.keycloakRealm}/protocol/openid-connect/token';
-
-        final refreshDio = Dio();
-        final refreshResponse = await refreshDio.post(
-          tokenEndpoint,
-          data: {
-            'grant_type': 'refresh_token',
-            'client_id': Env.keycloakClientId,
-            'refresh_token': refreshToken,
-          },
-          options: Options(
-            contentType: 'application/x-www-form-urlencoded',
-          ),
-        );
-
-        final data = refreshResponse.data as Map<String, dynamic>;
-        final newAccessToken = data['access_token'] as String;
-        final newRefreshToken = data['refresh_token'] as String?;
-        final expiresIn = data['expires_in'] as int;
-
-        await _storage.write(key: _accessTokenKey, value: newAccessToken);
-        if (newRefreshToken != null) {
-          await _storage.write(key: _refreshTokenKey, value: newRefreshToken);
-        }
-        await _storage.write(
-          key: 'token_expires_at',
-          value: DateTime.now()
-              .add(Duration(seconds: expiresIn))
-              .toIso8601String(),
-        );
-
-        // Retry original request with new token
-        final retryOptions = err.requestOptions;
-        retryOptions.headers['Authorization'] = 'Bearer $newAccessToken';
-
-        final retryResponse = await _dio.fetch(retryOptions);
-        handler.resolve(retryResponse);
-      } catch (_) {
-        // Refresh failed; pass original error
-        handler.next(err);
+  static ApiException from(Object e) {
+    if (e is ApiException) return e;
+    if (e is AuthExpired) return const ApiException(status: 401, code: 'auth_expired', message: 'device session expired');
+    if (e is DioException) {
+      final res = e.response;
+      if (res == null) {
+        return ApiException(network: true, message: e.message ?? e.type.name);
       }
-    } else {
-      handler.next(err);
+      final data = res.data;
+      final body = data is Map ? data.cast<String, dynamic>() : const <String, dynamic>{};
+      return ApiException(
+        status: res.statusCode,
+        code: body['code'] as String?,
+        message: (body['error'] as String?) ?? 'HTTP ${res.statusCode}',
+      );
     }
+    if (e is SocketException || e is HttpException) return ApiException(network: true, message: e.toString());
+    return ApiException(message: e.toString());
+  }
+}
+
+/// REST client for `/api/v1` with the device token and the acting guard.
+class ApiClient {
+  ApiClient(this._auth, this._config, {Dio? dio})
+      : _dio = dio ??
+            Dio(BaseOptions(
+              connectTimeout: const Duration(seconds: 12),
+              receiveTimeout: const Duration(seconds: 25),
+              sendTimeout: const Duration(seconds: 60),
+            ));
+
+  final KeycloakService _auth;
+  final ServerConfig Function() _config;
+  final Dio _dio;
+
+  ServerConfig get config => _config();
+
+  Future<Map<String, String>> _headers(String? guardId) async {
+    final token = await _auth.accessToken(config);
+    return {
+      'Authorization': 'Bearer $token',
+      if (guardId != null) 'X-Guard-ID': guardId,
+    };
+  }
+
+  /// Sends a request; retries once with a fresh token on 401.
+  Future<dynamic> send(String method, String path, {Object? body, Map<String, dynamic>? query, String? guardId}) async {
+    Future<Response<dynamic>> go() async => _dio.request<dynamic>(
+          '${config.apiBase}$path',
+          data: body,
+          queryParameters: query,
+          options: Options(method: method, headers: await _headers(guardId)),
+        );
+    try {
+      try {
+        return (await go()).data;
+      } on DioException catch (e) {
+        if (e.response?.statusCode == 401) {
+          await _auth.refresh(config);
+          return (await go()).data;
+        }
+        rethrow;
+      }
+    } catch (e) {
+      throw ApiException.from(e);
+    }
+  }
+
+  Future<dynamic> get(String path, {Map<String, dynamic>? query, String? guardId}) => send('GET', path, query: query, guardId: guardId);
+
+  Future<dynamic> post(String path, {Object? body, String? guardId}) => send('POST', path, body: body ?? const {}, guardId: guardId);
+
+  /// Uploads a photo with a client ID so the stored key is deterministic
+  /// (`sites/<site>/<kind>/<id>.jpg`, D-012).
+  Future<String> uploadPhoto({required String filePath, required String id, required String kind, String? guardId}) async {
+    final form = FormData.fromMap({
+      'id': id,
+      'kind': kind,
+      'file': await MultipartFile.fromFile(filePath, filename: '$id.jpg'),
+    });
+    final res = await send('POST', '/media', body: form, guardId: guardId);
+    return (res as Map)['object_key'] as String;
   }
 }

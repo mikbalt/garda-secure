@@ -1,114 +1,149 @@
 import 'dart:async';
-import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:provider/provider.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
-import '../../../core/api/api_client.dart';
 
-/// Persistent SOS panic button — posts to /api/v1/incidents/sos with GPS.
-/// If offline, queues locally and retries every 10 seconds.
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+
+import '../../core/database/sync_service.dart';
+import '../../features/field_actions.dart';
+import '../../l10n/strings.dart';
+import '../../theme/app_theme.dart';
+
+/// Panic button (FR-INC-02). Press and hold for 2 s — a ring fills while
+/// holding — so it cannot fire from a stray tap, yet needs no extra dialog in
+/// an emergency.
 class SosButton extends StatefulWidget {
-  const SosButton({super.key});
+  const SosButton({super.key, this.compact = false});
+
+  final bool compact;
 
   @override
   State<SosButton> createState() => _SosButtonState();
 }
 
-class _SosButtonState extends State<SosButton> {
-  Timer? _retryTimer;
-  bool _pending = false;
+class _SosButtonState extends State<SosButton> with SingleTickerProviderStateMixin {
+  late final AnimationController _hold = AnimationController(vsync: this, duration: const Duration(seconds: 2))
+    ..addStatusListener((s) {
+      if (s == AnimationStatus.completed) _fire();
+    });
+
+  Future<void> _fire() async {
+    _hold.reset();
+    await HapticFeedback.heavyImpact();
+    if (!mounted) return;
+    unawaited(context.read<FieldActions>().sos());
+  }
 
   @override
   void dispose() {
-    _retryTimer?.cancel();
+    _hold.dispose();
     super.dispose();
-  }
-
-  Future<void> _send() async {
-    Position? pos;
-    try {
-      pos = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high);
-    } catch (_) {}
-
-    final api = context.read<ApiClient>();
-    try {
-      await api.dio.post('/api/v1/incidents/sos', data: {
-        'gps_lat': pos?.latitude,
-        'gps_lng': pos?.longitude,
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('SOS sent — supervisor alerted'), backgroundColor: Colors.red),
-        );
-      }
-      _retryTimer?.cancel();
-      setState(() => _pending = false);
-    } catch (_) {
-      // Offline: queue and retry
-      setState(() => _pending = true);
-      _retryTimer?.cancel();
-      _retryTimer = Timer.periodic(const Duration(seconds: 10), (_) => _retryQueued(pos));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('SOS queued — will send when online'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _retryQueued(Position? pos) async {
-    final connectivity = await Connectivity().checkConnectivity();
-    if (connectivity == ConnectivityResult.none) return;
-    final api = context.read<ApiClient>();
-    try {
-      await api.dio.post('/api/v1/incidents/sos', data: {
-        'gps_lat': pos?.latitude,
-        'gps_lng': pos?.longitude,
-      });
-      _retryTimer?.cancel();
-      if (mounted) {
-        setState(() => _pending = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('SOS delivered'), backgroundColor: Colors.green),
-        );
-      }
-    } catch (_) {}
-  }
-
-  Future<void> _onTap() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Send SOS Alert?'),
-        content: const Text('This will immediately notify all supervisors at your site.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Send SOS'),
-          ),
-        ],
-      ),
-    );
-    if (confirm == true) await _send();
   }
 
   @override
   Widget build(BuildContext context) {
-    return FloatingActionButton.extended(
-      onPressed: _onTap,
-      backgroundColor: Colors.red,
-      foregroundColor: Colors.white,
-      icon: _pending
-          ? const SizedBox(width: 18, height: 18,
-              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-          : const Icon(Icons.sos),
-      label: Text(_pending ? 'SOS Queued' : 'SOS'),
+    final s = S.of(context);
+    final size = widget.compact ? 64.0 : 96.0;
+    return Semantics(
+      button: true,
+      label: s.t('sos.hold'),
+      onLongPress: _fire,
+      child: GestureDetector(
+        onTapDown: (_) => _hold.forward(from: 0),
+        onTapUp: (_) => _hold.reverse(),
+        onTapCancel: () => _hold.reverse(),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: size,
+              height: size,
+              child: AnimatedBuilder(
+                animation: _hold,
+                builder: (context, _) => Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Container(
+                      width: size,
+                      height: size,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: const LinearGradient(colors: [Color(0xFFF43F5E), Color(0xFFDC2626)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                        boxShadow: [BoxShadow(color: AppColors.sos.withOpacity(0.35 + 0.3 * _hold.value), blurRadius: 18 + 18 * _hold.value, spreadRadius: 2)],
+                      ),
+                    ),
+                    SizedBox(
+                      width: size - 8,
+                      height: size - 8,
+                      child: CircularProgressIndicator(value: _hold.value, strokeWidth: 5, color: Colors.white, backgroundColor: Colors.white24),
+                    ),
+                    Text(s.t('sos.button'), style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: size * 0.26, letterSpacing: 1)),
+                  ],
+                ),
+              ),
+            ),
+            if (!widget.compact) ...[
+              const SizedBox(height: 8),
+              Text(s.t('sos.hold'), style: const TextStyle(fontSize: 12.5, color: AppColors.textMuted, fontWeight: FontWeight.w500)),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Banner while an SOS from this tablet has not reached the server yet
+/// (FR-OFF-04: the guard must see that it is not confirmed).
+class SosDeliveryBanner extends StatelessWidget {
+  const SosDeliveryBanner({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final actions = context.watch<FieldActions>();
+    final outbox = context.watch<Outbox>();
+    // Read from the outbox (persisted), so a waiting or rejected SOS is still
+    // shown after an app restart.
+    final waiting = outbox.sosPending || actions.sosPreparing;
+    final rejected = outbox.sosFailed;
+    final delivered = !waiting && !rejected && actions.sosOutstanding.isNotEmpty;
+    if (!waiting && !rejected && !delivered) return const SizedBox.shrink();
+    final s = S.of(context);
+    final String message;
+    if (waiting && outbox.sosRejected) {
+      message = s.t('sos.rejectedRetrying');
+    } else if (waiting) {
+      message = outbox.online ? s.t('sos.sending') : s.t('sos.notConfirmed');
+    } else if (rejected) {
+      message = s.t('sos.rejected');
+    } else {
+      message = s.t('sos.sent');
+    }
+    return Container(
+      width: double.infinity,
+      color: delivered ? AppColors.ok : AppColors.sos,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      child: SafeArea(
+        bottom: false,
+        child: Row(
+          children: [
+            Icon(delivered ? Icons.check_circle : Icons.sos_rounded, color: Colors.white),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+              ),
+            ),
+            if (delivered)
+              IconButton(
+                onPressed: actions.dismissSosBanner,
+                icon: const Icon(Icons.close, color: Colors.white),
+                tooltip: s.t('common.close'),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }

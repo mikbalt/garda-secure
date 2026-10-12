@@ -1,300 +1,268 @@
-class Guard {
-  final String id;
-  final String name;
-  final String email;
-  final List<String> roles;
+// API models (see docs/api.md). Parsing is tolerant: unknown fields are
+// ignored and optional fields may be missing. Timestamps arrive as RFC 3339
+// UTC strings and are kept as UTC [DateTime]s; the tablet sits at the site, so
+// the UI shows them in the device's local time.
 
-  Guard({
-    required this.id,
-    required this.name,
-    required this.email,
-    required this.roles,
+DateTime? _ts(Object? v) => v is String && v.isNotEmpty ? DateTime.tryParse(v)?.toUtc() : null;
+String? _str(Object? v) => v is String && v.isNotEmpty ? v : null;
+int _int(Object? v, [int def = 0]) => v is num ? v.toInt() : def;
+double? _dbl(Object? v) => v is num ? v.toDouble() : null;
+Map<String, dynamic> _map(Object? v) => v is Map ? v.cast<String, dynamic>() : const {};
+List<Map<String, dynamic>> _list(Object? v) => v is List ? v.whereType<Map<dynamic, dynamic>>().map((e) => e.cast<String, dynamic>()).toList() : const [];
+
+class SiteConfig {
+  const SiteConfig({
+    this.clockWindowMinutes = 15,
+    this.lateGraceMinutes = 5,
+    this.earlyOutGraceMinutes = 5,
+    this.absentAfterMinutes = 30,
+    this.idleLockMinutes = 5,
+    this.language = 'id',
   });
 
-  factory Guard.fromJson(Map<String, dynamic> json) => Guard(
-        id: json['id'] as String,
-        name: json['name'] as String,
-        email: json['email'] as String,
-        roles: List<String>.from(json['roles'] as List),
+  final int clockWindowMinutes;
+  final int lateGraceMinutes;
+  final int earlyOutGraceMinutes;
+  final int absentAfterMinutes;
+  final int idleLockMinutes;
+  final String language;
+
+  factory SiteConfig.fromJson(Map<String, dynamic> j) => SiteConfig(
+        clockWindowMinutes: _int(j['clock_window_minutes'], 15),
+        lateGraceMinutes: _int(j['late_grace_minutes'], 5),
+        earlyOutGraceMinutes: _int(j['early_out_grace_minutes'], 5),
+        absentAfterMinutes: _int(j['absent_after_minutes'], 30),
+        idleLockMinutes: _int(j['idle_lock_minutes'], 5),
+        language: _str(j['language']) ?? 'id',
       );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'email': email,
-        'roles': roles,
+        'clock_window_minutes': clockWindowMinutes,
+        'late_grace_minutes': lateGraceMinutes,
+        'early_out_grace_minutes': earlyOutGraceMinutes,
+        'absent_after_minutes': absentAfterMinutes,
+        'idle_lock_minutes': idleLockMinutes,
+        'language': language,
       };
 }
 
 class Site {
+  const Site({required this.id, required this.name, this.address, this.timezone = 'Asia/Jakarta'});
+
   final String id;
   final String name;
-  final String address;
-  final double latitude;
-  final double longitude;
+  final String? address;
+  final String timezone;
 
-  Site({
-    required this.id,
-    required this.name,
-    required this.address,
-    required this.latitude,
-    required this.longitude,
-  });
-
-  factory Site.fromJson(Map<String, dynamic> json) => Site(
-        id: json['id'] as String,
-        name: json['name'] as String,
-        address: json['address'] as String,
-        latitude: (json['latitude'] as num).toDouble(),
-        longitude: (json['longitude'] as num).toDouble(),
+  factory Site.fromJson(Map<String, dynamic> j) => Site(
+        id: j['id'] as String,
+        name: (j['name'] as String?) ?? '',
+        address: _str(j['address']),
+        timezone: _str(j['timezone']) ?? 'Asia/Jakarta',
       );
 
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'address': address,
-        'latitude': latitude,
-        'longitude': longitude,
-      };
+  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'address': address, 'timezone': timezone};
 }
 
-class Shift {
+enum DeviceStatusKind { pending, active, revoked }
+
+class Device {
+  const Device({required this.id, required this.name, required this.status, this.siteId});
+
   final String id;
-  final String siteId;
-  final String guardId;
-  final DateTime startTime;
-  final DateTime endTime;
-  final String status;
-
-  Shift({
-    required this.id,
-    required this.siteId,
-    required this.guardId,
-    required this.startTime,
-    required this.endTime,
-    required this.status,
-  });
-
-  factory Shift.fromJson(Map<String, dynamic> json) => Shift(
-        id: json['id'] as String,
-        siteId: json['site_id'] as String,
-        guardId: json['guard_id'] as String,
-        startTime: DateTime.parse(json['start_time'] as String),
-        endTime: DateTime.parse(json['end_time'] as String),
-        status: json['status'] as String,
-      );
-
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'site_id': siteId,
-        'guard_id': guardId,
-        'start_time': startTime.toIso8601String(),
-        'end_time': endTime.toIso8601String(),
-        'status': status,
-      };
-}
-
-class AttendanceRecord {
-  final String id;
-  final String guardId;
-  final String shiftId;
-  final DateTime clockIn;
-  final DateTime? clockOut;
-  final double latitude;
-  final double longitude;
-  final bool synced;
-
-  AttendanceRecord({
-    required this.id,
-    required this.guardId,
-    required this.shiftId,
-    required this.clockIn,
-    this.clockOut,
-    required this.latitude,
-    required this.longitude,
-    this.synced = false,
-  });
-
-  factory AttendanceRecord.fromJson(Map<String, dynamic> json) =>
-      AttendanceRecord(
-        id: json['id'] as String,
-        guardId: json['guard_id'] as String,
-        shiftId: json['shift_id'] as String,
-        clockIn: DateTime.parse(json['clock_in'] as String),
-        clockOut: json['clock_out'] != null
-            ? DateTime.parse(json['clock_out'] as String)
-            : null,
-        latitude: (json['latitude'] as num).toDouble(),
-        longitude: (json['longitude'] as num).toDouble(),
-        synced: (json['synced'] as int? ?? 0) == 1,
-      );
-
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'guard_id': guardId,
-        'shift_id': shiftId,
-        'clock_in': clockIn.toIso8601String(),
-        'clock_out': clockOut?.toIso8601String(),
-        'latitude': latitude,
-        'longitude': longitude,
-        'synced': synced ? 1 : 0,
-      };
-}
-
-class Route {
-  final String id;
-  final String siteId;
   final String name;
-  final List<Checkpoint> checkpoints;
+  final DeviceStatusKind status;
+  final String? siteId;
 
-  Route({
-    required this.id,
-    required this.siteId,
-    required this.name,
-    required this.checkpoints,
-  });
+  bool get isActive => status == DeviceStatusKind.active && siteId != null;
 
-  factory Route.fromJson(Map<String, dynamic> json) => Route(
-        id: json['id'] as String,
-        siteId: json['site_id'] as String,
-        name: json['name'] as String,
-        checkpoints: (json['checkpoints'] as List)
-            .map((c) => Checkpoint.fromJson(c as Map<String, dynamic>))
-            .toList(),
+  factory Device.fromJson(Map<String, dynamic> j) => Device(
+        id: j['id'] as String,
+        name: (j['name'] as String?) ?? '',
+        siteId: _str(j['site_id']),
+        status: switch (j['status']) {
+          'active' => DeviceStatusKind.active,
+          'revoked' => DeviceStatusKind.revoked,
+          _ => DeviceStatusKind.pending,
+        },
       );
 
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'site_id': siteId,
-        'name': name,
-        'checkpoints': checkpoints.map((c) => c.toJson()).toList(),
-      };
+  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'status': status.name, 'site_id': siteId};
+}
+
+class RosterGuard {
+  const RosterGuard({required this.id, required this.name, this.employeeId, this.role = 'guard', this.pinHash});
+
+  final String id;
+  final String name;
+  final String? employeeId;
+  final String role;
+  final String? pinHash;
+
+  bool get isSupervisor => role == 'supervisor';
+  bool get hasPin => pinHash != null && pinHash!.isNotEmpty;
+
+  String get initials {
+    final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).take(2);
+    return parts.map((p) => p[0].toUpperCase()).join();
+  }
+
+  factory RosterGuard.fromJson(Map<String, dynamic> j) => RosterGuard(
+        id: j['id'] as String,
+        name: (j['name'] as String?) ?? '',
+        employeeId: _str(j['employee_id']),
+        role: _str(j['role']) ?? 'guard',
+        pinHash: _str(j['pin_hash']),
+      );
+
+  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'employee_id': employeeId, 'role': role, 'pin_hash': pinHash};
 }
 
 class Checkpoint {
+  const Checkpoint({required this.id, required this.name, required this.qrCode, this.slaMinutes, this.orderIndex = 0});
+
   final String id;
-  final String routeId;
   final String name;
   final String qrCode;
-  final double latitude;
-  final double longitude;
+  final int? slaMinutes;
   final int orderIndex;
 
-  Checkpoint({
-    required this.id,
-    required this.routeId,
-    required this.name,
-    required this.qrCode,
-    required this.latitude,
-    required this.longitude,
-    required this.orderIndex,
-  });
-
-  factory Checkpoint.fromJson(Map<String, dynamic> json) => Checkpoint(
-        id: json['id'] as String,
-        routeId: json['route_id'] as String,
-        name: json['name'] as String,
-        qrCode: json['qr_code'] as String,
-        latitude: (json['latitude'] as num).toDouble(),
-        longitude: (json['longitude'] as num).toDouble(),
-        orderIndex: json['order_index'] as int,
+  factory Checkpoint.fromJson(Map<String, dynamic> j) => Checkpoint(
+        id: j['id'] as String,
+        name: (j['name'] as String?) ?? '',
+        qrCode: (j['qr_code'] as String?) ?? '',
+        slaMinutes: j['sla_minutes'] is num ? (j['sla_minutes'] as num).toInt() : null,
+        orderIndex: _int(j['order_index']),
       );
 
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'route_id': routeId,
-        'name': name,
-        'qr_code': qrCode,
-        'latitude': latitude,
-        'longitude': longitude,
-        'order_index': orderIndex,
-      };
+  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'qr_code': qrCode, 'sla_minutes': slaMinutes, 'order_index': orderIndex};
 }
 
-class Incident {
-  final String id;
-  final String guardId;
-  final String siteId;
-  final String type;
-  final String description;
-  final double latitude;
-  final double longitude;
-  final List<String> photoUrls;
-  final DateTime reportedAt;
-  final bool synced;
+class PatrolRoute {
+  const PatrolRoute({required this.id, required this.name, required this.checkpoints, this.active = true});
 
-  Incident({
+  final String id;
+  final String name;
+  final bool active;
+  final List<Checkpoint> checkpoints;
+
+  int get totalSlaMinutes => checkpoints.fold(0, (n, c) => n + (c.slaMinutes ?? 0));
+
+  /// Finds a checkpoint by its scanned QR payload or ID.
+  Checkpoint? byCode(String code) {
+    final c = code.trim();
+    for (final cp in checkpoints) {
+      if (cp.qrCode == c || cp.id == c) return cp;
+    }
+    return null;
+  }
+
+  factory PatrolRoute.fromJson(Map<String, dynamic> j) {
+    final cps = _list(j['checkpoints']).map(Checkpoint.fromJson).toList()..sort((a, b) => a.orderIndex.compareTo(b.orderIndex));
+    return PatrolRoute(id: j['id'] as String, name: (j['name'] as String?) ?? '', active: j['active'] != false, checkpoints: cps);
+  }
+
+  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'active': active, 'checkpoints': checkpoints.map((c) => c.toJson()).toList()};
+}
+
+class Shift {
+  const Shift({required this.id, required this.start, required this.end});
+
+  final String id;
+  final DateTime start;
+  final DateTime end;
+
+  bool isRunning(DateTime now) => !now.isBefore(start) && now.isBefore(end);
+
+  factory Shift.fromJson(Map<String, dynamic> j) => Shift(id: j['id'] as String, start: _ts(j['start_time'])!, end: _ts(j['end_time'])!);
+
+  Map<String, dynamic> toJson() => {'id': id, 'start_time': start.toIso8601String(), 'end_time': end.toIso8601String()};
+}
+
+class AttendanceRecord {
+  const AttendanceRecord({
     required this.id,
-    required this.guardId,
-    required this.siteId,
-    required this.type,
-    required this.description,
-    required this.latitude,
-    required this.longitude,
-    required this.photoUrls,
-    required this.reportedAt,
-    this.synced = false,
+    required this.status,
+    this.shiftId,
+    this.clockInAt,
+    this.clockOutAt,
+    this.lateMinutes = 0,
+    this.earlyOutMinutes = 0,
   });
 
-  factory Incident.fromJson(Map<String, dynamic> json) => Incident(
-        id: json['id'] as String,
-        guardId: json['guard_id'] as String,
-        siteId: json['site_id'] as String,
-        type: json['type'] as String,
-        description: json['description'] as String,
-        latitude: (json['latitude'] as num).toDouble(),
-        longitude: (json['longitude'] as num).toDouble(),
-        photoUrls: List<String>.from(json['photo_urls'] as List? ?? []),
-        reportedAt: DateTime.parse(json['reported_at'] as String),
-        synced: (json['synced'] as int? ?? 0) == 1,
+  final String id;
+  final String? shiftId;
+  final String status; // present | late | absent
+  final DateTime? clockInAt;
+  final DateTime? clockOutAt;
+  final int lateMinutes;
+  final int earlyOutMinutes;
+
+  bool get isOpen => clockInAt != null && clockOutAt == null;
+
+  factory AttendanceRecord.fromJson(Map<String, dynamic> j) => AttendanceRecord(
+        id: j['id'] as String,
+        shiftId: _str(j['shift_id']),
+        status: _str(j['status']) ?? 'present',
+        clockInAt: _ts(j['clock_in_at']),
+        clockOutAt: _ts(j['clock_out_at']),
+        lateMinutes: _int(j['late_minutes']),
+        earlyOutMinutes: _int(j['early_out_minutes']),
       );
 
   Map<String, dynamic> toJson() => {
         'id': id,
-        'guard_id': guardId,
-        'site_id': siteId,
-        'type': type,
-        'description': description,
-        'latitude': latitude,
-        'longitude': longitude,
-        'photo_urls': photoUrls,
-        'reported_at': reportedAt.toIso8601String(),
-        'synced': synced ? 1 : 0,
+        'shift_id': shiftId,
+        'status': status,
+        'clock_in_at': clockInAt?.toIso8601String(),
+        'clock_out_at': clockOutAt?.toIso8601String(),
+        'late_minutes': lateMinutes,
+        'early_out_minutes': earlyOutMinutes,
       };
 }
 
 class SosAlert {
+  const SosAlert({required this.id, required this.guardId, required this.firedAt, this.guardName, this.gpsLat, this.gpsLng, this.acknowledgedAt});
+
   final String id;
   final String guardId;
-  final double latitude;
-  final double longitude;
-  final DateTime triggeredAt;
-  final String status;
+  final String? guardName;
+  final DateTime firedAt;
+  final double? gpsLat;
+  final double? gpsLng;
+  final DateTime? acknowledgedAt;
 
-  SosAlert({
-    required this.id,
-    required this.guardId,
-    required this.latitude,
-    required this.longitude,
-    required this.triggeredAt,
-    required this.status,
-  });
-
-  factory SosAlert.fromJson(Map<String, dynamic> json) => SosAlert(
-        id: json['id'] as String,
-        guardId: json['guard_id'] as String,
-        latitude: (json['latitude'] as num).toDouble(),
-        longitude: (json['longitude'] as num).toDouble(),
-        triggeredAt: DateTime.parse(json['triggered_at'] as String),
-        status: json['status'] as String,
+  factory SosAlert.fromJson(Map<String, dynamic> j) => SosAlert(
+        id: j['id'] as String,
+        guardId: (j['guard_id'] as String?) ?? '',
+        guardName: _str(j['guard_name']),
+        firedAt: _ts(j['fired_at']) ?? DateTime.now().toUtc(),
+        gpsLat: _dbl(j['gps_lat']),
+        gpsLng: _dbl(j['gps_lng']),
+        acknowledgedAt: _ts(j['acknowledged_at']),
       );
+}
 
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'guard_id': guardId,
-        'latitude': latitude,
-        'longitude': longitude,
-        'triggered_at': triggeredAt.toIso8601String(),
-        'status': status,
-      };
+/// `GET /device/status` — where the acting guard stands right now.
+class GuardStatus {
+  const GuardStatus({this.shift, this.shiftAttendance, this.openAttendance, this.sessionId, this.sessionRouteId, this.sessionStartedAt});
+
+  final Shift? shift;
+  final AttendanceRecord? shiftAttendance;
+  final AttendanceRecord? openAttendance;
+  final String? sessionId;
+  final String? sessionRouteId;
+  final DateTime? sessionStartedAt;
+
+  factory GuardStatus.fromJson(Map<String, dynamic> j) {
+    final sess = _map(_map(j['session'])['session']);
+    return GuardStatus(
+      shift: j['shift'] is Map ? Shift.fromJson(_map(j['shift'])) : null,
+      shiftAttendance: j['shift_attendance'] is Map ? AttendanceRecord.fromJson(_map(j['shift_attendance'])) : null,
+      openAttendance: j['open_attendance'] is Map ? AttendanceRecord.fromJson(_map(j['open_attendance'])) : null,
+      sessionId: _str(sess['id']),
+      sessionRouteId: _str(sess['route_id']),
+      sessionStartedAt: _ts(sess['started_at']),
+    );
+  }
 }

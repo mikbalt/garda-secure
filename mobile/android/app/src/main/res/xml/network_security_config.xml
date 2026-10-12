@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  On-premise servers often use a self-signed or private-CA certificate
+  (docs/runbook.md). Trust certificates the operator installed on the tablet
+  (Settings > Security > Install certificate) in addition to system CAs.
+  Cleartext HTTP stays disabled.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

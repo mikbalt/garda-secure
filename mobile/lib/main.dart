@@ -1,42 +1,39 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+
 import 'app.dart';
 import 'core/auth/auth_provider.dart';
 import 'core/auth/keycloak_service.dart';
-import 'core/api/api_client.dart';
 import 'core/database/local_db.dart';
 import 'core/database/sync_service.dart';
-import 'config/env.dart';
+import 'core/services/location_service.dart';
+import 'core/services/photo_service.dart';
+import 'core/storage/secure_store.dart';
+import 'features/field_actions.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setPreferredOrientations(DeviceOrientation.values);
 
-  // Load .env
-  await dotenv.load(fileName: '.env');
+  final db = await LocalDb.open();
+  final store = DeviceSecureStore();
+  final auth = KeycloakService(store);
+  final session = DeviceSession(store: store, auth: auth, db: db);
+  final outbox = Outbox(db, session.api, onAuthExpired: () => unawaited(session.expire()));
+  final actions = FieldActions(session: session, outbox: outbox, db: db, location: LocationService(), photos: PhotoService());
 
-  // Init local SQLite database
-  await LocalDb.instance.init();
+  runApp(MultiProvider(
+    providers: [
+      ChangeNotifierProvider<DeviceSession>.value(value: session),
+      ChangeNotifierProvider<Outbox>.value(value: outbox),
+      ChangeNotifierProvider<FieldActions>.value(value: actions),
+    ],
+    child: const SecurePatrolApp(),
+  ));
 
-  final env = AppEnv();
-  final keycloakService = KeycloakService(
-    keycloakUrl: env.keycloakUrl,
-    realm: env.keycloakRealm,
-    clientId: env.keycloakClientId,
-  );
-  final apiClient = ApiClient(baseUrl: env.apiUrl);
-  final syncService = SyncService(apiClient: apiClient, db: LocalDb.instance);
-
-  runApp(
-    MultiProvider(
-      providers: [
-        Provider<ApiClient>.value(value: apiClient),
-        Provider<SyncService>.value(value: syncService),
-        ChangeNotifierProvider(
-          create: (_) => AuthProvider(keycloakService: keycloakService),
-        ),
-      ],
-      child: const SecurePatrolApp(),
-    ),
-  );
+  await session.boot();
+  await outbox.start();
 }

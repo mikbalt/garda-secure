@@ -1,191 +1,109 @@
+import 'dart:convert';
+
+import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
-import 'package:path/path.dart';
 
+/// On-device SQLite storage:
+/// - `outbox`: every field action waiting to be sent (see [Outbox]).
+/// - `kv`: JSON caches (device, site, roster, routes, per-guard state, …) so
+///   the tablet keeps working offline.
 class LocalDb {
-  static const _dbName = 'securepatrol.db';
-  static const _dbVersion = 1;
+  LocalDb._(this.db);
 
-  Database? _db;
+  final Database db;
 
-  Database get db {
-    if (_db == null) throw StateError('LocalDb not initialized. Call init() first.');
-    return _db!;
+  static const _version = 1;
+
+  /// Opens (or creates) the database. Tests pass an ffi [factory] and
+  /// `inMemoryDatabasePath`.
+  static Future<LocalDb> open({DatabaseFactory? factory, String? path}) async {
+    final f = factory ?? databaseFactory;
+    final dbPath = path ?? p.join(await f.getDatabasesPath(), 'securepatrol.db');
+    final db = await f.openDatabase(
+      dbPath,
+      options: OpenDatabaseOptions(version: _version, onCreate: _create),
+    );
+    return LocalDb._(db);
   }
 
-  Future<void> init() async {
-    final dbPath = await getDatabasesPath();
-    final path = join(dbPath, _dbName);
+  static Future<void> _create(Database db, int version) async {
+    await db.execute('''
+      CREATE TABLE outbox (
+        id          TEXT PRIMARY KEY,
+        kind        TEXT NOT NULL,
+        method      TEXT NOT NULL,
+        path        TEXT NOT NULL,
+        body        TEXT NOT NULL,
+        guard_id    TEXT,
+        photos      TEXT NOT NULL DEFAULT '[]',
+        priority    INTEGER NOT NULL DEFAULT 1,
+        label       TEXT NOT NULL DEFAULT '',
+        status      TEXT NOT NULL DEFAULT 'pending',
+        attempts    INTEGER NOT NULL DEFAULT 0,
+        last_error  TEXT,
+        next_at     TEXT NOT NULL,
+        created_at  TEXT NOT NULL
+      )
+    ''');
+    await db.execute('CREATE INDEX idx_outbox_next ON outbox(status, priority, created_at)');
+    await db.execute('''
+      CREATE TABLE kv (
+        key        TEXT PRIMARY KEY,
+        value      TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    ''');
+  }
 
-    _db = await openDatabase(
-      path,
-      version: _dbVersion,
-      onCreate: _onCreate,
+  // ── key/value cache ────────────────────────────────────────────────────────
+
+  Future<void> put(String key, Object? value) async {
+    if (value == null) {
+      await db.delete('kv', where: 'key = ?', whereArgs: [key]);
+      return;
+    }
+    await db.insert(
+      'kv',
+      {'key': key, 'value': jsonEncode(value), 'updated_at': DateTime.now().toUtc().toIso8601String()},
+      conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
 
-  Future<void> _onCreate(Database db, int version) async {
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS pending_clockins (
-        id TEXT PRIMARY KEY,
-        guard_id TEXT NOT NULL,
-        shift_id TEXT NOT NULL,
-        clock_in TEXT NOT NULL,
-        clock_out TEXT,
-        latitude REAL NOT NULL,
-        longitude REAL NOT NULL,
-        synced INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      )
-    ''');
-
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS pending_scans (
-        id TEXT PRIMARY KEY,
-        guard_id TEXT NOT NULL,
-        checkpoint_id TEXT NOT NULL,
-        route_id TEXT NOT NULL,
-        scanned_at TEXT NOT NULL,
-        latitude REAL NOT NULL,
-        longitude REAL NOT NULL,
-        synced INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      )
-    ''');
-
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS pending_incidents (
-        id TEXT PRIMARY KEY,
-        guard_id TEXT NOT NULL,
-        site_id TEXT NOT NULL,
-        type TEXT NOT NULL,
-        description TEXT NOT NULL,
-        latitude REAL NOT NULL,
-        longitude REAL NOT NULL,
-        photo_paths TEXT NOT NULL DEFAULT '[]',
-        reported_at TEXT NOT NULL,
-        synced INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      )
-    ''');
-
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS cached_routes (
-        id TEXT PRIMARY KEY,
-        site_id TEXT NOT NULL,
-        name TEXT NOT NULL,
-        checkpoints_json TEXT NOT NULL DEFAULT '[]',
-        cached_at TEXT NOT NULL DEFAULT (datetime('now'))
-      )
-    ''');
-
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS sos_queue (
-        id TEXT PRIMARY KEY,
-        guard_id TEXT NOT NULL,
-        latitude REAL NOT NULL,
-        longitude REAL NOT NULL,
-        triggered_at TEXT NOT NULL,
-        synced INTEGER NOT NULL DEFAULT 0
-      )
-    ''');
+  Future<Object?> get(String key) async {
+    final rows = await db.query('kv', columns: ['value'], where: 'key = ?', whereArgs: [key], limit: 1);
+    if (rows.isEmpty) return null;
+    return jsonDecode(rows.first['value'] as String);
   }
 
-  // --- pending_clockins ---
-
-  Future<String> insertClockIn(Map<String, dynamic> data) async {
-    await db.insert('pending_clockins', data,
-        conflictAlgorithm: ConflictAlgorithm.replace);
-    return data['id'] as String;
+  Future<Map<String, dynamic>?> getMap(String key) async {
+    final v = await get(key);
+    return v is Map ? v.cast<String, dynamic>() : null;
   }
 
-  Future<List<Map<String, dynamic>>> getUnsyncedClockIns() async {
-    return db.query('pending_clockins', where: 'synced = ?', whereArgs: [0]);
+  Future<List<Map<String, dynamic>>> getList(String key) async {
+    final v = await get(key);
+    return v is List ? v.whereType<Map<dynamic, dynamic>>().map((e) => e.cast<String, dynamic>()).toList() : [];
   }
 
-  Future<void> markClockInSynced(String id) async {
-    await db.update('pending_clockins', {'synced': 1},
-        where: 'id = ?', whereArgs: [id]);
+  /// Removes every cached value whose key starts with [prefix].
+  Future<void> deletePrefix(String prefix) => db.delete('kv', where: 'key LIKE ?', whereArgs: ['$prefix%']);
+
+  Future<void> wipe() async {
+    await db.delete('kv');
+    await db.delete('outbox');
   }
+}
 
-  // --- pending_scans ---
-
-  Future<String> insertScan(Map<String, dynamic> data) async {
-    await db.insert('pending_scans', data,
-        conflictAlgorithm: ConflictAlgorithm.replace);
-    return data['id'] as String;
-  }
-
-  Future<List<Map<String, dynamic>>> getUnsyncedScans() async {
-    return db.query('pending_scans', where: 'synced = ?', whereArgs: [0]);
-  }
-
-  Future<void> markScanSynced(String id) async {
-    await db.update('pending_scans', {'synced': 1},
-        where: 'id = ?', whereArgs: [id]);
-  }
-
-  // --- pending_incidents ---
-
-  Future<String> insertIncident(Map<String, dynamic> data) async {
-    await db.insert('pending_incidents', data,
-        conflictAlgorithm: ConflictAlgorithm.replace);
-    return data['id'] as String;
-  }
-
-  Future<List<Map<String, dynamic>>> getUnsyncedIncidents() async {
-    return db.query('pending_incidents', where: 'synced = ?', whereArgs: [0]);
-  }
-
-  Future<void> markIncidentSynced(String id) async {
-    await db.update('pending_incidents', {'synced': 1},
-        where: 'id = ?', whereArgs: [id]);
-  }
-
-  // --- cached_routes ---
-
-  Future<void> upsertRoute(Map<String, dynamic> data) async {
-    await db.insert('cached_routes', data,
-        conflictAlgorithm: ConflictAlgorithm.replace);
-  }
-
-  Future<List<Map<String, dynamic>>> getCachedRoutes() async {
-    return db.query('cached_routes');
-  }
-
-  Future<void> clearRoutes() async {
-    await db.delete('cached_routes');
-  }
-
-  // --- sos_queue ---
-
-  Future<String> insertSosAlert(Map<String, dynamic> data) async {
-    await db.insert('sos_queue', data,
-        conflictAlgorithm: ConflictAlgorithm.replace);
-    return data['id'] as String;
-  }
-
-  Future<List<Map<String, dynamic>>> getUnsyncedSosAlerts() async {
-    return db.query('sos_queue', where: 'synced = ?', whereArgs: [0]);
-  }
-
-  Future<void> markSosSynced(String id) async {
-    await db.update('sos_queue', {'synced': 1},
-        where: 'id = ?', whereArgs: [id]);
-  }
-
-  Future<int> countPending() async {
-    final clockIns = Sqflite.firstIntValue(await db.rawQuery(
-            'SELECT COUNT(*) FROM pending_clockins WHERE synced = 0')) ??
-        0;
-    final scans = Sqflite.firstIntValue(await db.rawQuery(
-            'SELECT COUNT(*) FROM pending_scans WHERE synced = 0')) ??
-        0;
-    final incidents = Sqflite.firstIntValue(await db.rawQuery(
-            'SELECT COUNT(*) FROM pending_incidents WHERE synced = 0')) ??
-        0;
-    final sos = Sqflite.firstIntValue(
-            await db.rawQuery('SELECT COUNT(*) FROM sos_queue WHERE synced = 0')) ??
-        0;
-    return clockIns + scans + incidents + sos;
-  }
+/// Cache keys.
+class CacheKeys {
+  static const device = 'device';
+  static const site = 'site';
+  static const siteConfig = 'site_config';
+  static const roster = 'roster';
+  static const routes = 'routes';
+  static const lastSync = 'last_sync';
+  static String guardStatus(String guardId) => 'guard_status:$guardId';
+  static String patrol(String guardId) => 'patrol:$guardId';
+  static String clock(String guardId) => 'clock:$guardId';
+  static const visitors = 'visitors';
 }
