@@ -453,6 +453,7 @@ class DeviceSession extends ChangeNotifier with WidgetsBindingObserver {
     _tick++;
     if (phase == Phase.unlocked && DateTime.now().difference(_lastActivity) > idleLimit) lock();
     if (phase == Phase.pending && _tick % 2 == 0) unawaited(refreshDevice()); // every 10 s
+    if (phase == Phase.revoked && _tick % 12 == 0) unawaited(refreshDevice()); // re-activated by an admin?
     // Supervisors on duty see SOS of other tablets: every 15 s while someone
     // works on the tablet, every 30 s on the lock screen (MOB-11).
     if ((phase == Phase.unlocked && _tick % 3 == 0) || (phase == Phase.locked && _tick % 6 == 0)) unawaited(refreshSos());
