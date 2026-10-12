@@ -138,7 +138,12 @@ export function RosterTab({ site, canEdit, onAdd, onEdit, onNewPattern }: Props)
             )}
           </div>
         )}
-        <div className="scroll-thin relative overflow-x-auto rounded-2xl border border-gray-200/80 bg-white shadow-card">
+        <div
+          tabIndex={0}
+          role="region"
+          aria-label={t('ppl.sch.tabRoster')}
+          className="scroll-thin relative overflow-x-auto rounded-2xl border border-gray-200/80 bg-white shadow-card focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+        >
           <table className="w-full min-w-[900px] sm:min-w-[960px] table-fixed border-separate border-spacing-0 text-sm">
             <caption className="sr-only">
               {t('ppl.sch.tabRoster')} {formatDayRange(from, to, lang)}

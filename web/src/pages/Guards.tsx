@@ -172,7 +172,7 @@ function GuardsContent({ site }: { site: Site }) {
     body = (
       <>
         {/* Desktop / tablet: table */}
-        <div className="scroll-thin relative hidden overflow-x-auto rounded-2xl border border-gray-200/80 bg-white shadow-card md:block">
+        <div tabIndex={0} className="scroll-thin relative hidden overflow-x-auto rounded-2xl border border-gray-200/80 bg-white shadow-card focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 md:block">
           <table className="min-w-full text-sm">
             <caption className="sr-only">{t('grd.title')}</caption>
             <thead className="border-b border-gray-200 bg-gray-50/80">

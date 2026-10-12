@@ -65,7 +65,7 @@ function DiffTable({ before, after }: { before: unknown; after: unknown }) {
   const shown = showAll ? rows : changed
   return (
     <div>
-      <div className="scroll-thin overflow-x-auto rounded-xl border border-gray-200">
+      <div tabIndex={0} role="region" aria-label={t('aud.diff')} className="scroll-thin overflow-x-auto rounded-xl border border-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500">
         <table className="min-w-full text-sm">
           <caption className="sr-only">{t('aud.diff')}</caption>
           <thead className="bg-gray-50 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-600">

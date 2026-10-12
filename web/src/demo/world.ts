@@ -217,7 +217,7 @@ export function seedWorld(): World {
     review.flags = ['late_sync']
   }
   // Plausibility flags (docs/api.md): a back-dated "on time" clock-in goes to review too.
-  const present = w.attendance.filter((a) => a.status === 'present' && a.clock_in_at)
+  const present = w.attendance.filter((a) => a.status === 'present' && a.clock_in_at && a.site_id === siteA.id)
   const backdated = present[present.length - 3]
   if (backdated) {
     backdated.flags = ['backdated_on_time', 'late_sync']

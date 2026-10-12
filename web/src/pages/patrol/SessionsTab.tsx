@@ -104,7 +104,7 @@ export function SessionsTab({ site }: { site: Site }) {
                   </li>
                 ))}
               </ul>
-              <div className="scroll-thin relative hidden overflow-x-auto rounded-2xl border border-gray-200/80 bg-white shadow-card sm:block">
+              <div tabIndex={0} className="scroll-thin relative hidden overflow-x-auto rounded-2xl border border-gray-200/80 bg-white shadow-card focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 sm:block">
                 <table className="min-w-full text-sm">
                   <caption className="sr-only">{t('ops.pat.tabHistory')}</caption>
                   <thead className="border-b border-gray-200 bg-gray-50/80">

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import { BellRing, Building2, DatabaseBackup, History, Send, ServerCog, Settings2, Siren, Tablet, type LucideIcon } from 'lucide-react'
 import { apiGet } from '../api/client'
 import { PageHeader } from '../components/ui/States'
@@ -17,6 +18,8 @@ import { PlatformInfo } from './settings/PlatformInfo'
 import type { Device, NotificationLogEntry } from '../types'
 
 type TabKey = 'sites' | 'devices' | 'rules' | 'log' | 'channels' | 'ops' | 'opslog' | 'backups' | 'platform'
+
+const PLATFORM_KEYS: TabKey[] = ['channels', 'ops', 'opslog', 'backups']
 
 /** Who sees a section: realm admin, platform-admin, or a realm admin without platform rights. */
 type Audience = 'realm' | 'platform' | 'realmOnly'
@@ -153,9 +156,13 @@ export default function Settings() {
   const realm = can('manageRealmSettings')
   const platform = can('managePlatform')
   const sections = SECTIONS.filter((s) => (s.audience === 'realm' ? realm : s.audience === 'platform' ? platform : realm && !platform))
+  // A realm admin following a link to an install-wide section gets the explanation.
+  const [params] = useSearchParams()
+  const askedPlatform = PLATFORM_KEYS.includes(params.get('tab') as TabKey)
+  const fallback: TabKey = askedPlatform && sections.some((s) => s.key === 'platform') ? 'platform' : sections[0]?.key ?? 'sites'
   const [tab, setTab] = useTabParam<TabKey>(
     sections.map((s) => s.key),
-    sections[0]?.key ?? 'sites'
+    fallback
   )
 
   const devices = useQuery({ queryKey: ['devices'], queryFn: () => apiGet<Device[]>('/devices'), refetchInterval: 60_000, enabled: realm })

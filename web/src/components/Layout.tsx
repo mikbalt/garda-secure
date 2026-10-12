@@ -453,8 +453,9 @@ export function Layout() {
         ref={asideRef}
         id="app-sidebar"
         {...(modal ? { role: 'dialog', 'aria-modal': true, 'aria-label': t('nav.main') } : {})}
-        className={`no-print fixed inset-y-0 left-0 z-40 w-64 shrink-0 overflow-hidden transition-[transform,visibility] duration-200 lg:visible lg:static lg:translate-x-0 ${
-          menuOpen ? 'visible translate-x-0' : 'invisible -translate-x-full'
+        // Opening: visible at once (so focus can move in); closing: hidden only after the slide-out.
+        className={`no-print fixed inset-y-0 left-0 z-40 w-64 shrink-0 overflow-hidden duration-200 lg:visible lg:static lg:translate-x-0 ${
+          menuOpen ? 'visible translate-x-0 transition-transform' : 'invisible -translate-x-full transition-[transform,visibility]'
         }`}
       >
         <Sidebar onClose={closeMenu} />
