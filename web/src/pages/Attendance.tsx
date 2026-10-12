@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import { ClipboardCheck } from 'lucide-react'
 import { RequireSite } from '../components/RequireSite'
 import { PageHeader } from '../components/ui/States'
-import { Tabs } from '../components/ui/Tabs'
+import { MaybeTabPanel, Tabs } from '../components/ui/Tabs'
 import { useAuth } from '../hooks/useAuth'
 import { useTabParam } from '../hooks/useTabParam'
 import { useT } from '../i18n/context'
@@ -56,6 +56,7 @@ function AttendanceContent({ site }: { site: Site }) {
       {canReview && (
         <div className="mb-4">
           <Tabs
+            idBase="att"
             label={t('att.title')}
             active={tab}
             onChange={setTab}
@@ -66,11 +67,13 @@ function AttendanceContent({ site }: { site: Site }) {
           />
         </div>
       )}
-      {tab === 'daily' ? (
-        <DailyTab site={site} date={date} today={today} onDateChange={(d) => setDate(d)} />
-      ) : (
-        <ReviewTab site={site} query={review} onOpenDay={(d) => setDate(d, true)} />
-      )}
+      <MaybeTabPanel tabbed={canReview} idBase="att" active={tab}>
+        {tab === 'daily' ? (
+          <DailyTab site={site} date={date} today={today} onDateChange={(d) => setDate(d)} />
+        ) : (
+          <ReviewTab site={site} query={review} onOpenDay={(d) => setDate(d, true)} />
+        )}
+      </MaybeTabPanel>
     </>
   )
 }

@@ -96,7 +96,7 @@ export function RosterTab({ site, canEdit, onAdd, onEdit, onNewPattern }: Props)
       {PERIODS.map((p) => (
         <li key={p} className="inline-flex items-center gap-1.5">
           <span className={`h-3 w-4 rounded ring-1 ring-inset ${periodChip[p]}`} aria-hidden="true" />
-          {t(`ppl.sch.period.${p}`)} <span className="text-gray-400">{t(`ppl.sch.periodRange.${p}`)}</span>
+          {t(`ppl.sch.period.${p}`)} <span className="text-gray-500">{t(`ppl.sch.periodRange.${p}`)}</span>
         </li>
       ))}
       <li className="inline-flex items-center gap-1.5">
@@ -169,7 +169,7 @@ export function RosterTab({ site, canEdit, onAdd, onEdit, onNewPattern }: Props)
                         <span className={`text-[11px] font-semibold uppercase tracking-wider ${isToday ? 'text-primary-700' : 'text-gray-500'}`}>{wd}</span>
                         <span
                           className={`mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold tabular-nums ${
-                            isToday ? 'bg-primary-600 text-white' : d < today ? 'text-gray-400' : 'text-gray-900'
+                            isToday ? 'bg-primary-600 text-white' : d < today ? 'text-gray-500' : 'text-gray-900'
                           }`}
                         >
                           {dd}
@@ -212,7 +212,7 @@ export function RosterTab({ site, canEdit, onAdd, onEdit, onNewPattern }: Props)
                               onClick={() => onAdd(g.id, d)}
                               aria-label={t('ppl.sch.addHere', { guard: g.name, day: formatLongDay(d, lang) })}
                               title={t('ppl.sch.addOneOffShort')}
-                              className={`flex items-center justify-center rounded-md border border-dashed text-gray-400 transition focus:outline-none focus-visible:border-primary-400 focus-visible:text-primary-600 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-primary-500 hover:border-primary-300 hover:bg-primary-50 hover:text-primary-600 ${
+                              className={`flex items-center justify-center rounded-md border border-dashed text-gray-500 transition focus:outline-none focus-visible:border-primary-400 focus-visible:text-primary-600 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-primary-500 hover:border-primary-300 hover:bg-primary-50 hover:text-primary-600 ${
                                 list.length === 0
                                   ? 'min-h-[40px] flex-1 border-transparent opacity-0 group-hover/cell:border-gray-300 group-hover/cell:opacity-100'
                                   : 'h-6 border-transparent opacity-0 group-hover/cell:border-gray-300 group-hover/cell:opacity-100'

@@ -52,7 +52,7 @@ export const cpTone: Record<CheckpointStatus, { bar: string; ring: string; text:
   late: { bar: 'bg-amber-400', ring: 'bg-amber-50 text-amber-600 ring-amber-200', text: 'text-amber-700' },
   overdue: { bar: 'bg-orange-500', ring: 'bg-orange-50 text-orange-600 ring-orange-200', text: 'text-orange-700' },
   missed: { bar: 'bg-red-500', ring: 'bg-red-50 text-red-600 ring-red-200', text: 'text-red-700' },
-  pending: { bar: 'bg-gray-200', ring: 'bg-white text-gray-400 ring-gray-200', text: 'text-gray-500' },
+  pending: { bar: 'bg-gray-200', ring: 'bg-white text-gray-500 ring-gray-200', text: 'text-gray-500' },
 }
 
 export type RangePreset = 'today' | '7d' | '30d'

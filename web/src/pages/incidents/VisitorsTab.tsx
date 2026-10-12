@@ -17,7 +17,7 @@ type Filter = 'all' | 'inside'
 
 function When({ iso, tz }: { iso?: string; tz: string }) {
   const { t, lang } = useI18n()
-  if (!iso) return <span className="text-gray-400">—</span>
+  if (!iso) return <span className="text-gray-500">—</span>
   const d = localDateOf(iso, tz)
   const today = todayIn(tz)
   const day = d === today ? t('ops.day.today') : d === addDays(today, -1) ? t('ops.day.yesterday') : formatDay(d, lang, false)
@@ -79,7 +79,7 @@ export function VisitorsTab({ site }: { site: Site }) {
         r.plate ? (
           <span className="whitespace-nowrap rounded-md bg-gray-900 px-1.5 py-0.5 font-mono text-xs font-medium tracking-wide text-white">{r.plate}</span>
         ) : (
-          <span className="text-gray-400">—</span>
+          <span className="text-gray-500">—</span>
         ),
     },
     { key: 'entry', header: t('vis.entry'), cell: (r) => <When iso={r.entry_at} tz={tz} /> },

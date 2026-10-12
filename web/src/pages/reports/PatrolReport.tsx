@@ -60,7 +60,7 @@ export function PatrolReport({ site, title }: { site: Site; title: string }) {
       cell: (r) => (
         <span className="whitespace-nowrap">
           {r.scanned_count}
-          <span className="text-gray-400"> / {r.total_checkpoints}</span>
+          <span className="text-gray-500"> / {r.total_checkpoints}</span>
         </span>
       ),
     },
@@ -69,16 +69,16 @@ export function PatrolReport({ site, title }: { site: Site; title: string }) {
       header: t('rep.missed'),
       numeric: true,
       cell: (r) => {
-        if (r.status === 'in_progress') return <span className="text-gray-400">—</span>
+        if (r.status === 'in_progress') return <span className="text-gray-500">—</span>
         const n = Math.max(0, r.total_checkpoints - r.scanned_count)
-        return n > 0 ? <span className="font-medium text-red-700">{n}</span> : <span className="text-gray-400">0</span>
+        return n > 0 ? <span className="font-medium text-red-700">{n}</span> : <span className="text-gray-500">0</span>
       },
     },
     {
       key: 'sla',
       header: t('pat.slaBreaches'),
       numeric: true,
-      cell: (r) => (r.sla_breaches > 0 ? <span className="font-medium text-orange-700">{r.sla_breaches}</span> : <span className="text-gray-400">0</span>),
+      cell: (r) => (r.sla_breaches > 0 ? <span className="font-medium text-orange-700">{r.sla_breaches}</span> : <span className="text-gray-500">0</span>),
     },
     { key: 'pct', header: t('pat.completion'), numeric: true, cell: (r) => <PctCell value={r.completion_pct} /> },
   ]

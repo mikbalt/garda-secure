@@ -47,7 +47,7 @@ export function KpiReport({ site, title }: { site: Site; title: string }) {
       key: 'sla',
       header: t('pat.slaBreaches'),
       numeric: true,
-      cell: (r) => (r.sla_breaches > 0 ? <span className="font-medium text-orange-700">{r.sla_breaches}</span> : <span className="text-gray-400">0</span>),
+      cell: (r) => (r.sla_breaches > 0 ? <span className="font-medium text-orange-700">{r.sla_breaches}</span> : <span className="text-gray-500">0</span>),
     },
   ]
 

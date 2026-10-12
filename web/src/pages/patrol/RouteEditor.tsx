@@ -209,7 +209,7 @@ export function RouteEditor({ site, route, onClose }: { site: Site; route: Patro
                               placeholder="—"
                               className="pr-11 tabular-nums"
                             />
-                            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-gray-400">{t('ops.pat.minShort')}</span>
+                            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-gray-500">{t('ops.pat.minShort')}</span>
                           </div>
                         </div>
                         <div className="col-start-2 flex items-center gap-0.5 sm:col-start-auto sm:justify-end">
