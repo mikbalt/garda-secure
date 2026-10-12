@@ -393,3 +393,69 @@ in PRD §9 (OQ-x). New entries go at the bottom with the next free number.
 - Tests: Vitest unit tests + Playwright smoke with axe (serious/critical fail)
   in demo mode for every role at 1280 px and 390 px; the e2e server sends the
   production CSP, so CSP violations fail CI.
+
+### D-041 — User and device-account management via Keycloak Admin REST (F1, NFR-09)
+- **Date:** 2026-10-12 · **Status:** Accepted
+- Per realm a confidential client `securepatrol-admin-api` (service account with
+  only `view-users`, `query-users`, `manage-users`, `view-realm`), created by
+  `keycloak-config.sh`; secrets in `infra/secrets/keycloak-admin-clients`
+  (compose secret, re-read by the API).
+- `/users` and `/device-accounts` (admin, own realm): assignable roles admin,
+  supervisor, hr, client-readonly; `platform-admin` only by a platform-admin;
+  no self-lockout; site-scoped admins confined to their sites. Temporary
+  passwords shown once, never audited. Tablet accounts `device-<slug>` with only
+  the `device` role and an `@device.invalid` e-mail (Keycloak 24 profile).
+
+### D-042 — Site scoping by token claim `sites` (F4, implements D-035)
+- **Date:** 2026-10-12 · **Status:** Accepted
+- User attribute `sites` → access-token claim via a mapper on the web client.
+  Non-empty claim limits `siteFor` and every realm-wide list; other sites answer
+  404. Empty/missing = whole realm; a claim with only invalid values = no site.
+  `/audit` stays realm-wide (admins only).
+
+### D-043 — Effective incident values (F7, amends D-009)
+- **Date:** 2026-10-12 · **Status:** Accepted
+- Reads, filters, dashboard and exports use the latest amendment per field
+  (`incidents_effective` view) with `amended` + `original_*`; the stored
+  original row never changes.
+
+### D-044 — Route snapshots (F9)
+- **Date:** 2026-10-12 · **Status:** Accepted
+- A session stores its route's checkpoints at start; progress, reports and SLA
+  use the snapshot. Scan matching uses the current route so a QR regeneration
+  (D-037) takes effect immediately.
+
+### D-045 — Exports and paging (F5)
+- **Date:** 2026-10-12 · **Status:** Accepted
+- `format=csv|xlsx` on every report; server-side PDF for the incident log and
+  incident detail (DejaVu fonts embedded). Limits 50 000 rows (CSV/XLSX) and
+  2 000 (PDF) → 400 `export_too_large`; never silent truncation. Paged lists
+  return `X-Total-Count` / `X-Truncated`.
+
+### D-046 — Retention and PII (BE-S9, UU PDP)
+- **Date:** 2026-10-12 · **Status:** Accepted
+- Hourly retention job: visitor logs + photos 365 d, selfies 365 d, attendance/
+  scan GPS 365 d, notification bodies/recipients 180 d, evidence photos kept
+  (`RETENTION_*_DAYS`, 0 = forever); all object versions deleted. `audit_log` is
+  never purged in v1. Visitor ID numbers AES-GCM encrypted (HKDF from
+  `SETTINGS_ENCRYPTION_KEY`, info "securepatrol pii v1"), masked except on the
+  visitor detail for admin/supervisor.
+
+### D-047 — Channels in code, `incident_filed` (F8, F10)
+- **Date:** 2026-10-12 · **Status:** Accepted
+- Channel registry `notification.Channels` replaces the DB CHECK
+  (`GET /notifications/channels`). `incident_filed` fires for every incident,
+  next to `incident_high` (D-035).
+
+### D-048 — Site floor plans (F3, implements D-035)
+- **Date:** 2026-10-12 · **Status:** Accepted
+- Admin-uploaded floor-plan images per site (write-once, max 20); checkpoints
+  carry `floorplan_id` + relative `plan_x`/`plan_y` (0..1); a plan can be deleted
+  only when unused. `GET /patrol/live` returns plan positions and last scan
+  (fixed number of queries).
+
+### D-049 — Tablet health beacon, incident GPS
+- **Date:** 2026-10-12 · **Status:** Accepted
+- `POST /device/telemetry` (≤ 1/min) stores the latest beacon in
+  `devices.health`, shown in `GET /devices`; gauge `sp_device_outbox_pending`.
+  Incidents accept optional `gps_lat`/`gps_lng`, kept as evidence.

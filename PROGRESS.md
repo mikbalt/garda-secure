@@ -9,7 +9,6 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
-| Wave 2 backend — PRD gaps: user management via Keycloak admin API + per-site client scoping, incident_filed, amended values in reports, override history, xlsx, route snapshots, channel registry, site floor plans, retention job, realm-wide SOS | `muhamhad-pc1/claude-be-features` | 2026-10-12 | branch `agent/muhamhad-pc1/be-features`; migration 007 |
 
 ## Migration numbers
 
@@ -21,7 +20,7 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 | 004 | be_reliability (outbox, ops alerts, SLA, backups) | `muhamhad-pc1/claude-be-rel` | pushed |
 | 005 | be_security (audit append-only, received_at/flags, per-site employee_id) | `muhamhad-pc1/claude-be-sec` | pushed |
 | 006 | be_field (guard sessions, signed QR, patrol schedules) | `muhamhad-pc1/claude-be-field` | pushed |
-| 007 | be_features (overrides history, route snapshots, floor plans, channels, retention) | `muhamhad-pc1/claude-be-features` | reserved |
+| 007 | be_features (overrides history, route snapshots, floor plans, channels, retention, telemetry, incident GPS) | `muhamhad-pc1/claude-be-features` | pushed |
 | 008 | *(next free)* | | |
 
 ## Milestones (PRD §11)
@@ -44,11 +43,6 @@ Verification
 
 Backend
 - [ ] WebSocket live patrol updates (D-014 follow-up)
-- [ ] Prometheus `/metrics` endpoint for the API (+ postgres/redis exporters)
-- [ ] PDF export for incident log (web print view first)
-- [ ] Excel (.xlsx) export (CSV with BOM for now)
-- [ ] Rate limiting on tablet endpoints (Redis)
-- [ ] Retention/cleanup for old backups in MinIO (lifecycle rule)
 
 Web
 - [ ] Tailwind 4 migration (dev-only `npm audit` findings in tailwind 3 build deps)
@@ -57,7 +51,6 @@ Web
 - [ ] `Table`: optional row-click prop (Patrol history uses its own table markup)
 - [ ] Attendance "Perlu ditinjau" chip counts only the selected day while the tab counts all days — align or label
 - [ ] Device dialog: "set back to pending" action
-- [ ] Live patrol map (needs checkpoint lat/lng in routes)
 
 Infra / Ops
 - [ ] Configure the `production` environment secrets and do a first tagged deploy (runbook §7)
@@ -65,8 +58,6 @@ Infra / Ops
 - [ ] Load test 2 sites / 10 guards (M7)
 
 Mobile (D-024) — open audit items, see docs/audit-2026-10.md
-- [ ] Backend `POST /device/telemetry` (tablet health beacon, D-039) + show tablet health in Settings → Devices
-- [ ] Backend `gps_lat`/`gps_lng` on incidents (tablet already collects a fix)
 - [ ] First real APK on a tablet: private-CA TLS, camera/QR, kiosk mode (runbook §3)
 
 ## Done
@@ -89,3 +80,4 @@ Mobile (D-024) — open audit items, see docs/audit-2026-10.md
 | Wave 2 backend — server-verified guard sessions, signed checkpoint QR, patrol schedules + `patrol_not_started` + compliance report (D-036..D-038) | `muhamhad-pc1/claude-be-field` | 2026-10-12 | merge agent/muhamhad-pc1/be-field |
 | Wave 2 mobile — hardening MOB-2..MOB-11 (protected sign-out, lock-screen SOS, server time offset, outbox failure handling, encrypted local data, release signing + new app id, bundled CA, site time zone, EXIF strip) + guard-session and signed-QR client; 63 tests (D-039) | `muhamhad-pc1/claude-mobile` | 2026-10-12 | merge d916d4f |
 | Wave 2 web — WEB-1..10: deps (0 high), CSP-clean build, realm-wide SOS banner + sound, idle logout, a11y (axe clean), all error codes EN/ID, per-route error boundary, safe URLs, lazy charts, demo guard; UIs for platform-admin settings, ops alerts/log, audit log, plausibility flags; 100 unit + 82 e2e tests (D-040) | `muhamhad-pc1/claude-web` | 2026-10-12 | merge 9feb63b |
+| Wave 2 backend — users + device accounts via Keycloak admin API, per-site scoping, realm-wide `GET /sos/active`, `incident_filed`, effective amended values, override history, XLSX/PDF exports + paging, route snapshots, channel registry, floor plans + batched live view, retention + encrypted visitor IDs, tablet telemetry, incident GPS (D-041..D-049) | `muhamhad-pc1/claude-be-features` | 2026-10-12 | ab4c3aa |
