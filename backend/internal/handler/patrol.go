@@ -64,6 +64,9 @@ func (h *Handler) createRoute(c *fiber.Ctx) error {
 	if err := service.NormalizeRoute(&r); err != nil {
 		return h.fail(c, err)
 	}
+	if err := h.checkRoutePlans(c, &r); err != nil {
+		return h.fail(c, err)
+	}
 	out, err := repository.CreateRoute(c.Context(), h.DB, r)
 	if err != nil {
 		return h.fail(c, err)
@@ -88,6 +91,9 @@ func (h *Handler) updateRoute(c *fiber.Ctx) error {
 	if err := service.NormalizeRoute(r); err != nil {
 		return h.fail(c, err)
 	}
+	if err := h.checkRoutePlans(c, r); err != nil {
+		return h.fail(c, err)
+	}
 	out, err := repository.UpdateRoute(c.Context(), h.DB, *r)
 	if err != nil {
 		return h.fail(c, err)
@@ -97,7 +103,10 @@ func (h *Handler) updateRoute(c *fiber.Ctx) error {
 
 // ── Sessions (web) ───────────────────────────────────────────────────────────
 
-// GET /patrol/live?site_id= — progress of every running patrol (FR-PAT-05).
+// GET /patrol/live?site_id= — progress of every running patrol (FR-PAT-05):
+// per session the checkpoints (with floor plan positions, F3), their
+// state (on_time/late/overdue/pending) and the last scan time. Loaded with a
+// fixed number of queries whatever the number of sessions.
 func (h *Handler) livePatrols(c *fiber.Ctx) error {
 	site, err := h.siteFor(c, c.Query("site_id"))
 	if err != nil {
@@ -107,17 +116,28 @@ func (h *Handler) livePatrols(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
-	out := make([]fiber.Map, 0, len(sessions))
+	progress, err := service.LoadProgressBatch(c.Context(), h.DB, sessions)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	guardIDs := make([]string, 0, len(sessions))
 	for _, s := range sessions {
-		p, err := service.LoadProgress(c.Context(), h.DB, s)
-		if err != nil {
-			return h.fail(c, err)
+		guardIDs = append(guardIDs, s.GuardID)
+	}
+	names, err := repository.GuardNames(c.Context(), h.DB, guardIDs)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	out := make([]fiber.Map, 0, len(progress))
+	for i := range progress {
+		p := &progress[i]
+		var last *time.Time
+		for _, cp := range p.Checkpoints {
+			if cp.ScannedAt != nil && (last == nil || cp.ScannedAt.After(*last)) {
+				last = cp.ScannedAt
+			}
 		}
-		guardName := ""
-		if g, err := repository.GetGuard(c.Context(), h.DB, s.GuardID); err == nil {
-			guardName = g.Name
-		}
-		out = append(out, fiber.Map{"progress": p, "guard_name": guardName})
+		out = append(out, fiber.Map{"progress": p, "guard_name": names[p.Session.GuardID], "last_scan_at": last})
 	}
 	return c.JSON(out)
 }

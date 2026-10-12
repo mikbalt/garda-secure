@@ -31,6 +31,17 @@ func CheckObjectKey(key *string, siteID string) error {
 	return nil
 }
 
+// readableKeyRe also admits floor plans, which only admins upload (F3).
+var readableKeyRe = regexp.MustCompile(`^sites/[0-9a-f-]{36}/(selfie|checkpoint|incident|defect|visitor|floorplan)/[0-9a-f-]{36}\.(jpg|png|webp)$`)
+
+// CheckReadableKey verifies a key passed to GET /media/url belongs to the site.
+func CheckReadableKey(key, siteID string) error {
+	if !readableKeyRe.MatchString(key) || !strings.HasPrefix(key, "sites/"+siteID+"/") {
+		return BadRequest("invalid_object_key", "photo key %q is not a valid key for this site", key)
+	}
+	return nil
+}
+
 // CheckObjectKeys verifies a list of photo keys.
 func CheckObjectKeys(keys []string, siteID string) error {
 	for i := range keys {

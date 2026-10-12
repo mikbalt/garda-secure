@@ -87,7 +87,7 @@ func (h *Handler) Mount(app *fiber.App, v *middleware.Validator) {
 		middleware.LimitAuthFailures(h.limiter, h.Cfg.RateLimitAuthFailures),
 		middleware.JWT(v),
 		middleware.LoadDevice(h.DB),
-		middleware.LimitJSONBody(MaxJSONBodyBytes, "/api/v1/media"),
+		middleware.LimitJSONBody(MaxJSONBodyBytes, "/api/v1/media", "/api/v1/sites/*/floorplans"),
 		middleware.LimitWrites(h.limiter, h.Cfg.RateLimitUserWrites, h.Cfg.RateLimitDeviceWrites),
 		middleware.Audit(h.DB),
 	)

@@ -26,6 +26,8 @@ var mediaReadRoles = map[string][]string{
 	"defect":     {middleware.RoleAdmin, middleware.RoleSupervisor},
 	"incident":   {middleware.RoleAdmin, middleware.RoleSupervisor, middleware.RoleClientReadonly},
 	"checkpoint": {middleware.RoleAdmin, middleware.RoleSupervisor, middleware.RoleClientReadonly},
+	// Site floor plans (F3) back the live map of every web role.
+	"floorplan": {middleware.RoleAdmin, middleware.RoleSupervisor, middleware.RoleHR, middleware.RoleClientReadonly},
 }
 
 // GET /media/url?key= — pre-signed URL for a stored photo of a site the
@@ -36,7 +38,7 @@ func (h *Handler) mediaURL(c *fiber.Ctx) error {
 	if len(parts) < 4 || parts[0] != "sites" {
 		return h.fail(c, service.BadRequest("invalid_object_key", "invalid photo key"))
 	}
-	if err := service.CheckObjectKey(&key, parts[1]); err != nil {
+	if err := service.CheckReadableKey(key, parts[1]); err != nil {
 		return h.fail(c, err)
 	}
 	if _, err := h.siteFor(c, parts[1]); err != nil {

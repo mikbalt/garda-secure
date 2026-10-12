@@ -165,6 +165,11 @@ type Checkpoint struct {
 	OrderIndex int      `json:"order_index"`
 	Lat        *float64 `json:"lat,omitempty"`
 	Lng        *float64 `json:"lng,omitempty"`
+	// Position on a site floor plan (F3): relative coordinates 0..1 from the
+	// top-left corner of the displayed image.
+	FloorplanID *string  `json:"floorplan_id,omitempty"`
+	PlanX       *float64 `json:"plan_x,omitempty"`
+	PlanY       *float64 `json:"plan_y,omitempty"`
 }
 
 // Route defines an ordered set of checkpoints for a patrol at a site.

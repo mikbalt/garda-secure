@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -140,13 +141,14 @@ func LimitWrites(l *Limiter, userPerMinute, devicePerMinute int) fiber.Handler {
 }
 
 // LimitJSONBody rejects request bodies larger than max bytes (413
-// body_too_large), except for the given POST paths (photo uploads), which
-// keep the server-wide limit.
+// body_too_large), except for the given POST paths (image uploads), which
+// keep the server-wide limit. A "*" segment in an exempt path matches any
+// one path segment (e.g. "/api/v1/sites/*/floorplans").
 func LimitJSONBody(max int, exemptPOST ...string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		if c.Method() == fiber.MethodPost {
 			for _, p := range exemptPOST {
-				if c.Path() == p {
+				if pathMatches(p, c.Path()) {
 					return c.Next()
 				}
 			}
@@ -158,6 +160,24 @@ func LimitJSONBody(max int, exemptPOST ...string) fiber.Handler {
 		}
 		return c.Next()
 	}
+}
+
+// pathMatches compares a path with a pattern whose "*" segments match any
+// single non-empty segment.
+func pathMatches(pattern, path string) bool {
+	if !strings.Contains(pattern, "*") {
+		return pattern == path
+	}
+	ps, xs := strings.Split(pattern, "/"), strings.Split(path, "/")
+	if len(ps) != len(xs) {
+		return false
+	}
+	for i := range ps {
+		if ps[i] != xs[i] && (ps[i] != "*" || xs[i] == "") {
+			return false
+		}
+	}
+	return true
 }
 
 // ClientIP is the caller's IP: X-Real-IP when the request came through a
