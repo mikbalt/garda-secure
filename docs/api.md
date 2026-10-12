@@ -11,8 +11,9 @@ support.
 Unauthenticated operational endpoints on the API port (outside `/api/v1`):
 `GET /health` (DB + Redis; proxied by nginx), `GET /ready` (DB, Redis and
 MinIO reachable → 200 `{status: ready, db, redis, minio}`, else 503) and
-`GET /metrics` (Prometheus). `/ready` and `/metrics` are **not** proxied by
-nginx; scrape them on the internal network. The worker serves `/health` and
+`GET /metrics` (Prometheus). nginx proxies `/health` and `/ready` (status
+only, for uptime checks) but answers 404 for `/metrics`; scrape it on the
+internal network. The worker serves `/health` and
 `/metrics` on `WORKER_HTTP_ADDR` (default `:9091`).
 
 Roles (Keycloak realm roles): `admin`, `supervisor`, `hr`, `client-readonly`,

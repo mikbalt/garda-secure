@@ -68,7 +68,7 @@ updates:
       prefix: "chore(deps)"
 
   # Images pinned in infra/docker-compose*.yml. Keycloak major upgrades need
-  # the migration in docs/runbook.md §9 — do not merge those blindly.
+  # the migration in docs/runbook.md §2 — do not merge those blindly.
   - package-ecosystem: docker-compose
     directory: /infra
     target-branch: init

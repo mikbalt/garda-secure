@@ -7,7 +7,7 @@
 #  - POSTGRES_USER stays the superuser for admin/restore only.
 # Nobody else may connect to either database. Passwords are read into psql
 # variables (quoted by psql), never interpolated into SQL by the shell.
-# Existing volumes: see docs/runbook.md §5 "Database roles on an existing volume".
+# Existing volumes: see docs/runbook.md §1 "Database roles".
 set -eu
 
 : "${APP_DB_USER:?}" "${APP_DB_PASSWORD:?}" "${KC_DB_USER:?}" "${KC_DB_PASSWORD:?}" "${PG_MONITOR_PASSWORD:?}"

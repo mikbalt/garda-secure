@@ -48,18 +48,24 @@ groups:
 
   - name: securepatrol-jobs
     rules:
+      # The worker exports 0 until the first successful backup exists.
       - alert: BackupStale
-        expr: time() - max(sp_backup_last_success_timestamp_seconds) > 26 * 3600
+        expr: |
+          (time() - max(sp_backup_last_success_timestamp_seconds) > 26 * 3600)
+          and max(sp_backup_last_success_timestamp_seconds) > 0
         labels: {severity: critical}
         annotations:
           summary: No successful database backup for more than 26 hours (RPO 24 h)
           description: Check Settings -> Backups and the worker logs. Run "Back up now" after fixing.
       - alert: BackupMetricMissing
-        expr: absent(sp_backup_last_success_timestamp_seconds)
+        expr: |
+          absent(sp_backup_last_success_timestamp_seconds)
+          or max(sp_backup_last_success_timestamp_seconds) == 0
         for: 30h
         labels: {severity: warning}
         annotations:
           summary: The worker has not reported any successful backup for 30 hours
+          description: Fresh install without a first backup, or the worker metrics are missing. Check Settings -> Backups.
       - alert: OffsiteBackupStale
         expr: time() - sp_offsite_backup_last_success_timestamp_seconds > 26 * 3600
         labels: {severity: critical}
@@ -78,11 +84,13 @@ groups:
           summary: The monthly restic integrity check failed — the off-site repository may be damaged
       # The backend's `job` label collides with Prometheus' target label and
       # is therefore stored as `exported_job`.
+      # Errors in the last 30 min and no success in that time (also fires for
+      # a job that has never succeeded since the worker started).
       - alert: JobNotSucceeding
         expr: |
-          (time() - max by (exported_job) (sp_job_last_success_timestamp_seconds)) > 1800
-          and on (exported_job)
           sum by (exported_job) (increase(sp_job_runs_total{result=~"error|fail.*"}[30m])) > 0
+          unless on (exported_job)
+          (time() - max by (exported_job) (sp_job_last_success_timestamp_seconds)) < 1800
         labels: {severity: warning}
         annotations:
           summary: "Scheduled job {{ $labels.exported_job }} keeps failing and has not succeeded for 30 minutes"

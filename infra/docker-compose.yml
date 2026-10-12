@@ -138,7 +138,7 @@ services:
 
   keycloak:
     # Keycloak 24 is out of support; the 26.x migration path is in the
-    # runbook (§9, INF-D8). Pinned to the last 24 patch release.
+    # runbook (§2, INF-D8). Pinned to the last 24 patch release.
     image: quay.io/keycloak/keycloak:24.0.5
     restart: always
     <<: *hardening
