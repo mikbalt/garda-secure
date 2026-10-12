@@ -79,7 +79,7 @@ export function RouteEditor({ site, route, onClose }: { site: Site; route: Patro
   const totalSla = rows.reduce((n, r) => n + (num(r.sla) ?? 0), 0)
 
   const save = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const body: RouteInput = {
         name: name.trim(),
         active,
@@ -93,7 +93,8 @@ export function RouteEditor({ site, route, onClose }: { site: Site; route: Patro
           lng: num(r.lng),
         })),
       }
-      return route ? apiClient.put(`/patrol/routes/${route.id}`, body) : apiClient.post('/patrol/routes', { ...body, site_id: site.id })
+      if (route) await apiClient.put(`/patrol/routes/${route.id}`, body)
+      else await apiClient.post('/patrol/routes', { ...body, site_id: site.id })
     },
     onSuccess: () => {
       toast.success(t('pat.routeSaved'))
