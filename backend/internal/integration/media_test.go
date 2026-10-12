@@ -28,8 +28,9 @@ import (
 
 // fakeS3 is just enough of the S3 API for HEAD and (conditional) PUT.
 type fakeS3 struct {
-	mu   sync.Mutex
-	objs map[string]fakeObj
+	mu      sync.Mutex
+	objs    map[string]fakeObj
+	deleted []string // paths of DELETE requests
 }
 
 type fakeObj struct {
@@ -67,6 +68,7 @@ func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		size := int64(len(body))
 		if d := r.Header.Get("X-Amz-Decoded-Content-Length"); d != "" {
 			size, _ = strconv.ParseInt(d, 10, 64)
+			body = decodeAWSChunked(body)
 		}
 		meta := http.Header{}
 		for k, v := range r.Header {
@@ -77,9 +79,71 @@ func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.objs[r.URL.Path] = fakeObj{size: size, body: body, meta: meta}
 		w.Header().Set("ETag", `"0123456789abcdef"`)
 		w.WriteHeader(http.StatusOK)
+	case http.MethodGet:
+		if r.URL.Query().Has("versions") { // ListObjectVersions (bucket path)
+			f.listVersions(w, r)
+			return
+		}
+		if !exists {
+			w.Header().Set("Content-Type", "application/xml")
+			w.WriteHeader(http.StatusNotFound)
+			fmt.Fprint(w, `<Error><Code>NoSuchKey</Code><Message>missing</Message></Error>`)
+			return
+		}
+		w.Header().Set("Content-Length", strconv.Itoa(len(o.body)))
+		w.Header().Set("ETag", `"0123456789abcdef"`)
+		w.Header().Set("Last-Modified", time.Now().UTC().Format(http.TimeFormat))
+		w.Header().Set("Content-Type", "image/jpeg")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(o.body)
+	case http.MethodDelete:
+		delete(f.objs, r.URL.Path)
+		f.deleted = append(f.deleted, r.URL.Path)
+		w.WriteHeader(http.StatusNoContent)
 	default:
 		w.WriteHeader(http.StatusNotImplemented)
 	}
+}
+
+// listVersions answers ListObjectVersions with one version per object.
+func (f *fakeS3) listVersions(w http.ResponseWriter, r *http.Request) {
+	bucket := "/" + strings.Trim(r.URL.Path, "/") + "/"
+	prefix := r.URL.Query().Get("prefix")
+	var b strings.Builder
+	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?><ListVersionsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">`)
+	fmt.Fprintf(&b, `<Name>%s</Name><Prefix>%s</Prefix><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated>`, strings.Trim(bucket, "/"), prefix)
+	for path, o := range f.objs {
+		key, ok := strings.CutPrefix(path, bucket)
+		if !ok || !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		fmt.Fprintf(&b, `<Version><Key>%s</Key><VersionId>v1</VersionId><IsLatest>true</IsLatest><LastModified>%s</LastModified><ETag>"0123456789abcdef"</ETag><Size>%d</Size><StorageClass>STANDARD</StorageClass></Version>`,
+			key, time.Now().UTC().Format("2006-01-02T15:04:05.000Z"), o.size)
+	}
+	b.WriteString(`</ListVersionsResult>`)
+	w.Header().Set("Content-Type", "application/xml")
+	_, _ = w.Write([]byte(b.String()))
+}
+
+// decodeAWSChunked strips the aws-chunked framing of a streaming-signed PUT.
+func decodeAWSChunked(b []byte) []byte {
+	var out []byte
+	for len(b) > 0 {
+		nl := bytes.Index(b, []byte("\r\n"))
+		if nl < 0 {
+			break
+		}
+		header := string(b[:nl])
+		sizeHex, _, _ := strings.Cut(header, ";")
+		n, err := strconv.ParseInt(sizeHex, 16, 64)
+		if err != nil || n == 0 || int(n)+nl+2 > len(b) {
+			break
+		}
+		out = append(out, b[nl+2:nl+2+int(n)]...)
+		b = b[nl+2+int(n):]
+		b = bytes.TrimPrefix(b, []byte("\r\n"))
+	}
+	return out
 }
 
 // jpegWithGPS returns a JPEG carrying an EXIF block with a GPS marker.

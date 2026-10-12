@@ -196,6 +196,19 @@ func (h *Handler) Register(api fiber.Router) {
 	bk.Post("/", h.createBackup)
 
 	api.Get("/audit", web(rolesAdmin...), h.listAudit)
+
+	// User and tablet-account management via Keycloak (F1), caller's realm.
+	api.Get("/users", admin, h.listUsers)
+	api.Post("/users", admin, h.createUser)
+	api.Get("/users/:id", admin, h.getUser)
+	api.Put("/users/:id", admin, h.updateUser)
+	api.Post("/users/:id/reset-password", admin, h.resetUserPassword)
+	api.Post("/users/:id/reset-otp", admin, h.resetUserOTP)
+	api.Post("/users/:id/logout", admin, h.logoutUser)
+	api.Get("/device-accounts", admin, h.listDeviceAccounts)
+	api.Post("/device-accounts", admin, h.createDeviceAccount)
+	api.Put("/device-accounts/:id", admin, h.updateDeviceAccount)
+	api.Post("/device-accounts/:id/reset-password", admin, h.resetDevicePassword)
 }
 
 // ── Error handling ───────────────────────────────────────────────────────────

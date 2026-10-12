@@ -27,6 +27,21 @@ const (
 // SetAuditBefore.
 const localsAuditBefore = "audit.before"
 
+// localsAuditAfter holds an explicit "after" state (SetAuditAfter).
+const localsAuditAfter = "audit.after"
+
+// SetAuditAfter records the state after a change explicitly, instead of the
+// response body — for responses that carry secrets (e.g. a generated
+// password) that must not reach the audit log. Only stored when the
+// request succeeds and a before state was set.
+func SetAuditAfter(c *fiber.Ctx, v any) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return
+	}
+	c.Locals(localsAuditAfter, b)
+}
+
 // SetAuditBefore records the state of the resource before a change. v is
 // marshalled immediately, so later mutation of v does not matter. The
 // response body becomes the "after" state when the request succeeds.
@@ -102,7 +117,11 @@ func Audit(pool *pgxpool.Pool) fiber.Handler {
 		}
 		if before, isSet := c.Locals(localsAuditBefore).([]byte); isSet {
 			a.Before = before
-			if ok && respJSON && len(c.Response().Body()) <= auditStateMax {
+			if after, explicit := c.Locals(localsAuditAfter).([]byte); explicit {
+				if ok && len(after) <= auditStateMax {
+					a.After = after
+				}
+			} else if ok && respJSON && len(c.Response().Body()) <= auditStateMax {
 				a.After = bytes.Clone(c.Response().Body())
 			}
 		}

@@ -121,7 +121,7 @@ func init() {
 				digits = "62" + digits[1:]
 			}
 			if len(digits) < 8 || len(digits) > 15 {
-				return "", fmt.Errorf("%w: recipient must be a phone number in international format, e.g. 62812...", ErrInvalidRecipient)
+				return "", fmt.Errorf("%w: recipient must be a phone number in international format, e.g. 628123456789", ErrInvalidRecipient)
 			}
 			return digits, nil
 		},

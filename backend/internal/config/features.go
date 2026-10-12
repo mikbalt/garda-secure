@@ -63,7 +63,7 @@ func (c *Config) loadFeatures() error {
 	}
 	c.KeycloakAdmin.Secrets = map[string]string{}
 	if path := os.Getenv("KEYCLOAK_ADMIN_CLIENT_SECRETS_FILE"); path != "" {
-		data, err := os.ReadFile(path) // #nosec G304 -- operator-configured secrets file
+		data, err := os.ReadFile(path) // #nosec G304 G703 -- operator-configured secrets file
 		if err != nil {
 			return fmt.Errorf("KEYCLOAK_ADMIN_CLIENT_SECRETS_FILE: %w", err)
 		}
