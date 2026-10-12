@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/securepatrol/backend/internal/middleware"
+	"github.com/securepatrol/backend/internal/model"
 	"github.com/securepatrol/backend/internal/notification"
 	"github.com/securepatrol/backend/internal/repository"
 	"github.com/securepatrol/backend/internal/service"
@@ -79,11 +80,6 @@ func (h *Handler) overrideAttendance(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
-	before, err := repository.GetAttendanceByShift(c.Context(), h.DB, shift.ID)
-	if err != nil && !errors.Is(err, repository.ErrNotFound) {
-		return h.fail(c, err)
-	}
-	middleware.SetAuditBefore(c, before) // null when the shift had no record
 	var b struct {
 		Status     string     `json:"status"`
 		Reason     string     `json:"reason"`
@@ -96,14 +92,67 @@ func (h *Handler) overrideAttendance(c *fiber.Ctx) error {
 	if err := service.CheckLengths(service.S("reason", b.Reason, service.MaxReason)); err != nil {
 		return h.fail(c, err)
 	}
-	out, err := service.OverrideAttendance(c.Context(), h.DB, shift, service.OverrideInput{
-		ShiftID: shift.ID, Status: b.Status, Reason: b.Reason,
-		ClockInAt: b.ClockInAt, ClockOutAt: b.ClockOutAt, Actor: actor(c),
+	// The record (locked), the override and its history row (F6) change in
+	// one transaction, so concurrent overrides cannot lose a before state.
+	var out *model.AttendanceRecord
+	err = pgx.BeginFunc(c.Context(), h.DB, func(tx pgx.Tx) error {
+		before, err := repository.GetAttendanceByShift(c.Context(), tx, shift.ID)
+		if err != nil && !errors.Is(err, repository.ErrNotFound) {
+			return err
+		}
+		middleware.SetAuditBefore(c, before) // null when the shift had no record
+		out, err = service.OverrideAttendance(c.Context(), tx, shift, service.OverrideInput{
+			ShiftID: shift.ID, Status: b.Status, Reason: b.Reason,
+			ClockInAt: b.ClockInAt, ClockOutAt: b.ClockOutAt, Actor: actor(c),
+		})
+		if err != nil {
+			return err
+		}
+		_, err = repository.InsertAttendanceOverride(c.Context(), tx, before, out, *out.OverrideReason, actor(c))
+		return err
 	})
 	if err != nil {
 		return h.fail(c, err)
 	}
 	return c.JSON(out)
+}
+
+// GET /attendance/:id/history — override history of an attendance record,
+// oldest first, with the values before and after each override (F6).
+func (h *Handler) attendanceHistory(c *fiber.Ctx) error {
+	rec, err := repository.GetAttendance(c.Context(), h.DB, c.Params("id"))
+	if err != nil {
+		return h.fail(c, err)
+	}
+	if _, err := h.siteFor(c, rec.SiteID); err != nil {
+		return h.fail(c, err)
+	}
+	rows, err := repository.ListAttendanceOverrides(c.Context(), h.DB, rec.ID)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	return c.JSON(fiber.Map{"attendance": rec, "overrides": rows})
+}
+
+// GET /attendance/shifts/:shiftId/history — the same, addressed by shift
+// (a shift without a record answers an empty history).
+func (h *Handler) shiftAttendanceHistory(c *fiber.Ctx) error {
+	shift, err := h.shiftFor(c, c.Params("shiftId"))
+	if err != nil {
+		return h.fail(c, err)
+	}
+	rec, err := repository.GetAttendanceByShift(c.Context(), h.DB, shift.ID)
+	if errors.Is(err, repository.ErrNotFound) {
+		return c.JSON(fiber.Map{"attendance": nil, "overrides": []model.AttendanceOverride{}})
+	}
+	if err != nil {
+		return h.fail(c, err)
+	}
+	rows, err := repository.ListAttendanceOverrides(c.Context(), h.DB, rec.ID)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	return c.JSON(fiber.Map{"attendance": rec, "overrides": rows})
 }
 
 // POST /attendance/clock-in {id?, clock_in_at?, selfie_object_key?, gps_lat?, gps_lng?}
