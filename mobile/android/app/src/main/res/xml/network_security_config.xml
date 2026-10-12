@@ -1,15 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  On-premise servers often use a self-signed or private-CA certificate
-  (docs/runbook.md). Trust certificates the operator installed on the tablet
-  (Settings > Security > Install certificate) in addition to system CAs.
-  Cleartext HTTP stays disabled.
+  MOB-8. System CAs only; cleartext HTTP disabled. User-installed CAs are
+  trusted in debug builds only (a CA someone installs on a tablet must not be
+  able to intercept the device token or guard PINs).
+
+  Note: the app's own traffic (API, Keycloak) goes through Dart's HttpClient,
+  which ignores this file. An installation with a private CA bundles it as
+  the Flutter asset assets/certs/securepatrol-ca.crt instead (see
+  mobile/README.md, lib/core/api/tls.dart). This file only governs platform
+  networking (none today) and keeps cleartext off.
 -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system" />
-            <certificates src="user" />
         </trust-anchors>
     </base-config>
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="user" />
+        </trust-anchors>
+    </debug-overrides>
 </network-security-config>
