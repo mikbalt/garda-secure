@@ -91,7 +91,7 @@ services:
       - securepatrol
 
   grafana:
-    image: grafana/grafana:12.4.12
+    image: grafana/grafana:13.2.3
     restart: always
     <<: *hardening
     logging: *logging
