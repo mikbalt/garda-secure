@@ -112,7 +112,7 @@ class Pill extends StatelessWidget {
             Icon(icon, size: 14, color: color),
             const SizedBox(width: 4),
           ],
-          Text(text, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color.lerp(color, Colors.black, 0.25))),
+          Flexible(child: Text(text, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color.lerp(color, Colors.black, 0.25)))),
         ],
       ),
     );

@@ -126,7 +126,7 @@ class HomeScreen extends StatelessWidget {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(guard.name, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
               Row(children: [
-                _VerifiedBadge(verified: session.guardVerified),
+                Flexible(child: _VerifiedBadge(verified: session.guardVerified)),
                 const SizedBox(width: 8),
                 Flexible(
                   child: Text(

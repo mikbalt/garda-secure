@@ -47,8 +47,8 @@ const securityStringsId = <String, String>{
 
   // clock & schedules (MOB-4, D-035)
   'home.clockSkew': 'Jam tablet selisih {min} menit dari server. Laporan memakai jam server; minta admin memperbaiki jam tablet.',
-  'home.patrolDue': 'Patroli terjadwal: {route} pukul {time}',
-  'home.patrolOverdue': 'Patroli {route} belum dimulai — jadwal pukul {time}',
+  'home.patrolDue': 'Jadwal patroli berikutnya: {route}, pukul {time}',
+  'home.patrolOverdue': 'Belum dimulai: {route} — jadwal pukul {time}',
   'pat.dueAt': 'Jadwal {time}',
   'pat.overdueSince': 'Terlambat sejak {time}',
 
@@ -139,15 +139,15 @@ const securityStringsEn = <String, String>{
   'dev.privateCa': 'HTTPS (private CA bundled)',
   'dev.systemCa': 'HTTPS (system CAs)',
 
-  'sync.attention': '{n} items need attention',
+  'sync.attention': 'Items that need attention: {n}',
   'sync.attentionSub': 'The server rejected these items. Tap to see why.',
   'sync.discardConfirm': 'Remove this item from the outbox? It will never reach the server.',
   'sync.paused': 'Sending paused — {reason}',
   'sync.unverified': 'without server PIN check',
 
   'home.clockSkew': 'The tablet clock is {min} minutes off the server. Reports use server time; ask an admin to fix the tablet clock.',
-  'home.patrolDue': 'Scheduled patrol: {route} at {time}',
-  'home.patrolOverdue': 'Patrol {route} not started — due at {time}',
+  'home.patrolDue': 'Next scheduled patrol: {route}, at {time}',
+  'home.patrolOverdue': 'Not started yet: {route} — due at {time}',
   'pat.dueAt': 'Due {time}',
   'pat.overdueSince': 'Overdue since {time}',
 
