@@ -48,3 +48,6 @@ mobile/.flutter-plugins-dependencies
 *.so
 dist/
 build/
+
+# Claude Code local state (agent worktrees)
+.claude/

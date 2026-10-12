@@ -9,10 +9,10 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
-| Hardening wave 1 — backend reliability: notifications/worker/jobs/backups/observability (audit BE-R*, BE-O1, F2 part, F14) | `muhamhad-pc1/claude-be-rel` | 2026-10-09 | branch `agent/muhamhad-pc1/be-reliability`; migration 004 |
-| Hardening wave 1 — backend security: tenancy replay, settings exfil, JWT, limits/rate limit, audit log, deps + Go upgrade (audit BE-S2..S10) | `muhamhad-pc1/claude-be-sec` | 2026-10-09 | branch `agent/muhamhad-pc1/be-security`; migration 005 |
-| Hardening wave 1 — infra/ops/CI: first-boot fixes, nginx, TLS/preflight, backups off-host, monitoring, CI smoke + supply chain (audit INF-*) | `muhamhad-pc1/claude-infra` | 2026-10-09 | branch `agent/muhamhad-pc1/infra-hardening` |
-| Hardening wave 1 — web: deps, CSP, SOS all sites, idle logout, a11y, i18n errors, tests (audit WEB-*) | `muhamhad-pc1/claude-web` | 2026-10-09 | branch `agent/muhamhad-pc1/web-hardening` |
+| Wave 2 backend — field integrity: server-verified guard sessions (D-035), signed checkpoint QR, patrol schedules + "not started" alerts | `muhamhad-pc1/claude-be-field` | 2026-10-12 | branch `agent/muhamhad-pc1/be-field`; migration 006 |
+| Wave 2 backend — PRD gaps: user management via Keycloak admin API + per-site client scoping, incident_filed, amended values in reports, override history, xlsx, route snapshots, channel registry, site floor plans, retention job, realm-wide SOS | `muhamhad-pc1/claude-be-features` | 2026-10-12 | branch `agent/muhamhad-pc1/be-features`; migration 007 |
+| Wave 2 web — hardening (WEB-*) + UIs for ops alerts, audit log, platform-admin, flags | `muhamhad-pc1/claude-web` | 2026-10-12 | branch `agent/muhamhad-pc1/web-hardening` |
+| Wave 2 mobile — hardening (MOB-2..11) + guard session token + signed QR client | `muhamhad-pc1/claude-mobile` | 2026-10-12 | branch `agent/muhamhad-pc1/mobile-hardening` |
 
 ## Migration numbers
 
@@ -21,9 +21,11 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 | 001 | init_schema | — | pushed |
 | 002 | audit_log | — | pushed |
 | 003 | v1_core (devices, shift templates, patrol sessions, amendments, notifications, settings, backups) | `muhamhad-pc1/claude` | pushed |
-| 004 | be_reliability | `muhamhad-pc1/claude-be-rel` | reserved |
-| 005 | be_security | `muhamhad-pc1/claude-be-sec` | reserved |
-| 006 | *(next free)* | | |
+| 004 | be_reliability (outbox, ops alerts, SLA, backups) | `muhamhad-pc1/claude-be-rel` | pushed |
+| 005 | be_security (audit append-only, received_at/flags, per-site employee_id) | `muhamhad-pc1/claude-be-sec` | pushed |
+| 006 | be_field (guard sessions, signed QR, patrol schedules) | `muhamhad-pc1/claude-be-field` | reserved |
+| 007 | be_features (overrides history, route snapshots, floor plans, channels, retention) | `muhamhad-pc1/claude-be-features` | reserved |
+| 008 | *(next free)* | | |
 
 ## Milestones (PRD §11)
 
@@ -35,7 +37,7 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 | M4 Incident & Field Reports | 🟢 backend done; ⚪ mobile deferred |
 | M5 Web Dashboard & Reports | 🟢 redesigned (D-022): setup guide, Today dashboard, all pages; verified in demo mode (all roles, desktop + 390 px); ⚠️ not yet exercised against a running stack |
 | M6 Notifications & Email | 🟢 backend done (rules, log, retry, SMTP/WhatsApp, monthly recap); needs real SMTP/WA test |
-| M7 Hardening & Go-Live | ⚪ not started |
+| M7 Hardening & Go-Live | 🟡 audit 2026-10 (docs/audit-2026-10.md): wave 1 merged (backend reliability + security, infra/ops/CI); wave 2 in progress; ⚠️ full stack still never booted — ci-e2e-stack.yml does it on GitHub |
 
 ## Backlog (unclaimed)
 
@@ -82,3 +84,6 @@ Mobile (D-024) — open audit items, see docs/audit-2026-10.md
 | Web UX overhaul (D-022): design system + `web/DESIGN.md`, new shell & navigation, setup guide + welcome flow, Today dashboard, redesigned attendance/roster/guards, patrol/incidents, reports/settings, organisation picker, demo mode, code-split pages; WhatsApp `08…` normalisation (D-023) | `muhamhad-pc1/claude` | 2026-10-09 | this push |
 | Docs: `docs/api.md` (API contract), `docs/runbook.md` (install, users, tablets, backups/restore) | `muhamhad-pc1/claude` | 2026-10-07 | ace9df5 |
 | Mobile tablet app v1 (D-024): setup + device sign-in/approval, offline PIN lock screen, home, clock in/out (selfie+GPS), QR + manual patrol with live SLA, incidents/defects/visitors, SOS (hold 2 s, priority outbox, never parked), offline outbox with retry/backoff + outbox screen, EN/ID; 22 tests + golden screenshots; backend `GET /device/status`, `GET /device/sos` | `muhamhad-pc1/claude` | 2026-10-12 | this commit; MOB-1, MOB-10 fixed |
+| Hardening wave 1 — backend reliability: transactional notification outbox, SOS lane, Postgres claim, SMTP timeouts, job isolation, SLA coverage, backups (Keycloak DB, TZ, timeout, alerts), ops alerts, metrics, /ready, worker health (D-026..D-030) | `muhamhad-pc1/claude-be-rel` | 2026-10-12 | merge 5c8e2f5 |
+| Hardening wave 1 — backend security: Go 1.26 + deps + govulncheck, replay ownership, settings exfil guard, platform-admin, token/azp binding, limits + rate limits, append-only audit + GET /audit, write-once photos + EXIF strip, per-kind photo access, plausibility flags (D-031..D-033) | `muhamhad-pc1/claude-be-sec` | 2026-10-12 | merge e2314d6 |
+| Hardening wave 1 — infra/ops/CI: SERVER_HOST + private CA + preflight, healthchecks, nginx (DNS, headers, CSP, rate limits, admin allow-list, :9443), Silo, enforced staff OTP, least privilege, monitoring/alerting, restic off-site backups, deploy/restore scripts, SHA-pinned CI, Trivy, e2e stack job, GHCR CD (D-034) | `muhamhad-pc1/claude-infra` | 2026-10-12 | merge e906804, 05e9cf1 |

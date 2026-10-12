@@ -33,7 +33,7 @@ below before touching code.
 ```
 backend/   Go 1.26 + Fiber v2 — REST API; `securepatrol worker` = notification worker + scheduler
 web/       React 18 + Vite + TS + TanStack Query + Tailwind — admin/HR/client dashboard
-mobile/    Flutter tablet app (DEFERRED — do not change until backend/web v1 is done)
+mobile/    Flutter shared-tablet app (D-024)
 infra/     Docker Compose (postgres, redis, minio, keycloak, nginx, grafana, prometheus)
 ```
 
@@ -43,6 +43,7 @@ Backend (from `backend/`):
 ```bash
 go build ./... && go vet ./... && go test ./...
 go test -tags integration ./...   # spins up an embedded Postgres 16, no Docker needed
+golangci-lint run --build-tags integration && gosec -quiet ./... && govulncheck ./...   # versions: ci-backend.yml
 ```
 If Go is not installed, a portable toolchain works: download `go1.26.x` zip,
 put its `bin` on PATH and set `GOTOOLCHAIN=local`.
@@ -61,8 +62,9 @@ Infra (from `infra/`): `cp .env.example .env`, then
 - **Repository:** functions take a `repository.DBTX` (pool or tx). `Get*` return
   `repository.ErrNotFound` when missing — never `nil, nil`. List functions return
   `[]T{}` (not nil) so JSON renders `[]`.
-- **Auth:** every `/api/v1` route needs a Keycloak JWT. Roles: `admin`, `supervisor`,
-  `hr`, `client-readonly` (web) and `device` (tablet). Check roles per route with
+- **Auth:** every `/api/v1` route needs a Keycloak access token. Roles: `admin`, `supervisor`,
+  `hr`, `client-readonly` (web), `platform-admin` (operator: install-wide settings,
+  backups, ops alerts — D-032) and `device` (tablet). Check roles per route with
   `middleware.RequireRoles`. Tablet routes use `RequireActiveDevice` + `RequireGuard`;
   the acting guard comes from the `X-Guard-ID` header and is validated against the
   device's site. **Never take guard_id / actor identity from the request body.**
@@ -98,5 +100,5 @@ Infra (from `infra/`): `cp .env.example .env`, then
 ## Don'ts
 
 - Don't commit secrets or `.env` files.
-- Don't touch `mobile/` until it is un-deferred in `PROGRESS.md`.
+- Mobile (from `mobile/`): `dart analyze && flutter test` before pushing (CI: `ci-mobile.yml`).
 - Don't rewrite pushed history or edit pushed migrations.

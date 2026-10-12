@@ -219,3 +219,114 @@ in PRD §9 (OQ-x). New entries go at the bottom with the next free number.
   work) need the `platform-admin` role, like the channel settings and backups
   (security work, BE-S3). They cover every tenant, so a realm `admin` must not
   read or receive them. Per-realm notification rules and logs stay `admin`.
+
+### D-026 — Notification outbox and dispatch (amends D-010)
+- **Date:** 2026-10-12 · **Status:** Accepted (audit BE-R1/R2/R5)
+- Deliveries (`notification_log`) are written in the same transaction as the
+  SOS/incident/defect/clock-in that caused them; a replay re-stages missing
+  deliveries (24 h, same site). Workers claim due rows from Postgres
+  (`FOR UPDATE SKIP LOCKED` + lease); Redis `notifications:wake` only wakes them.
+- `NOTIFY_WORKERS` senders (default 4); one serves only SOS. Every send has a
+  timeout (SMTP dial + deadline). SOS retries 10/20/30 s then every 60 s for
+  30 min; other events 30 s, 2, 10, 30 min. A manual retry = one attempt.
+
+### D-027 — Install-wide ops alerts
+- **Date:** 2026-10-12 · **Status:** Accepted
+- `ops_alert_rules` (no site) for `ops_backup_failed`, `ops_backup_stale`
+  (> 26 h), `ops_sos_undelivered` (SOS delivery gave up or site has no SOS
+  rule) and `ops_job_failing`. Platform-admin only (D-025). Platform alerts
+  (worker down, disk, certs, SOS unacknowledged) come from Alertmanager.
+
+### D-028 — SLA evaluation (amends D-008)
+- **Date:** 2026-10-12 · **Status:** Accepted (audit F2)
+- Ended sessions (incl. abandoned/early-ended) are evaluated once
+  (`sla_checked_at`): late and missed checkpoints are breaches. A running
+  session breaches only when a later scan arrived or the tablet has been online
+  (`devices.online_since`) across the due time (1 min grace), so offline
+  patrols synced later produce no false alerts.
+
+### D-029 — Backups and DR (amends D-015)
+- **Date:** 2026-10-12 · **Status:** Accepted (audit BE-R3, INF-B*)
+- RPO 24 h / RTO 4 h. Daily `pg_dump` of the app DB **and** Keycloak DB at
+  `BACKUP_HOUR` in `BACKUP_TZ` (Asia/Jakarta), `BACKUP_TIMEOUT` per dump,
+  password via `PGPASSWORD`, serialised by an advisory lock; failures/staleness
+  raise ops alerts. Nightly encrypted restic copy (backups + photos + config
+  bundle) to `OFFSITE_BACKUP_REPO` on another disk/NAS, 30 daily + 12 monthly,
+  monthly `restic check`. Pre-deploy dumps. Quarterly restore drill (runbook §5).
+
+### D-030 — Observability contract
+- **Date:** 2026-10-12 · **Status:** Accepted (audit BE-O1, INF-M1/M2)
+- Metric names `sp_*` are a contract (runbook §8). API `/metrics` is never
+  proxied publicly; `/health` and `/ready` are. Worker `/health` + `/metrics` on
+  `:9091`; health requires dispatcher + scheduler ticks < 60 s. 5xx bodies carry
+  `request_id`. Prometheus + Alertmanager (e-mail) + provisioned Grafana, bound
+  to localhost (`docker-compose.ops.yml`).
+
+### D-031 — Toolchain policy (supersedes the gosec pin in D-021)
+- **Date:** 2026-10-12 · **Status:** Accepted (audit BE-S7)
+- Backend targets the oldest *supported* Go release (now 1.26); CI reads it
+  from `go.mod`. golangci-lint v2, gosec 2.29, govulncheck (fails on reachable
+  vulns), Trivy image scans, `npm audit --audit-level=high`, Dependabot. All
+  GitHub Actions pinned by commit SHA.
+
+### D-032 — platform-admin and token binding
+- **Date:** 2026-10-12 · **Status:** Accepted (audit BE-S3/S6; user decision)
+- Install-wide settings (channels, backups, ops alerts) need realm role
+  `platform-admin` (optionally limited by `PLATFORM_ADMIN_REALMS`) — held only
+  by the operator. Realm `admin` administers its own realm only.
+- Only access tokens (`typ: Bearer`) are accepted; web roles count only from
+  the web client, `device` only from the tablet client.
+- Changing a channel's destination requires re-entering its secret; WhatsApp
+  URLs allow-listed; SMTP hosts must be public or allow-listed (checked again at
+  connect time).
+
+### D-033 — Data integrity and evidence
+- **Date:** 2026-10-12 · **Status:** Accepted (audit BE-S1/S2/S4/S8/S9)
+- Idempotent replays return a record only to the same site/session/guard,
+  otherwise 409 `id_conflict`.
+- Photos are write-once (identical retry 200, otherwise 409 `media_exists`),
+  metadata (EXIF/GPS) stripped server-side, photos bucket versioned; photo
+  access depends on kind and role.
+- `audit_log` is append-only (trigger), written synchronously with a redacted
+  body summary and before/after for key changes; `GET /audit`. Client IP from
+  `X-Real-IP` of trusted proxies only.
+- `received_at` + `flags` (`late_sync`, `clock_ahead`, `backdated_on_time`,
+  `gps_far`, `too_fast`) on attendance/scans/incidents/SOS; suspicious
+  clock-ins go to the review queue.
+- Limits: 64 KB JSON bodies, field length limits, Redis rate limits (fail open).
+
+### D-034 — Deployment model
+- **Date:** 2026-10-12 · **Status:** Accepted (audit INF-*)
+- One `SERVER_HOST` drives every URL, the cert SAN and realm redirect URIs;
+  `make preflight` enforces consistency and strong secrets. Private,
+  name-constrained CA by default (install the CA on tablets/PCs).
+- Object storage = Silo (maintained MinIO fork) pinned by digest — the
+  community `minio/minio` images are gone.
+- Staff OTP is enforced by `keycloak-config.sh` (`mfa-required` composite role
+  + `browser-mfa` flow), not by realm import. `/auth/admin` and the master realm
+  only from `ADMIN_ALLOW_CIDRS`.
+- Least privilege: separate DB roles, restricted MinIO users, hardened
+  containers, log rotation.
+- CD: images built once in CI and pushed to GHCR, deploy gated on green CI for
+  the tag, `production` approval, SSH host-key pinning, pre-deploy dumps, keep
+  3 image versions. `COMPOSE_FILE` lists infra/app/ops so plain
+  `docker compose up -d` works.
+
+### D-035 — Product decisions from the 2026-10 audit (user, 2026-10-12)
+- **Date:** 2026-10-12 · **Status:** Accepted
+- **Guard identity — both:** when online, unlocking verifies the PIN on the
+  server and yields a short-lived signed guard token sent with every request;
+  offline work stays possible but is flagged `guard_unverified` for review.
+  Checkpoint QR codes are signed (HMAC) and verified by the server.
+- **Patrol schedules:** routes get schedules; a "patrol not started" alert
+  fires when a scheduled patrol is late; reports show schedule compliance.
+- **Client scoping per site:** a user's allowed sites (Keycloak user attribute,
+  managed from the web user-management page); empty = whole realm.
+- **Incident notifications:** new event `incident_filed` (every incident) next
+  to `incident_high`; admins choose per site via rules.
+- **Amendments:** stay direct (supervisor/admin, reason required); reports and
+  exports show the effective (amended) values.
+- **Live map:** site floor plan (uploaded image) with checkpoints placed on it —
+  fully on-prem; no online map tiles.
+- **Clock window:** keep current behaviour (clock-in from start − window until
+  shift end, late after start; clock-out until end + window). The PRD follows.
