@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
   BarChart3,
@@ -7,6 +7,7 @@ import {
   Check,
   ChevronsUpDown,
   ClipboardCheck,
+  FileClock,
   LayoutGrid,
   ListChecks,
   LogOut,
@@ -25,10 +26,13 @@ import { useSetupProgress } from '../hooks/useSetupProgress'
 import { useI18n, type Key } from '../i18n/context'
 import { useSite } from '../context/site'
 import { config } from '../config'
-import type { Capability } from '../lib/roles'
+import { primaryRole, type Capability } from '../lib/roles'
 import type { Lang } from '../lib/time'
 import { SosBanner } from './SosBanner'
 import { DemoBar } from './DemoBar'
+import { ErrorBoundary } from './ErrorBoundary'
+import { IdleLogout } from './IdleLogout'
+import { TableSkeleton } from './LoadingSkeleton'
 import { Popover } from './ui/Popover'
 
 interface NavItem {
@@ -65,8 +69,9 @@ const groups: { label?: Key; items: NavItem[] }[] = [
   {
     label: 'nav.group.admin',
     items: [
-      { to: '/setup', label: 'nav.setup', icon: ListChecks, cap: 'viewSettings' },
+      { to: '/setup', label: 'nav.setup', icon: ListChecks, cap: 'viewSetup' },
       { to: '/settings', label: 'nav.settings', icon: Settings2, cap: 'viewSettings' },
+      { to: '/audit', label: 'nav.audit', icon: FileClock, cap: 'viewAudit' },
     ],
   },
 ]
@@ -93,7 +98,7 @@ function Brand() {
       </div>
       <div className="min-w-0">
         <p className="text-[15px] font-semibold leading-5 tracking-tight text-white">{t('app.name')}</p>
-        <p className="truncate text-xs text-gray-400">{user.realmLabel}</p>
+        <p className="truncate text-xs text-gray-300">{user.realmLabel}</p>
       </div>
     </div>
   )
@@ -109,18 +114,16 @@ function SetupMiniCard() {
       to="/setup"
       className="mx-3 mb-3 block rounded-xl bg-white/[0.06] p-3.5 ring-1 ring-white/10 transition-colors hover:bg-white/[0.09] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
     >
-      <div className="flex items-center justify-between text-xs font-medium text-gray-300">
+      <div className="flex items-center justify-between text-xs font-medium text-gray-200">
         <span>{t('setup.continue')}</span>
-        <span className="tabular-nums text-gray-400">
+        <span className="tabular-nums text-gray-300">
           {s.done}/{s.total}
         </span>
       </div>
       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
         <div className="h-full rounded-full bg-gradient-to-r from-primary-400 to-emerald-400" style={{ width: `${pct}%` }} />
       </div>
-      <p className="mt-2 line-clamp-2 text-xs leading-snug text-gray-400">
-        {t('setup.cardBody', { step: t(s.next.title) })}
-      </p>
+      <p className="mt-2 line-clamp-2 text-xs leading-snug text-gray-300">{t('setup.cardBody', { step: t(s.next.title) })}</p>
     </Link>
   )
 }
@@ -128,16 +131,17 @@ function SetupMiniCard() {
 function UserPanel() {
   const { user, logout, switchOrganisation, multiRealm } = useAuth()
   const { t, lang, setLang } = useI18n()
-  const role = user.roles.find((r) => ['admin', 'supervisor', 'hr', 'client-readonly'].includes(r))
-  const roleLabel = role ? t(role === 'supervisor' ? 'role.supervisor' : (`role.${role}` as Key)) : ''
+  const role = primaryRole(user.roles)
+  const roleLabel = role ? t(`role.${role}` as Key) : ''
   const item =
-    'flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50 focus:bg-gray-50 focus:outline-none'
+    'flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50 focus:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500'
   return (
     <Popover
       side="top"
+      label={t('user.menu')}
       className="px-3 pb-4"
       panelClassName="left-3 right-3 min-w-0"
-      trigger={({ toggle, ...aria }) => (
+      trigger={({ toggle, open: _open, ...aria }) => (
         <button
           type="button"
           onClick={toggle}
@@ -150,47 +154,47 @@ function UserPanel() {
           </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium text-white">{user.username}</span>
-            <span className="block truncate text-xs text-gray-400">{roleLabel}</span>
+            <span className="block truncate text-xs text-gray-300">{roleLabel}</span>
           </span>
-          <ChevronsUpDown className="h-4 w-4 shrink-0 text-gray-500" aria-hidden="true" />
+          <ChevronsUpDown className="h-4 w-4 shrink-0 text-gray-400" aria-hidden="true" />
         </button>
       )}
     >
       {(close) => (
         <>
           <div className="border-b border-gray-100 px-3.5 pb-2.5 pt-1">
-            <p className="text-xs text-gray-500">{t('shell.signedInAs')}</p>
+            <p className="text-xs text-gray-600">{t('shell.signedInAs')}</p>
             <p className="truncate text-sm font-medium text-gray-900">{user.username}</p>
-            <p className="truncate text-xs text-gray-500">
+            <p className="truncate text-xs text-gray-600">
               {roleLabel} · {user.realmLabel}
             </p>
           </div>
           <div className="px-3.5 py-2.5">
-            <p className="mb-1.5 text-xs font-medium text-gray-500">{t('shell.language')}</p>
-            <div className="grid grid-cols-2 gap-1 rounded-lg bg-gray-100 p-1">
+            <p className="mb-1.5 text-xs font-medium text-gray-600">{t('shell.language')}</p>
+            <div role="group" aria-label={t('shell.language')} className="grid grid-cols-2 gap-1 rounded-lg bg-gray-100 p-1">
               {(['id', 'en'] as Lang[]).map((l) => (
                 <button
                   key={l}
                   type="button"
                   aria-pressed={lang === l}
                   onClick={() => setLang(l)}
-                  className={`rounded-md py-1 text-xs font-medium transition-colors ${
-                    lang === l ? 'bg-white text-gray-900 shadow-card' : 'text-gray-600 hover:text-gray-900'
+                  className={`rounded-md py-1 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
+                    lang === l ? 'bg-white text-gray-900 shadow-card' : 'text-gray-700 hover:text-gray-900'
                   }`}
                 >
-                  {l === 'id' ? 'Indonesia' : 'English'}
+                  {l === 'id' ? t('lang.id') : t('lang.en')}
                 </button>
               ))}
             </div>
           </div>
           <div className="border-t border-gray-100 pt-1">
             {multiRealm && (
-              <button type="button" role="menuitem" className={item} onClick={() => (close(), switchOrganisation())}>
-                <Repeat className="h-4 w-4 text-gray-400" aria-hidden="true" />
+              <button type="button" className={item} onClick={() => (close(), switchOrganisation())}>
+                <Repeat className="h-4 w-4 text-gray-500" aria-hidden="true" />
                 {t('org.switch')}
               </button>
             )}
-            <button type="button" role="menuitem" className={`${item} text-red-600`} onClick={() => (close(), logout())}>
+            <button type="button" className={`${item} text-red-700`} onClick={() => (close(), logout())}>
               <LogOut className="h-4 w-4" aria-hidden="true" />
               {t('user.logout')}
             </button>
@@ -210,7 +214,7 @@ function Sidebar({ onClose }: { onClose: () => void }) {
         <Brand />
         <button
           type="button"
-          className="mr-3 mt-6 shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-white/10 hover:text-white lg:hidden"
+          className="mr-3 mt-6 shrink-0 rounded-lg p-1.5 text-gray-300 hover:bg-white/10 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 lg:hidden"
           onClick={onClose}
           aria-label={t('nav.closeMenu')}
         >
@@ -223,7 +227,7 @@ function Sidebar({ onClose }: { onClose: () => void }) {
           if (items.length === 0) return null
           return (
             <div key={gi}>
-              {g.label && <p className="mb-1.5 px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">{t(g.label)}</p>}
+              {g.label && <p className="mb-1.5 px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-400">{t(g.label)}</p>}
               <ul className="space-y-0.5">
                 {items.map(({ to, label, icon: Icon, end }) => (
                   <li key={to}>
@@ -232,13 +236,13 @@ function Sidebar({ onClose }: { onClose: () => void }) {
                       end={end}
                       className={({ isActive }) =>
                         `group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 ${
-                          isActive ? 'bg-white/10 text-white shadow-[inset_2px_0_0_0] shadow-primary-400' : 'text-gray-400 hover:bg-white/[0.05] hover:text-gray-100'
+                          isActive ? 'bg-white/10 text-white shadow-[inset_2px_0_0_0] shadow-primary-400' : 'text-gray-300 hover:bg-white/[0.05] hover:text-white'
                         }`
                       }
                     >
                       {({ isActive }) => (
                         <>
-                          <Icon className={`h-[18px] w-[18px] shrink-0 ${isActive ? 'text-primary-300' : 'text-gray-500 group-hover:text-gray-300'}`} aria-hidden="true" />
+                          <Icon className={`h-[18px] w-[18px] shrink-0 ${isActive ? 'text-primary-300' : 'text-gray-400 group-hover:text-gray-200'}`} aria-hidden="true" />
                           {t(label)}
                         </>
                       )}
@@ -264,7 +268,7 @@ function SitePicker() {
   const { t } = useI18n()
   if (isLoading || sites.length === 0) {
     return (
-      <div className="flex items-center gap-2 text-sm text-gray-500">
+      <div className="flex items-center gap-2 text-sm text-gray-600">
         <Building2 className="h-4 w-4" aria-hidden="true" />
         {isLoading ? t('site.loading') : t('site.none')}
       </div>
@@ -272,13 +276,13 @@ function SitePicker() {
   }
   return (
     <Popover
-      kind="listbox"
-      panelClassName="w-80"
-      trigger={({ toggle, ...aria }) => (
+      label={t('shell.sites')}
+      panelClassName="w-80 max-w-[calc(100vw-2rem)]"
+      trigger={({ toggle, open: _open, ...aria }) => (
         <button
           type="button"
           onClick={toggle}
-          aria-label={t('shell.switchSite')}
+          aria-label={`${t('shell.switchSite')}: ${site?.name ?? ''}`}
           {...aria}
           className="flex max-w-[18rem] items-center gap-3 rounded-xl px-2 py-1.5 text-left transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
         >
@@ -287,30 +291,31 @@ function SitePicker() {
           </span>
           <span className="min-w-0">
             <span className="block truncate text-sm font-semibold text-gray-900">{site?.name}</span>
-            {site?.address && <span className="block truncate text-xs text-gray-500">{site.address}</span>}
+            {site?.address && <span className="block truncate text-xs text-gray-600">{site.address}</span>}
           </span>
-          <ChevronsUpDown className="h-4 w-4 shrink-0 text-gray-400" aria-hidden="true" />
+          <ChevronsUpDown className="h-4 w-4 shrink-0 text-gray-500" aria-hidden="true" />
         </button>
       )}
     >
       {(close) => (
         <>
-          <p className="px-3.5 pb-1.5 pt-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400">{t('shell.sites')}</p>
+          <p className="px-3.5 pb-1.5 pt-1 text-[11px] font-semibold uppercase tracking-wider text-gray-500" aria-hidden="true">
+            {t('shell.sites')}
+          </p>
           {sites.map((s) => (
             <button
               key={s.id}
               type="button"
-              role="option"
-              aria-selected={s.id === site?.id}
+              aria-current={s.id === site?.id ? 'true' : undefined}
               onClick={() => {
                 setSiteId(s.id)
                 close()
               }}
-              className="flex w-full items-center gap-3 px-3.5 py-2 text-left transition-colors hover:bg-gray-50 focus:bg-gray-50 focus:outline-none"
+              className="flex w-full items-center gap-3 px-3.5 py-2 text-left transition-colors hover:bg-gray-50 focus:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500"
             >
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium text-gray-900">{s.name}</span>
-                {s.address && <span className="block truncate text-xs text-gray-500">{s.address}</span>}
+                {s.address && <span className="block truncate text-xs text-gray-600">{s.address}</span>}
               </span>
               {s.id === site?.id && <Check className="h-4 w-4 shrink-0 text-primary-600" aria-hidden="true" />}
             </button>
@@ -319,7 +324,7 @@ function SitePicker() {
             <Link
               to="/settings?tab=sites"
               onClick={close}
-              className="mt-1 flex items-center gap-2 border-t border-gray-100 px-3.5 pb-1 pt-2.5 text-sm font-medium text-primary-600 hover:text-primary-700"
+              className="mt-1 flex items-center gap-2 border-t border-gray-100 px-3.5 pb-1 pt-2.5 text-sm font-medium text-primary-700 hover:text-primary-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500"
             >
               <Settings2 className="h-4 w-4" aria-hidden="true" />
               {t('shell.manageSites')}
@@ -340,9 +345,10 @@ function LangToggle() {
           key={l}
           type="button"
           aria-pressed={lang === l}
+          aria-label={l === 'id' ? t('lang.id') : t('lang.en')}
           onClick={() => setLang(l)}
-          className={`rounded-md px-2 py-1 text-xs font-semibold uppercase transition-colors ${
-            lang === l ? 'bg-white text-gray-900 shadow-card' : 'text-gray-500 hover:text-gray-800'
+          className={`rounded-md px-2 py-1 text-xs font-semibold uppercase transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
+            lang === l ? 'bg-white text-gray-900 shadow-card' : 'text-gray-600 hover:text-gray-900'
           }`}
         >
           {l}
@@ -352,10 +358,85 @@ function LangToggle() {
   )
 }
 
+const DESKTOP = '(min-width: 1024px)'
+
+/** Whether the sidebar is permanently visible (Tailwind `lg`). */
+function useDesktop(): boolean {
+  const [desktop, setDesktop] = useState(() => typeof window !== 'undefined' && !!window.matchMedia?.(DESKTOP).matches)
+  useEffect(() => {
+    const mq = window.matchMedia?.(DESKTOP)
+    if (!mq) return
+    const on = () => setDesktop(mq.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+  return desktop
+}
+
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+/**
+ * Off-canvas navigation below `lg` (WEB-6): `inert` and invisible while
+ * closed; while open, focus moves in, Tab is trapped, Escape closes it and
+ * focus returns to the menu button.
+ */
+function useOffCanvas(open: boolean, close: () => void, desktop: boolean) {
+  const asideRef = useRef<HTMLElement>(null)
+  const openerRef = useRef<HTMLButtonElement>(null)
+  const modal = open && !desktop
+
+  useEffect(() => {
+    const aside = asideRef.current
+    if (!aside) return
+    if (!desktop && !open) aside.setAttribute('inert', '')
+    else aside.removeAttribute('inert')
+  }, [open, desktop])
+
+  useEffect(() => {
+    if (!modal) return
+    const aside = asideRef.current
+    const opener = openerRef.current
+    aside?.querySelector<HTMLElement>(FOCUSABLE)?.focus()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        close()
+        return
+      }
+      if (e.key !== 'Tab' || !aside) return
+      const items = Array.from(aside.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((el) => el.offsetParent !== null)
+      if (items.length === 0) return
+      const first = items[0]
+      const last = items[items.length - 1]
+      if (!aside.contains(document.activeElement)) {
+        e.preventDefault()
+        first.focus()
+      } else if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      // Back to the menu button unless navigation moved focus elsewhere.
+      if (opener && (document.activeElement === document.body || aside?.contains(document.activeElement))) opener.focus()
+    }
+  }, [modal, close])
+
+  return { asideRef, openerRef, modal }
+}
+
 export function Layout() {
   const { t } = useI18n()
   const [menuOpen, setMenuOpen] = useState(false)
   const location = useLocation()
+  const desktop = useDesktop()
+  const closeMenu = useCallback(() => setMenuOpen(false), [])
+  const { asideRef, openerRef, modal } = useOffCanvas(menuOpen, closeMenu, desktop)
 
   useEffect(() => setMenuOpen(false), [location.pathname])
 
@@ -369,25 +450,31 @@ export function Layout() {
       </a>
 
       <aside
-        className={`no-print fixed inset-y-0 left-0 z-40 w-64 shrink-0 overflow-hidden transition-transform duration-200 lg:static lg:translate-x-0 ${
-          menuOpen ? 'translate-x-0' : '-translate-x-full'
+        ref={asideRef}
+        id="app-sidebar"
+        {...(modal ? { role: 'dialog', 'aria-modal': true, 'aria-label': t('nav.main') } : {})}
+        // Opening: visible at once (so focus can move in); closing: hidden only after the slide-out.
+        className={`no-print fixed inset-y-0 left-0 z-40 w-64 shrink-0 overflow-hidden duration-200 lg:visible lg:static lg:translate-x-0 ${
+          menuOpen ? 'visible translate-x-0 transition-transform' : 'invisible -translate-x-full transition-[transform,visibility]'
         }`}
       >
-        <Sidebar onClose={() => setMenuOpen(false)} />
+        <Sidebar onClose={closeMenu} />
       </aside>
       {menuOpen && (
-        <div className="fixed inset-0 z-30 animate-fade-in bg-gray-950/50 backdrop-blur-sm lg:hidden" onClick={() => setMenuOpen(false)} aria-hidden="true" />
+        <div className="fixed inset-0 z-30 animate-fade-in bg-gray-950/50 backdrop-blur-sm lg:hidden" onClick={closeMenu} aria-hidden="true" />
       )}
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {config.demo && <DemoBar />}
         <header className="no-print flex h-16 shrink-0 items-center gap-3 border-b border-gray-200/80 bg-white/80 px-4 backdrop-blur sm:px-6">
           <button
+            ref={openerRef}
             type="button"
-            className="rounded-lg p-2 text-gray-600 hover:bg-gray-100 lg:hidden"
+            className="rounded-lg p-2 text-gray-600 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 lg:hidden"
             onClick={() => setMenuOpen(true)}
             aria-label={t('nav.openMenu')}
             aria-expanded={menuOpen}
+            aria-controls="app-sidebar"
           >
             <Menu className="h-5 w-5" aria-hidden="true" />
           </button>
@@ -397,9 +484,15 @@ export function Layout() {
           </div>
         </header>
         <SosBanner />
+        {!config.demo && <IdleLogout />}
         <main id="main" tabIndex={-1} className="scroll-thin relative flex-1 overflow-auto focus:outline-none">
           <div className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-            <Outlet />
+            {/* One boundary per route (WEB-8): a broken page keeps the shell usable and recovers on navigation. */}
+            <ErrorBoundary resetKey={location.pathname}>
+              <Suspense fallback={<TableSkeleton />}>
+                <Outlet />
+              </Suspense>
+            </ErrorBoundary>
           </div>
         </main>
       </div>

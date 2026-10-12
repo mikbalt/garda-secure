@@ -41,7 +41,7 @@ export function WeekdayDots({ weekdays }: { weekdays: number[] }) {
             key={d}
             aria-hidden="true"
             className={`flex h-6 w-6 items-center justify-center rounded-md text-[11px] font-semibold ${
-              on ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-400'
+              on ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-500'
             }`}
           >
             {t(`ppl.wd.${d}`)}
@@ -162,7 +162,7 @@ export function TemplatesTab({ site, canEdit, onNew, onEdit }: Props) {
                 </p>
                 <WeekdayDots weekdays={tpl.weekdays} />
                 <p className="flex items-center gap-1.5 text-xs text-gray-500">
-                  <CalendarRange className="h-3.5 w-3.5 text-gray-400" aria-hidden="true" />
+                  <CalendarRange className="h-3.5 w-3.5 text-gray-500" aria-hidden="true" />
                   {t('ppl.sch.validity', {
                     from: formatDay(tpl.valid_from, lang, false),
                     to: tpl.valid_until ? formatDay(tpl.valid_until, lang, false) : t('sch.openEnded'),

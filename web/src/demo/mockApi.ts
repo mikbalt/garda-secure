@@ -5,6 +5,7 @@
  */
 import type { AxiosAdapter, AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios'
 import type {
+  AuditRow,
   CheckpointProgress,
   DailyAttendanceRow,
   GuardKpiRow,
@@ -15,6 +16,7 @@ import type {
   SessionSummary,
   Severity,
 } from '../types'
+import { getUserRoles } from '../keycloak'
 import { emptyWorld, iso, seedWorld, uid, wib, type World } from './world'
 
 const STORE_KEY = 'sp.demo.world'
@@ -25,7 +27,8 @@ export type DemoMode = 'sample' | 'empty'
 function load(): World {
   try {
     const raw = sessionStorage.getItem(STORE_KEY)
-    if (raw) return JSON.parse(raw) as World
+    // Older saved worlds lack newer collections: fill them in.
+    if (raw) return { ...emptyWorld(), ...(JSON.parse(raw) as Partial<World>) } as World
   } catch {
     /* fall through */
   }
@@ -69,6 +72,15 @@ class HttpError {
 }
 const notFound = () => new HttpError(404, 'not_found', 'not found')
 const bad = (code: string, msg: string) => new HttpError(400, code, msg)
+
+/** Role checks like the API (docs/api.md), using the demo role. */
+const hasRole = (...roles: string[]) => getUserRoles().some((r) => roles.includes(r))
+function requireRoles(...roles: string[]) {
+  if (!hasRole(...roles)) throw new HttpError(403, 'forbidden', 'forbidden')
+}
+function requirePlatform() {
+  if (!hasRole('platform-admin')) throw new HttpError(403, 'platform_admin_required', 'platform-admin role required')
+}
 
 type Params = Record<string, string | undefined>
 type Body = Record<string, unknown>
@@ -124,6 +136,7 @@ function progress(s: PatrolSession): SessionProgress {
       out.scanned_at = sc.scanned_at
       out.method = sc.method
       out.scanned_by = sc.guard_id
+      out.scan_flags = sc.flags?.length ? sc.flags : undefined
       out.status = due && Date.parse(sc.scanned_at) > due ? 'late' : 'on_time'
       anchor = Date.parse(sc.scanned_at)
     } else {
@@ -146,6 +159,7 @@ function summary(s: PatrolSession): SessionSummary {
     session_id: s.id, route_id: s.route_id, route_name: p.route_name, guard_id: s.guard_id, guard_name: guardName(s.guard_id),
     started_at: s.started_at, ended_at: s.ended_at, status: s.status, total_checkpoints: p.total, scanned_count: p.scanned,
     sla_breaches: p.checkpoints.filter((c) => c.status === 'late' || c.status === 'overdue').length, completion_pct: p.completion_pct,
+    flagged_scans: w.scans.filter((x) => x.session_id === s.id && (x.flags?.length ?? 0) > 0).length,
     // D-035: session flags and the scheduled patrol it satisfied (none in the demo data).
     flags: (s as { flags?: string[] }).flags ?? [], expectation_id: null, due_at: null, late_start: false,
   } as SessionSummary
@@ -206,6 +220,7 @@ function dailyRows(siteId: string, range: [Date, Date]): DailyAttendanceRow[] {
         clock_in_at: a?.clock_in_at, clock_out_at: a?.clock_out_at, late_minutes: a?.late_minutes ?? 0,
         early_out_minutes: a?.early_out_minutes ?? 0, hours_worked: Math.round(hours * 10) / 10,
         needs_review: a?.needs_review ?? false, override_reason: a?.override_reason, selfie_object_key: a?.selfie_object_key,
+        flags: a?.flags ?? [],
       }
     })
 }
@@ -433,7 +448,18 @@ on('POST', '/sos/:id/acknowledge', ({ params }) => {
 on('GET', '/defects', ({ query }) => w.defects.filter((d) => d.site_id === query.site_id && (!query.status || d.status === query.status)).map((d) => ({ flags: [], ...d })))
 on('PUT', '/defects/:id/status', ({ params, body }) => Object.assign(byId(w.defects, params.id), { status: body.status, updated_at: iso(now()) }))
 on('GET', '/visitors', ({ query }) => w.visitors.filter((v) => v.site_id === query.site_id && inRange(v.entry_at, dateRange(query.from, query.to))).map((v) => ({ flags: [], ...v })))
-on('GET', '/media/url', ({ query }) => ({ key: query.key, uploaded: true, url: photoUrl(query.key ?? '') }))
+on('GET', '/media/url', ({ query }) => {
+  const kind = (query.key ?? '').split('/')[2]
+  const allowed: Record<string, string[]> = {
+    selfie: ['admin', 'supervisor', 'hr'],
+    visitor: ['admin', 'supervisor'],
+    defect: ['admin', 'supervisor'],
+    incident: ['admin', 'supervisor', 'client-readonly'],
+    checkpoint: ['admin', 'supervisor', 'client-readonly'],
+  }
+  if (allowed[kind] && !hasRole(...allowed[kind])) throw new HttpError(403, 'media_forbidden', 'your role may not view this photo')
+  return { key: query.key, uploaded: true, url: photoUrl(query.key ?? '') }
+})
 
 // Reports & dashboard
 on('GET', '/dashboard/summary', ({ query }) => {
@@ -511,16 +537,85 @@ on('POST', '/notifications/log/:id/retry', ({ params }) => {
   Object.assign(byId(w.log, params.id), { status: 'queued', last_error: undefined })
   return { status: 'queued' }
 })
-on('GET', '/settings/channels', () => w.channels)
+on('GET', '/settings/channels', () => (requirePlatform(), w.channels))
 on('PUT', '/settings/channels', ({ body }) => {
-  w.channels = body as unknown as World['channels']
+  requirePlatform()
+  const next = body as unknown as World['channels']
+  const MASK = '********'
+  // D-032: a stored secret may only be kept while the destination is unchanged.
+  const smtpMoved = (['host', 'port', 'user'] as const).some((k) => (next.smtp?.[k] ?? '') !== (w.channels.smtp?.[k] ?? ''))
+  const waMoved = (['api_url', 'phone_number_id'] as const).some((k) => (next.whatsapp?.[k] ?? '') !== (w.channels.whatsapp?.[k] ?? ''))
+  if ((smtpMoved && next.smtp?.password === MASK && w.channels.smtp?.password) || (waMoved && next.whatsapp?.token === MASK && w.channels.whatsapp?.token)) {
+    throw new HttpError(400, 'secret_required', 're-enter the secret when changing the destination')
+  }
+  if (next.whatsapp?.api_url && !next.whatsapp.api_url.startsWith('https://graph.facebook.com/')) {
+    throw new HttpError(400, 'whatsapp_url_not_allowed', 'whatsapp api_url not allowed')
+  }
+  if (next.smtp?.port && !['25', '465', '587', '2525'].includes(String(next.smtp.port))) throw new HttpError(400, 'invalid_smtp_port', 'invalid smtp port')
+  const keep = (v: string | undefined, old: string | undefined) => (v === MASK ? old ?? '' : v ?? '')
+  w.channels = {
+    smtp: { ...next.smtp, password: keep(next.smtp?.password, w.channels.smtp?.password) ? MASK : '' },
+    whatsapp: { ...next.whatsapp, token: keep(next.whatsapp?.token, w.channels.whatsapp?.token) ? MASK : '' },
+  }
   return w.channels
 })
-on('POST', '/settings/channels/test', () => {
-  throw new HttpError(502, 'delivery_failed', 'Demo mode: messages are not really sent')
+on('POST', '/settings/channels/test', ({ body }) => {
+  requirePlatform()
+  const configured = body.channel === 'email' ? !!w.channels.smtp?.host : !!w.channels.whatsapp?.token
+  const e = new HttpError(502, 'delivery_failed', 'Demo mode: messages are not really sent')
+  throw Object.assign(e, { reason: configured ? 'connection_failed' : 'not_configured' })
 })
-on('GET', '/backups', () => [...w.backups].sort((a, b) => b.created_at.localeCompare(a.created_at)))
+
+// Install-wide ops alerts (platform-admin, D-027)
+on('GET', '/notifications/ops-event-types', () => (requirePlatform(), { event_types: ['ops_backup_failed', 'ops_backup_stale', 'ops_sos_undelivered', 'ops_job_failing'], channels: ['email', 'whatsapp'] }))
+on('GET', '/notifications/ops-rules', () => (requirePlatform(), w.opsRules))
+on('POST', '/notifications/ops-rules', ({ body }) => {
+  requirePlatform()
+  if (!String(body.event_type ?? '').startsWith('ops_')) throw bad('invalid_event_type', 'unknown ops event')
+  if (w.opsRules.some((r) => r.event_type === body.event_type && r.channel === body.channel && r.recipient === body.recipient)) throw new HttpError(409, 'duplicate', 'rule exists')
+  const r = { id: uid(), enabled: true, created_by: 'demo/platform-admin', created_at: iso(now()), ...body } as World['opsRules'][0]
+  w.opsRules.push(r)
+  return r
+})
+on('PUT', '/notifications/ops-rules/:id', ({ params, body }) => (requirePlatform(), Object.assign(byId(w.opsRules, params.id), { enabled: !!body.enabled })))
+on('DELETE', '/notifications/ops-rules/:id', ({ params }) => {
+  requirePlatform()
+  w.opsRules = w.opsRules.filter((r) => r.id !== params.id)
+  return null
+})
+on('GET', '/notifications/ops-log', ({ query }) => (requirePlatform(), w.opsLog.filter((l) => !query.status || l.status === query.status)))
+on('POST', '/notifications/ops-log/:id/retry', ({ params }) => {
+  requirePlatform()
+  const l = byId(w.opsLog, params.id)
+  if (l.status !== 'failed') throw new HttpError(409, 'not_failed', 'only failed deliveries can be retried')
+  Object.assign(l, { status: 'queued', last_error: undefined })
+  return { status: 'queued' }
+})
+
+// Audit log (admin)
+on('GET', '/audit', ({ query }) => {
+  requireRoles('admin')
+  const from = query.from ? Date.parse(query.from) : -Infinity
+  const to = query.to ? Date.parse(query.to) : Infinity
+  const limit = Math.min(Math.max(Number(query.limit) || 100, 1), 500)
+  const offset = Math.max(Number(query.offset) || 0, 0)
+  const actor = (query.actor ?? '').toLowerCase()
+  const rt = query.resource_type ?? ''
+  const rows = [...w.audit]
+    .filter((a) => {
+      const at = Date.parse(a.created_at)
+      if (at < from || at > to) return false
+      if (actor && !(a.actor ?? '').toLowerCase().includes(actor) && a.guard_id !== query.actor) return false
+      if (rt && !(a.resource_type === rt || a.resource_type?.startsWith(`${rt}.`))) return false
+      return true
+    })
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))
+  return { rows: rows.slice(offset, offset + limit), limit, offset, has_more: rows.length > offset + limit }
+})
+
+on('GET', '/backups', () => (requirePlatform(), [...w.backups].sort((a, b) => b.created_at.localeCompare(a.created_at))))
 on('POST', '/backups', () => {
+  requirePlatform()
   const b = { id: uid(), object_key: `postgres/securepatrol-manual-${Date.now()}.dump`, status: 'pending' as const, trigger: 'manual' as const, requested_by: 'demo/admin', created_at: iso(now()) }
   w.backups.push(b)
   setTimeout(() => Object.assign(b, { status: 'succeeded', size_bytes: 18_600_000, started_at: iso(now()), finished_at: iso(now()) }) && persist(), 2500)
@@ -560,7 +655,10 @@ const adapter: AxiosAdapter = async (cfg: InternalAxiosRequestConfig) => {
     const params = Object.fromEntries(r.keys.map((k, i) => [k, decodeURIComponent(m[i + 1])]))
     try {
       const data = r.fn({ params, query, body })
-      if (method !== 'GET') persist()
+      if (method !== 'GET') {
+        recordAudit(method, path, params, body)
+        persist()
+      }
       if (query.format === 'csv') {
         const blob = new Blob(['﻿' + toCsv(data)], { type: 'text/csv' })
         return respond(200, blob, { 'content-disposition': `attachment; filename="demo${path.replace(/\//g, '-')}.csv"` })
@@ -568,7 +666,12 @@ const adapter: AxiosAdapter = async (cfg: InternalAxiosRequestConfig) => {
       return respond(method === 'POST' && data !== null ? 201 : data === null ? 204 : 200, data)
     } catch (e) {
       if (e instanceof HttpError) {
-        const err = Object.assign(new Error(e.msg), { isAxiosError: true, config: cfg, response: respond(e.status, { error: e.msg, code: e.code }) })
+        const extra = (e as HttpError & { reason?: string }).reason
+        const err = Object.assign(new Error(e.msg), {
+          isAxiosError: true,
+          config: cfg,
+          response: respond(e.status, { error: e.msg, code: e.code, ...(extra ? { reason: extra } : {}) }),
+        })
         throw err
       }
       throw e
@@ -576,6 +679,30 @@ const adapter: AxiosAdapter = async (cfg: InternalAxiosRequestConfig) => {
   }
   const err = Object.assign(new Error('demo: no handler'), { isAxiosError: true, config: cfg, response: respond(404, { error: `Demo mode has no handler for ${method} ${path}`, code: 'not_found' }) })
   throw err
+}
+
+const SECRET_KEYS = ['password', 'token', 'secret', 'pin', 'id_number']
+
+function redact(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(redact)
+  if (v && typeof v === 'object') {
+    return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, SECRET_KEYS.some((s) => k.toLowerCase().includes(s)) ? '[redacted]' : redact(x)]))
+  }
+  return v
+}
+
+/** Appends an audit row for a successful demo write (like the API's audit middleware). */
+function recordAudit(method: string, path: string, params: Record<string, string>, body: Body) {
+  const route = '/api/v1' + path.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, ':id')
+  const segs = path.split('/').filter((s) => s && !/^[0-9a-f-]{36}$/.test(s))
+  const roles = getUserRoles()
+  const row: AuditRow = {
+    id: uid(), user_id: `demo/${roles[0] ?? 'user'}`, realm: 'demo', actor: `demo.${roles[0] ?? 'user'}`, roles, action: `${method} ${route}`, method, route,
+    resource_type: segs.slice(0, 2).join('.') || undefined, resource_id: Object.values(params)[0], params: Object.keys(params).length ? params : undefined,
+    request_id: uid().slice(-12), summary: Object.keys(body).length ? redact(body) : undefined, ip: '127.0.0.1', user_agent: navigator.userAgent,
+    status_code: method === 'POST' ? 201 : 200, created_at: iso(now()),
+  }
+  w.audit.push(row)
 }
 
 export function installDemoApi(client: AxiosInstance) {

@@ -29,7 +29,13 @@ export function Table<T>({ columns, rows, rowKey, isLoading, error, empty, capti
   if (error) return <ErrorState error={error} onRetry={onRetry} />
   if (!rows || rows.length === 0) return <EmptyState message={empty} />
   return (
-    <div className="scroll-thin relative overflow-x-auto rounded-2xl border border-gray-200/80 bg-white shadow-card print-plain">
+    // Focusable so keyboard users can scroll wide tables (axe scrollable-region-focusable).
+    <div
+      tabIndex={0}
+      role="region"
+      aria-label={caption}
+      className="scroll-thin relative overflow-x-auto rounded-2xl border border-gray-200/80 bg-white shadow-card print-plain focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+    >
       <table className="min-w-full text-sm">
         {caption && <caption className="sr-only">{caption}</caption>}
         <thead className="border-b border-gray-200 bg-gray-50/80">

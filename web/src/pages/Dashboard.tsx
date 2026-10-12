@@ -1,7 +1,6 @@
-import { useMemo } from 'react'
+import { lazy, Suspense, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import {
   ArrowRight,
   CheckCircle2,
@@ -28,6 +27,9 @@ import { useSetupProgress } from '../hooks/useSetupProgress'
 import { incidentTypeLabel, useI18n, type Key } from '../i18n/context'
 import { addDays, formatDay, formatTime, localTimeOf, todayIn } from '../lib/time'
 import type { DailyAttendance, DashboardSummary, Device, Incident, LivePatrol, Site } from '../types'
+
+// recharts is ~100 KB gzip: keep it out of the landing chunk (WEB-9).
+const WeeklyChart = lazy(() => import('./dashboard/WeeklyChart'))
 
 // ── small building blocks ────────────────────────────────────────────────────
 
@@ -63,7 +65,7 @@ function Kpi({ label, value, sub, icon: Icon, tone, to, progress }: KpiProps) {
         <span className={`flex h-9 w-9 items-center justify-center rounded-xl ring-1 ${kpiTone[tone]}`}>
           <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
         </span>
-        {to && <ArrowRight className="h-4 w-4 text-gray-300 transition-colors group-hover:text-gray-500" aria-hidden="true" />}
+        {to && <ArrowRight className="h-4 w-4 text-gray-400 transition-colors group-hover:text-gray-500" aria-hidden="true" />}
       </div>
       <p className="mt-3 text-sm font-medium text-gray-500 sm:mt-4">{label}</p>
       <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight text-gray-900 sm:text-3xl">{value}</p>
@@ -119,7 +121,7 @@ function SetupCallout() {
         <p className="mt-0.5 flex items-center gap-1.5 text-sm text-gray-600">
           <NextIcon className="h-4 w-4 text-primary-500" aria-hidden="true" />
           {t('setup.cardBody', { step: t(s.next.title) })}
-          <span className="text-gray-400">· {t('setup.progress', { done: s.done, total: s.total })}</span>
+          <span className="text-gray-500">· {t('setup.progress', { done: s.done, total: s.total })}</span>
         </p>
       </div>
       <Link to={s.next.to} className={buttonClass('primary', 'md')}>
@@ -166,7 +168,7 @@ function Today({ site }: { site: Site }) {
   const devices = useQuery({
     queryKey: ['devices'],
     queryFn: () => apiGet<Device[]>('/devices'),
-    enabled: can('viewSettings'),
+    enabled: can('viewSetup'),
   })
 
   const s = summary.data
@@ -207,9 +209,11 @@ function Today({ site }: { site: Site }) {
 
   const highOpen = (s?.incidents_by_severity?.high ?? 0) + (s?.incidents_by_severity?.critical ?? 0)
   const weekly = (s?.weekly_attendance ?? []).map((d) => ({ ...d, label: formatDay(d.date, lang, false).replace(/ \d{4}$/, '') }))
+  // Text alternative of the chart for screen readers.
+  const weeklySummary = weekly.map((d) => `${d.label} ${d.present}/${d.late}/${d.absent}`).join(', ')
   const loadingTop = summary.isLoading || !s
   const kpiCount = 1 + Number(can('viewPatrol')) + Number(can('viewIncidents')) + Number(can('viewDefects'))
-  const canAct = can('manageIncidents') || can('reviewAttendance') || can('viewSettings')
+  const canAct = can('manageIncidents') || can('reviewAttendance') || can('viewSetup')
 
   if (summary.error) return <ErrorState error={summary.error} onRetry={() => summary.refetch()} />
 
@@ -376,7 +380,7 @@ function Today({ site }: { site: Site }) {
                       <p className="flex items-center gap-1 text-xs text-gray-500">
                         <Clock4 className="h-3 w-3" aria-hidden="true" />
                         {t('today.shift', { start: formatTime(r.shift_start, tz), end: formatTime(r.shift_end, tz) })}
-                        {r.clock_in_at && <span className="text-gray-400">· in {formatTime(r.clock_in_at, tz)}</span>}
+                        {r.clock_in_at && <span className="text-gray-600">{t('today.clockedInAt', { time: formatTime(r.clock_in_at, tz) })}</span>}
                       </p>
                     </div>
                     {r.status === 'pending' ? <Badge tone="gray" dot>{t('today.notIn')}</Badge> : <StatusBadge status={r.status} />}
@@ -419,20 +423,12 @@ function Today({ site }: { site: Site }) {
           )}
 
           <Card title={t('today.weekly')}>
-            <div className="h-56" role="img" aria-label={t('today.weekly')}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={weekly} margin={{ top: 4, right: 0, left: -28, bottom: 0 }} barCategoryGap="28%">
-                  <CartesianGrid vertical={false} stroke="#eef2f6" />
-                  <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
-                  <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#94a3b8' }} />
-                  <Tooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }} />
-                  <Bar dataKey="present" name={t('status.present')} stackId="a" fill="#10b981" />
-                  <Bar dataKey="late" name={t('status.late')} stackId="a" fill="#f59e0b" />
-                  <Bar dataKey="absent" name={t('status.absent')} stackId="a" fill="#ef4444" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+            <div className="h-56" role="img" aria-label={`${t('today.weekly')}: ${weeklySummary}`}>
+              <Suspense fallback={<div className="h-full w-full animate-pulse rounded-xl bg-gray-100" />}>
+                <WeeklyChart data={weekly} />
+              </Suspense>
             </div>
-            <div className="mt-3 flex items-center justify-center gap-4 text-xs text-gray-500">
+            <div className="mt-3 flex items-center justify-center gap-4 text-xs text-gray-600">
               <span className="inline-flex items-center gap-1.5"><Dot tone="green" />{t('status.present')}</span>
               <span className="inline-flex items-center gap-1.5"><Dot tone="yellow" />{t('status.late')}</span>
               <span className="inline-flex items-center gap-1.5"><Dot tone="red" />{t('status.absent')}</span>

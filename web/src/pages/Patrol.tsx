@@ -5,7 +5,7 @@ import { apiGet } from '../api/client'
 import { RequireSite } from '../components/RequireSite'
 import { Button } from '../components/ui/Button'
 import { PageHeader } from '../components/ui/States'
-import { Tabs, type TabItem } from '../components/ui/Tabs'
+import { TabPanel, Tabs, type TabItem } from '../components/ui/Tabs'
 import { useAuth } from '../hooks/useAuth'
 import { useTabParam } from '../hooks/useTabParam'
 import { useSite } from '../context/site'
@@ -74,12 +74,12 @@ export default function Patrol() {
       <RequireSite>
         {(site) => (
           <>
-            <Tabs label={t('pat.title')} tabs={tabs} active={tab} onChange={setTab} />
-            <div className="pt-5">
+            <Tabs idBase="pat" label={t('pat.title')} tabs={tabs} active={tab} onChange={setTab} />
+            <TabPanel idBase="pat" active={tab} className="pt-5">
               {tab === 'live' && <LiveTab site={site} onShowHistory={() => setTab('sessions')} />}
               {tab === 'sessions' && <SessionsTab site={site} />}
               {tab === 'routes' && <RoutesTab site={site} canEdit={canEdit} />}
-            </div>
+            </TabPanel>
           </>
         )}
       </RequireSite>

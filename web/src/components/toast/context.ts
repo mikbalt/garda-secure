@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext } from 'react'
 import { useI18n } from '../../i18n/context'
 import { errorText } from '../../i18n/errors'
-import { blobErrorMessage } from '../../api/client'
+import { blobErrorBody } from '../../api/client'
 
 export type ToastKind = 'success' | 'error' | 'info'
 
@@ -38,7 +38,7 @@ export function useDownloadErrorToast() {
   const { show } = useContext(ToastContext)
   const { lang } = useI18n()
   return useCallback(
-    async (err: unknown) => show('error', errorText(err, lang, await blobErrorMessage(err))),
+    async (err: unknown) => show('error', errorText(err, lang, { body: await blobErrorBody(err) })),
     [show, lang]
   )
 }

@@ -35,12 +35,15 @@ export function EmptyState({ message, title, icon: Icon = Inbox, children, bare 
 export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
   const { t, lang } = useI18n()
   return (
-    <div role="alert" className="flex flex-col items-center rounded-2xl border border-red-200 bg-red-50/70 px-6 py-10 text-center">
+    <div className="flex flex-col items-center rounded-2xl border border-red-200 bg-red-50/70 px-6 py-10 text-center">
       <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-red-100">
         <AlertCircle className="h-5 w-5 text-red-700" aria-hidden="true" />
       </div>
-      <p className="text-sm font-semibold text-red-900">{t('common.loadError')}</p>
-      <p className="mt-1 max-w-md text-sm text-red-800">{errorText(error, lang)}</p>
+      {/* The live region holds text only; the retry button sits outside it. */}
+      <div role="alert">
+        <p className="text-sm font-semibold text-red-900">{t('common.loadError')}</p>
+        <p className="mt-1 max-w-md text-sm text-red-800">{errorText(error, lang)}</p>
+      </div>
       {onRetry && (
         <Button variant="secondary" size="sm" className="mt-4" onClick={onRetry}>
           {t('app.retry')}

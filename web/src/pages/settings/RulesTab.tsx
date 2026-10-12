@@ -12,6 +12,7 @@ import { EmptyState, ErrorState, Notice } from '../../components/ui/States'
 import { buttonClass } from '../../components/ui/styles'
 import { useErrorToast, useToast } from '../../components/toast/context'
 import { useSite } from '../../context/site'
+import { useAuth } from '../../hooks/useAuth'
 import { useNewParam } from '../../hooks/useNewParam'
 import { useI18n, translateMaybe } from '../../i18n/context'
 import { errorText } from '../../i18n/errors'
@@ -53,7 +54,7 @@ function useAddRule(site: Site, onDone: () => void) {
 }
 
 /** Segmented E-mail / WhatsApp picker. */
-function ChannelPicker({ value, onChange, channels }: { value: Channel; onChange: (c: Channel) => void; channels: Channel[] }) {
+export function ChannelPicker({ value, onChange, channels }: { value: Channel; onChange: (c: Channel) => void; channels: Channel[] }) {
   const { lang, t } = useI18n()
   return (
     <div role="radiogroup" aria-label={t('rule.channel')} className="inline-flex rounded-lg bg-gray-100 p-0.5">
@@ -92,6 +93,7 @@ function InlineAdd({ site, eventType, channels, onClose }: { site: Site; eventTy
   const [err, setErr] = useState('')
   const add = useAddRule(site, onClose)
   const inputId = useId()
+  const hintId = useId()
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
@@ -114,10 +116,11 @@ function InlineAdd({ site, eventType, channels, onClose }: { site: Site; eventTy
             autoFocus
             type={channel === 'email' ? 'email' : 'tel'}
             inputMode={channel === 'email' ? 'email' : 'tel'}
-            placeholder={channel === 'email' ? 'nama@perusahaan.co.id' : '0812 3456 7890'}
+            placeholder={channel === 'email' ? t('plat.phEmail') : t('plat.phWa')}
             value={recipient}
             onChange={(e) => setRecipient(e.target.value)}
-            aria-invalid={err ? true : undefined}
+            aria-invalid={err || add.error ? true : undefined}
+            aria-describedby={hintId}
             className="h-9 !py-1.5"
             autoComplete="off"
           />
@@ -131,7 +134,7 @@ function InlineAdd({ site, eventType, channels, onClose }: { site: Site; eventTy
           </Button>
         </div>
       </div>
-      <p className={`mt-2 text-xs ${err || add.error ? 'font-medium text-red-700' : 'text-gray-500'}`} role={err || add.error ? 'alert' : undefined}>
+      <p id={hintId} className={`mt-2 text-xs ${err || add.error ? 'font-medium text-red-700' : 'text-gray-500'}`} role={err || add.error ? 'alert' : undefined}>
         {err || (add.error ? errorText(add.error, lang) : recipientHint(t, channel))}
       </p>
     </form>
@@ -192,7 +195,7 @@ function AddRuleModal({ site, events, channels, onClose }: { site: Site; events:
           <Input
             type={channel === 'email' ? 'email' : 'tel'}
             inputMode={channel === 'email' ? 'email' : 'tel'}
-            placeholder={channel === 'email' ? 'nama@perusahaan.co.id' : '0812 3456 7890'}
+            placeholder={channel === 'email' ? t('plat.phEmail') : t('plat.phWa')}
             value={recipient}
             onChange={(e) => setRecipient(e.target.value)}
             autoComplete="off"
@@ -203,7 +206,9 @@ function AddRuleModal({ site, events, channels, onClose }: { site: Site; events:
   )
 }
 
-function RecipientChip({ rule, onToggle, onRemove, busy }: { rule: NotificationRule; onToggle: () => void; onRemove: () => void; busy: boolean }) {
+type ChipRule = Pick<NotificationRule, 'channel' | 'recipient' | 'enabled'>
+
+export function RecipientChip({ rule, onToggle, onRemove, busy }: { rule: ChipRule; onToggle: () => void; onRemove: () => void; busy: boolean }) {
   const { t, lang } = useI18n()
   const Icon = CHANNEL_ICON[rule.channel]
   const shown = displayRecipient(rule.channel, rule.recipient)
@@ -211,10 +216,10 @@ function RecipientChip({ rule, onToggle, onRemove, busy }: { rule: NotificationR
   return (
     <li
       className={`relative inline-flex max-w-full items-center gap-2 rounded-full border py-1 pl-2.5 pr-1 text-sm transition-colors ${
-        rule.enabled ? 'border-gray-200 bg-white text-gray-800 shadow-sm' : 'border-dashed border-gray-300 bg-gray-50 text-gray-400'
+        rule.enabled ? 'border-gray-200 bg-white text-gray-800 shadow-sm' : 'border-dashed border-gray-300 bg-gray-50 text-gray-600'
       }`}
     >
-      <Icon className={`h-4 w-4 shrink-0 ${rule.enabled ? CHANNEL_TONE[rule.channel] : 'text-gray-400'}`} aria-hidden="true" />
+      <Icon className={`h-4 w-4 shrink-0 ${rule.enabled ? CHANNEL_TONE[rule.channel] : 'text-gray-500'}`} aria-hidden="true" />
       <span className={`truncate tabular-nums ${rule.enabled ? '' : 'line-through'}`}>
         <span className="sr-only">{channelName}: </span>
         {shown}
@@ -231,7 +236,7 @@ function RecipientChip({ rule, onToggle, onRemove, busy }: { rule: NotificationR
         onClick={onRemove}
         aria-label={t('adm.rule.remove', { to: shown })}
         title={t('common.delete')}
-        className="rounded-full p-1 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+        className="rounded-full p-1 text-gray-500 transition-colors hover:bg-red-50 hover:text-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
       >
         <X className="h-3.5 w-3.5" aria-hidden="true" />
       </button>
@@ -254,7 +259,9 @@ function RulesForSite({ site }: { site: Site }) {
     queryKey: ['rules', site.id],
     queryFn: () => apiGet<NotificationRule[]>('/notifications/rules', { site_id: site.id }),
   })
-  const channelsQ = useQuery({ queryKey: ['channels'], queryFn: () => apiGet<ChannelSettings>('/settings/channels') })
+  const { can } = useAuth()
+  // Channel settings are platform-admin only (D-032); realm admins skip the check.
+  const channelsQ = useQuery({ queryKey: ['channels'], queryFn: () => apiGet<ChannelSettings>('/settings/channels'), enabled: can('managePlatform') })
 
   const toggle = useMutation({
     mutationFn: (r: NotificationRule) => apiClient.put(`/notifications/rules/${r.id}`, { enabled: !r.enabled }),
@@ -325,7 +332,7 @@ function RulesForSite({ site }: { site: Site }) {
               </Button>
             </div>
           ) : (
-            <p className="mb-3 text-sm text-gray-500">{t('adm.rule.coverage', { n: covered, total: events.length })}</p>
+            <p className="mb-3 text-sm text-gray-600">{t('adm.rule.coverage', { n: covered, total: events.length })}</p>
           )}
 
           <ul className="space-y-3">
@@ -341,7 +348,7 @@ function RulesForSite({ site }: { site: Site }) {
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                         <h3 className="text-[15px] font-semibold text-gray-900">{title}</h3>
-                        <span className={`text-xs font-medium ${active ? 'text-gray-500' : 'text-gray-400'}`}>
+                        <span className={`text-xs font-medium ${active ? 'text-gray-600' : 'text-gray-500'}`}>
                           {active ? t('adm.rule.recipients', { n: active }) : t('adm.rule.noRecipients')}
                         </span>
                       </div>

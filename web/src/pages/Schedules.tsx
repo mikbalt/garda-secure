@@ -3,7 +3,7 @@ import { CalendarDays, CalendarPlus, Plus } from 'lucide-react'
 import { RequireSite } from '../components/RequireSite'
 import { Button } from '../components/ui/Button'
 import { Notice, PageHeader } from '../components/ui/States'
-import { Tabs } from '../components/ui/Tabs'
+import { TabPanel, Tabs } from '../components/ui/Tabs'
 import { useAuth } from '../hooks/useAuth'
 import { useNewParam } from '../hooks/useNewParam'
 import { useTabParam } from '../hooks/useTabParam'
@@ -60,6 +60,7 @@ function SchedulesContent({ site }: { site: Site }) {
       {!canEdit && <Notice>{t('ppl.sch.readOnly')}</Notice>}
       <div className="mb-4">
         <Tabs
+          idBase="sch"
           label={t('sch.title')}
           active={tab}
           onChange={setTab}
@@ -69,6 +70,7 @@ function SchedulesContent({ site }: { site: Site }) {
           ]}
         />
       </div>
+      <TabPanel idBase="sch" active={tab}>
       {tab === 'roster' ? (
         <RosterTab
           site={site}
@@ -80,6 +82,7 @@ function SchedulesContent({ site }: { site: Site }) {
       ) : (
         <TemplatesTab site={site} canEdit={canEdit} onNew={newPattern} onEdit={setPattern} />
       )}
+      </TabPanel>
 
       {pattern && <TemplateModal site={site} template={pattern === 'new' ? null : pattern} onClose={() => setPattern(null)} />}
       {shift && (

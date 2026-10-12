@@ -91,7 +91,7 @@ export function Modal({ open, onClose, title, children, footer, variant = 'cente
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+            className="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
             aria-label={t('common.close')}
           >
             <X className="h-5 w-5" aria-hidden="true" />

@@ -92,7 +92,7 @@ export function OverrideModal({ site, row, onClose }: Props) {
             </p>
           </div>
           <div className="text-right">
-            <p className="mb-0.5 text-[11px] font-medium uppercase tracking-wider text-gray-400">{t('ppl.att.currently')}</p>
+            <p className="mb-0.5 text-[11px] font-medium uppercase tracking-wider text-gray-500">{t('ppl.att.currently')}</p>
             {row.status === 'pending' ? <Badge dot>{t('ppl.att.notIn')}</Badge> : <StatusBadge status={row.status} />}
           </div>
         </div>

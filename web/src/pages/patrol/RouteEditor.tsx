@@ -79,7 +79,7 @@ export function RouteEditor({ site, route, onClose }: { site: Site; route: Patro
   const totalSla = rows.reduce((n, r) => n + (num(r.sla) ?? 0), 0)
 
   const save = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const body: RouteInput = {
         name: name.trim(),
         active,
@@ -93,7 +93,8 @@ export function RouteEditor({ site, route, onClose }: { site: Site; route: Patro
           lng: num(r.lng),
         })),
       }
-      return route ? apiClient.put(`/patrol/routes/${route.id}`, body) : apiClient.post('/patrol/routes', { ...body, site_id: site.id })
+      if (route) await apiClient.put(`/patrol/routes/${route.id}`, body)
+      else await apiClient.post('/patrol/routes', { ...body, site_id: site.id })
     },
     onSuccess: () => {
       toast.success(t('pat.routeSaved'))
@@ -208,7 +209,7 @@ export function RouteEditor({ site, route, onClose }: { site: Site; route: Patro
                               placeholder="—"
                               className="pr-11 tabular-nums"
                             />
-                            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-gray-400">{t('ops.pat.minShort')}</span>
+                            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-gray-500">{t('ops.pat.minShort')}</span>
                           </div>
                         </div>
                         <div className="col-start-2 flex items-center gap-0.5 sm:col-start-auto sm:justify-end">

@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { CheckCircle2, Circle, Clock, Flag, Hand, Play, QrCode, TimerOff, XCircle, type LucideIcon } from 'lucide-react'
 import { apiGet } from '../../api/client'
+import { FlagBadges } from '../../components/FlagBadges'
 import { TableSkeleton } from '../../components/LoadingSkeleton'
 import { StatusBadge } from '../../components/ui/Badge'
 import { Modal } from '../../components/ui/Modal'
@@ -36,14 +37,15 @@ function CheckpointRow({ cp, tz, last }: { cp: CheckpointProgress; tz: string; l
       {!last && <span className="absolute bottom-0 left-4 top-8 w-px bg-gray-200" aria-hidden="true" />}
       <Node icon={cpIcon[cp.status] ?? Circle} cls={tone.ring} />
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-1">
-        <span className="text-xs font-semibold tabular-nums text-gray-400">{String(cp.order_index + 1).padStart(2, '0')}</span>
+        <span className="text-xs font-semibold tabular-nums text-gray-500">{String(cp.order_index + 1).padStart(2, '0')}</span>
         <span className="text-sm font-semibold text-gray-900">{cp.name}</span>
         <StatusBadge status={cp.status} />
+        <FlagBadges flags={cp.scan_flags} />
       </div>
-      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
         {cp.scanned_at ? (
           <span className="inline-flex items-center gap-1 font-medium text-gray-700">
-            {cp.method === 'manual' ? <Hand className="h-3.5 w-3.5 text-gray-400" aria-hidden="true" /> : <QrCode className="h-3.5 w-3.5 text-gray-400" aria-hidden="true" />}
+            {cp.method === 'manual' ? <Hand className="h-3.5 w-3.5 text-gray-500" aria-hidden="true" /> : <QrCode className="h-3.5 w-3.5 text-gray-500" aria-hidden="true" />}
             {t('pat.scannedAt', { time: formatTime(cp.scanned_at, tz) })} · {t(cp.method === 'manual' ? 'pat.method.manual' : 'pat.method.qr')}
           </span>
         ) : (

@@ -166,7 +166,7 @@ export function DateRangeFilter({
             onChange={(e) => onChange({ from: e.target.value, to })}
             className="!h-9 min-w-0 flex-1 !py-1 sm:w-[9.5rem] sm:flex-none"
           />
-          <span className="text-gray-400" aria-hidden="true">
+          <span className="text-gray-500" aria-hidden="true">
             –
           </span>
           <Input
@@ -266,7 +266,7 @@ export function Avatar({ name, className = '' }: { name?: string; className?: st
 export function Meta({ icon: Icon, children }: { icon: LucideIcon; children: ReactNode }) {
   return (
     <span className="inline-flex min-w-0 items-center gap-1">
-      <Icon className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden="true" />
+      <Icon className="h-3.5 w-3.5 shrink-0 text-gray-500" aria-hidden="true" />
       <span className="truncate">{children}</span>
     </span>
   )

@@ -22,4 +22,8 @@ export const STORAGE_KEYS = {
   lang: 'sp.lang',
   site: 'sp.site',
   demoRole: 'sp.demo.role',
+  /** "1" = SOS alarm sound muted in this browser. */
+  sosMuted: 'sp.sos.muted',
+  /** Epoch ms of the last user input in any tab (idle logout). */
+  lastActivity: 'sp.lastActivity',
 } as const

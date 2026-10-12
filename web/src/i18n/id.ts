@@ -2,6 +2,7 @@ import { uxId } from './ux.id'
 import { peopleId } from './people.id'
 import { opsId } from './ops.id'
 import { adminId } from './admin.id'
+import { platformId } from './platform.id'
 import type { Dict } from './en'
 
 /** Kamus Bahasa Indonesia (bahasa bawaan). */
@@ -414,4 +415,5 @@ export const id: Dict = {
   ...peopleId,
   ...opsId,
   ...adminId,
+  ...platformId,
 }

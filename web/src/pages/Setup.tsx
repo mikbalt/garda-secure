@@ -53,7 +53,7 @@ function StepRow({ step, index, isNext }: { step: SetupStep; index: number; isNe
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-semibold tabular-nums text-gray-400">{String(index + 1).padStart(2, '0')}</span>
+          <span className="text-xs font-semibold tabular-nums text-gray-500">{String(index + 1).padStart(2, '0')}</span>
           <h3 className={`text-[15px] font-semibold ${done ? 'text-gray-500' : 'text-gray-900'}`}>{t(step.title)}</h3>
           {done ? (
             <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">{t('setup.done')}</span>
