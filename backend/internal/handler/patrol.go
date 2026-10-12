@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/securepatrol/backend/internal/middleware"
 	"github.com/securepatrol/backend/internal/model"
@@ -29,6 +30,9 @@ func (h *Handler) listRoutes(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	for i := range routes {
+		service.DecorateQR(&routes[i], h.qr)
+	}
 	return c.JSON(routes)
 }
 
@@ -48,6 +52,7 @@ func (h *Handler) getRoute(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	service.DecorateQR(r, h.qr)
 	return c.JSON(r)
 }
 
@@ -61,7 +66,7 @@ func (h *Handler) createRoute(c *fiber.Ctx) error {
 		return h.fail(c, err)
 	}
 	r := model.Route{SiteID: site.ID, Name: b.Name, Checkpoints: b.Checkpoints, Active: b.Active == nil || *b.Active}
-	if err := service.NormalizeRoute(&r); err != nil {
+	if err := service.NormalizeRoute(&r, nil, h.qr); err != nil {
 		return h.fail(c, err)
 	}
 	if err := h.checkRoutePlans(c, &r); err != nil {
@@ -84,20 +89,39 @@ func (h *Handler) updateRoute(c *fiber.Ctx) error {
 	if err := parse(c, &b); err != nil {
 		return h.fail(c, err)
 	}
+	prev := *r
+	prev.Checkpoints = append([]model.Checkpoint(nil), r.Checkpoints...)
 	r.Name, r.Checkpoints = b.Name, b.Checkpoints
 	if b.Active != nil {
 		r.Active = *b.Active
 	}
-	if err := service.NormalizeRoute(r); err != nil {
+	if err := service.NormalizeRoute(r, &prev, h.qr); err != nil {
 		return h.fail(c, err)
 	}
 	if err := h.checkRoutePlans(c, r); err != nil {
 		return h.fail(c, err)
 	}
-	out, err := repository.UpdateRoute(c.Context(), h.DB, *r)
+	var out *model.Route
+	err = pgx.BeginFunc(c.Context(), h.DB, func(tx pgx.Tx) error {
+		var err error
+		if out, err = repository.UpdateRoute(c.Context(), tx, *r); err != nil {
+			return err
+		}
+		if out.Active == prev.Active {
+			return nil
+		}
+		// Activated or deactivated: rebuild or cancel its scheduled patrols.
+		site, err := repository.GetSite(c.Context(), tx, out.SiteID)
+		if err != nil {
+			return err
+		}
+		_, err = service.SyncRouteExpectations(c.Context(), tx, out, site)
+		return err
+	})
 	if err != nil {
 		return h.fail(c, err)
 	}
+	service.DecorateQR(out, h.qr)
 	return c.JSON(out)
 }
 
@@ -172,6 +196,9 @@ func (h *Handler) getSession(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	if middleware.GetDevice(c) != nil {
+		service.HideSignedQR(p)
+	}
 	return c.JSON(p)
 }
 
@@ -196,20 +223,28 @@ func (h *Handler) startSession(c *fiber.Ctx) error {
 	}
 	s, isNew, err := service.StartSession(c.Context(), h.DB, service.StartSessionInput{
 		ID: nilIfEmpty(b.ID), RouteID: b.RouteID, At: b.StartedAt,
-		Guard: middleware.GetGuard(c), Site: site, DeviceID: deviceID(c),
+		Guard: middleware.GetGuard(c), Auth: middleware.GetGuardAuth(c), Site: site, DeviceID: deviceID(c),
 	})
 	if err != nil {
 		return h.fail(c, err)
 	}
+	if isNew {
+		// Satisfy the scheduled patrol (by event time). A failure here only
+		// delays it: the worker's matching sweep retries.
+		if _, err := service.MatchSession(c.Context(), h.DB, s); err != nil {
+			h.Log.Warn().Err(err).Str("session_id", s.ID).Msg("matching session to scheduled patrol failed")
+		}
+	}
 	return created(c, isNew, s)
 }
 
-// POST /patrol/sessions/:id/scans {id?, checkpoint_id | qr_code, method, photo_object_key?, scanned_at?, gps_lat?, gps_lng?}
+// POST /patrol/sessions/:id/scans {id?, checkpoint_id | qr_code | qr_payload, method, photo_object_key?, scanned_at?, gps_lat?, gps_lng?}
 func (h *Handler) recordScan(c *fiber.Ctx) error {
 	var b struct {
 		ID             *string    `json:"id"`
 		CheckpointID   string     `json:"checkpoint_id"`
 		QRCode         string     `json:"qr_code"`
+		QRPayload      string     `json:"qr_payload"`
 		Method         string     `json:"method"`
 		PhotoObjectKey *string    `json:"photo_object_key"`
 		ScannedAt      *time.Time `json:"scanned_at"`
@@ -222,11 +257,11 @@ func (h *Handler) recordScan(c *fiber.Ctx) error {
 	if err := optionalUUID(b.ID); err != nil {
 		return h.fail(c, err)
 	}
-	if b.CheckpointID == "" && b.QRCode == "" {
-		return h.fail(c, service.BadRequest("checkpoint_required", "checkpoint_id or qr_code is required"))
+	if b.CheckpointID == "" && b.QRCode == "" && b.QRPayload == "" {
+		return h.fail(c, service.BadRequest("checkpoint_required", "checkpoint_id, qr_code or qr_payload is required"))
 	}
 	if err := service.CheckLengths(service.S("checkpoint_id", b.CheckpointID, service.MaxIdentifier),
-		service.S("qr_code", b.QRCode, service.MaxName)); err != nil {
+		service.S("qr_code", b.QRCode, service.MaxName), service.S("qr_payload", b.QRPayload, service.MaxName)); err != nil {
 		return h.fail(c, err)
 	}
 	site, err := h.deviceSite(c)
@@ -235,8 +270,9 @@ func (h *Handler) recordScan(c *fiber.Ctx) error {
 	}
 	scan, isNew, err := service.RecordScan(c.Context(), h.DB, service.ScanInput{
 		ID: nilIfEmpty(b.ID), SessionID: c.Params("id"), CheckpointID: b.CheckpointID, QRCode: b.QRCode,
-		Method: b.Method, PhotoObjectKey: nilIfEmpty(b.PhotoObjectKey), At: b.ScannedAt,
-		GPSLat: b.GPSLat, GPSLng: b.GPSLng, Guard: middleware.GetGuard(c), Site: site, DeviceID: deviceID(c),
+		QRPayload: b.QRPayload, Method: b.Method, PhotoObjectKey: nilIfEmpty(b.PhotoObjectKey), At: b.ScannedAt,
+		GPSLat: b.GPSLat, GPSLng: b.GPSLng, Guard: middleware.GetGuard(c), Auth: middleware.GetGuardAuth(c),
+		Site: site, DeviceID: deviceID(c), QR: h.qr,
 	})
 	if err != nil {
 		return h.fail(c, err)

@@ -79,7 +79,11 @@ func (h *Handler) reportMonthlyRecap(c *fiber.Ctx) error {
 	}
 	month := from.In(loc).Format("2006-01")
 	if format == "" {
-		return c.JSON(fiber.Map{"site_id": site.ID, "month": month, "rows": rows})
+		compliance, err := repository.PatrolComplianceTotals(c.Context(), h.DB, site.ID, from, to)
+		if err != nil {
+			return h.fail(c, err)
+		}
+		return c.JSON(fiber.Map{"site_id": site.ID, "month": month, "rows": rows, "patrol_compliance": compliance})
 	}
 	t := &export.Table{
 		Title: "Monthly attendance recap", Subtitle: site.Name + " · " + month, Generated: siteNow(site),
@@ -132,14 +136,19 @@ func (h *Handler) reportPatrolSessions(c *fiber.Ctx) error {
 			{Name: "Status", Kind: export.Text, Width: 0.8}, {Name: "Checkpoints", Kind: export.Int},
 			{Name: "Scanned", Kind: export.Int}, {Name: "Missed", Kind: export.Int},
 			{Name: "SLA breaches", Kind: export.Int}, {Name: "Flagged scans", Kind: export.Int},
-			{Name: "Completion %", Kind: export.Float},
+			{Name: "Completion %", Kind: export.Float}, {Name: "Scheduled for", Kind: export.Time},
+			{Name: "Late start", Kind: export.Text, Width: 0.6},
 		},
 	}
 	for _, r := range rows {
+		late := ""
+		if r.DueAt != nil && r.LateStart {
+			late = "yes"
+		}
 		t.Rows = append(t.Rows, []any{
 			r.RouteName, r.GuardName, r.StartedAt.In(loc), localTime(r.EndedAt, loc), r.Status,
 			r.TotalCheckpoints, r.ScannedCount, r.TotalCheckpoints - r.ScannedCount, r.SLABreaches,
-			r.FlaggedScans, r.CompletionPct,
+			r.FlaggedScans, r.CompletionPct, localTime(r.DueAt, loc), late,
 		})
 	}
 	return h.sendExport(c, format, "patrol-sessions", t)
@@ -255,11 +264,17 @@ func (h *Handler) reportGuardKPI(c *fiber.Ctx) error {
 			{Name: "Guard", Kind: export.Text, Width: 1.5}, {Name: "Attendance %", Kind: export.Float},
 			{Name: "On-time %", Kind: export.Float}, {Name: "Patrol completion %", Kind: export.Float},
 			{Name: "Incidents", Kind: export.Int}, {Name: "SLA breaches", Kind: export.Int},
+			{Name: "Scheduled patrols", Kind: export.Int}, {Name: "Schedule compliance %", Kind: export.Float},
 		},
 	}
 	for _, r := range rows {
+		var compliance any
+		if r.ScheduleCompliancePct != nil {
+			compliance = *r.ScheduleCompliancePct
+		}
 		t.Rows = append(t.Rows, []any{
 			r.GuardName, r.AttendanceRatePct, r.OnTimeRatePct, r.PatrolCompletePct, r.IncidentsFiled, r.SLABreaches,
+			r.ScheduledPatrols, compliance,
 		})
 	}
 	return h.sendExport(c, format, "guard-kpi", t)

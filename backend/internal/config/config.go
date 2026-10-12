@@ -59,6 +59,14 @@ type Config struct {
 	// SettingsEncryptionKey encrypts channel secrets stored in system_settings.
 	SettingsEncryptionKey string
 
+	// Field identity (D-035). Empty secrets are derived from
+	// SettingsEncryptionKey with HKDF-SHA256.
+	GuardTokenSecret       string        // GUARD_TOKEN_SECRET (>= 32 bytes when set)
+	GuardSessionTTL        time.Duration // GUARD_SESSION_TTL, default 12h
+	GuardTokenGrace        time.Duration // GUARD_TOKEN_GRACE, default 168h (= offline sync window)
+	QRSigningSecret        string        // QR_SIGNING_SECRET (>= 32 bytes when set)
+	RateLimitGuardSessions int           // RATE_LIMIT_GUARD_SESSIONS_PER_MIN, PIN checks per tablet
+
 	// Channel defaults; admins can override them from the web UI.
 	SMTPHost              string
 	SMTPPort              string
@@ -157,6 +165,7 @@ func Load() (*Config, error) {
 		{"RATE_LIMIT_DEVICE_WRITES_PER_MIN", 600, &cfg.RateLimitDeviceWrites},
 		{"RATE_LIMIT_SOS_PER_MIN", 5, &cfg.RateLimitSOS},
 		{"RATE_LIMIT_AUTH_FAILURES_PER_MIN", 30, &cfg.RateLimitAuthFailures},
+		{"RATE_LIMIT_GUARD_SESSIONS_PER_MIN", 20, &cfg.RateLimitGuardSessions},
 	} {
 		n, err := strconv.Atoi(envOrDefault(l.env, strconv.Itoa(l.def)))
 		if err != nil || n < 0 {
@@ -171,6 +180,9 @@ func Load() (*Config, error) {
 	}
 	cfg.BackupHour = hour
 	if err := cfg.loadReliability(); err != nil {
+		return nil, err
+	}
+	if err := cfg.loadField(); err != nil {
 		return nil, err
 	}
 	if err := cfg.loadFeatures(); err != nil {
@@ -233,6 +245,35 @@ func (c *Config) loadReliability() error {
 	c.WorkerHTTPAddr = envOrDefault("WORKER_HTTP_ADDR", ":9091")
 	if c.WorkerShutdownTimeout, err = envDuration("WORKER_SHUTDOWN_TIMEOUT", 40*time.Second); err != nil {
 		return err
+	}
+	return nil
+}
+
+// MinFieldSecretBytes is the minimum length of GUARD_TOKEN_SECRET and
+// QR_SIGNING_SECRET.
+const MinFieldSecretBytes = 32
+
+// loadField reads the guard-token and QR-signing settings (D-035).
+func (c *Config) loadField() error {
+	c.GuardTokenSecret = os.Getenv("GUARD_TOKEN_SECRET")
+	c.QRSigningSecret = os.Getenv("QR_SIGNING_SECRET")
+	for env, v := range map[string]string{"GUARD_TOKEN_SECRET": c.GuardTokenSecret, "QR_SIGNING_SECRET": c.QRSigningSecret} {
+		if v != "" && len(v) < MinFieldSecretBytes {
+			return fmt.Errorf("%s must be at least %d bytes (or unset to derive it from SETTINGS_ENCRYPTION_KEY)", env, MinFieldSecretBytes)
+		}
+	}
+	var err error
+	if c.GuardSessionTTL, err = envDuration("GUARD_SESSION_TTL", 12*time.Hour); err != nil {
+		return err
+	}
+	if c.GuardSessionTTL < 5*time.Minute || c.GuardSessionTTL > 7*24*time.Hour {
+		return errors.New("GUARD_SESSION_TTL must be between 5m and 168h")
+	}
+	if c.GuardTokenGrace, err = envDuration("GUARD_TOKEN_GRACE", 7*24*time.Hour); err != nil {
+		return err
+	}
+	if c.GuardTokenGrace < time.Minute || c.GuardTokenGrace > 30*24*time.Hour {
+		return errors.New("GUARD_TOKEN_GRACE must be between 1m and 720h")
 	}
 	return nil
 }

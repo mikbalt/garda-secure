@@ -6,20 +6,20 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/auth/auth_provider.dart';
-import '../../core/services/pin_verifier.dart';
+import '../../core/services/clock.dart';
 import '../../l10n/strings.dart';
 import '../../shared/models/models.dart';
 import '../../shared/widgets/brand.dart';
+import '../../shared/widgets/sos_button.dart';
 import '../../shared/widgets/sync_indicator.dart';
 import '../../shared/widgets/ui.dart';
 import '../../theme/app_theme.dart';
 import '../device/device_info_screen.dart';
 
-final _attempts = PinAttempts();
-
 /// Lock screen of the shared tablet (D-001): pick your name, enter your PIN.
 /// The PIN is checked locally against the synced bcrypt hash, so switching
-/// guards works offline.
+/// guards works offline, and by the server when it is reachable (D-035).
+/// After picking a name, SOS can be held without a PIN (MOB-3).
 class PinScreen extends StatefulWidget {
   const PinScreen({super.key});
 
@@ -93,6 +93,7 @@ class _PinScreenState extends State<PinScreen> {
               children: [
                 const _LockTopBar(),
                 if (session.sosAlerts.isNotEmpty) ...[const SizedBox(height: 16), _SosStrip(count: session.sosAlerts.length)],
+                if (session.lockNotice != null) ...[const SizedBox(height: 16), _LockNotice(notice: session.lockNotice!, onClose: session.clearLockNotice)],
                 SizedBox(height: wide ? 28 : 20),
                 Expanded(
                   child: wide
@@ -167,7 +168,7 @@ class _ClockState extends State<_Clock> {
 
   @override
   Widget build(BuildContext context) {
-    final now = DateTime.now();
+    final now = AppClock.siteNow();
     final lang = S.of(context).lang;
     return Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
       Text(DateFormat.Hm().format(now), style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()])),
@@ -193,6 +194,40 @@ class _SosStrip extends StatelessWidget {
         const SizedBox(width: 10),
         Expanded(child: Text('${s.t('sos.alertsTitle')} · $count', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600))),
         Text(s.t('lock.subtitle'), style: const TextStyle(color: Colors.white70, fontSize: 13)),
+      ]),
+    );
+  }
+}
+
+/// The server rejected a PIN that the tablet had accepted offline.
+class _LockNotice extends StatelessWidget {
+  const _LockNotice({required this.notice, required this.onClose});
+
+  final Map<String, String> notice;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    final detail = switch (notice['code']) {
+      'notAllowed' => s.t('sec.notAllowed'),
+      'pinNotSet' => s.t('sec.pinNotSet'),
+      _ => null,
+    };
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
+      decoration: BoxDecoration(color: const Color(0xFF92400E), borderRadius: BorderRadius.circular(14)),
+      child: Row(children: [
+        const Icon(Icons.gpp_maybe_outlined, color: Colors.white),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            [s.t('sec.lockedByServer', {'name': notice['name'] ?? ''}), if (detail != null) detail].join(' '),
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+          ),
+        ),
+        IconButton(onPressed: onClose, tooltip: s.t('common.close'), icon: const Icon(Icons.close, color: Colors.white70)),
       ]),
     );
   }
@@ -226,7 +261,9 @@ class _GuardCard extends StatelessWidget {
               children: [
                 Avatar(initials: guard.initials, size: 54, color: guard.isSupervisor ? const Color(0xFF8B9CFF) : const Color(0xFF7DD3FC)),
                 const SizedBox(height: 10),
-                Text(guard.name, maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, height: 1.2)),
+                Flexible(
+                  child: Text(guard.name, maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, height: 1.2)),
+                ),
                 const SizedBox(height: 4),
                 if (guard.isSupervisor)
                   Text(s.t('lock.supervisor'), style: const TextStyle(color: Color(0xFFA5B4FC), fontSize: 12, fontWeight: FontWeight.w600))
@@ -321,34 +358,42 @@ class _PinPanelState extends State<PinPanel> {
     setState(() => _pin = _pin.substring(0, _pin.length - 1));
   }
 
-  int get _wait => _attempts.waitSeconds(widget.guard.id);
+  int get _wait => context.read<DeviceSession>().pinAttempts.waitSeconds(widget.guard.id);
+
+  void _startCountdown() {
+    _tick?.cancel();
+    _tick = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted || _wait == 0) t.cancel();
+      if (mounted) setState(() {});
+    });
+  }
 
   Future<void> _submit() async {
     final s = S.of(context);
     if (_pin.length < 4 || _checking) return;
+    final session = context.read<DeviceSession>();
+    final nav = Navigator.of(context);
     setState(() => _checking = true);
-    final ok = await PinVerifier.verify(_pin, widget.guard.pinHash!);
+    final res = await session.unlockWithPin(widget.guard, _pin);
     if (!mounted) return;
-    if (ok) {
-      _attempts.success(widget.guard.id);
-      if (Navigator.of(context).canPop()) Navigator.of(context).pop();
-      await context.read<DeviceSession>().unlock(widget.guard);
+    if (res.status == UnlockStatus.unlocked) {
+      if (nav.canPop()) nav.pop();
       return;
     }
     await HapticFeedback.vibrate();
-    final left = _attempts.fail(widget.guard.id);
+    if (!mounted) return;
     setState(() {
       _checking = false;
       _pin = '';
-      _error = left > 0 ? s.t('lock.wrongPin', {'n': left}) : null;
+      _error = switch (res.status) {
+        UnlockStatus.wrongPin => s.t('lock.wrongPin', {'n': res.attemptsLeft}),
+        UnlockStatus.notAllowed => s.t('sec.notAllowed'),
+        UnlockStatus.pinNotSet => s.t('sec.pinNotSet'),
+        UnlockStatus.rosterStale => s.t('sec.rosterStale'),
+        _ => null,
+      };
     });
-    if (left == 0) {
-      _tick?.cancel();
-      _tick = Timer.periodic(const Duration(seconds: 1), (t) {
-        if (!mounted || _wait == 0) t.cancel();
-        if (mounted) setState(() {});
-      });
-    }
+    if (res.status == UnlockStatus.locked) _startCountdown();
   }
 
   @override
@@ -359,6 +404,7 @@ class _PinPanelState extends State<PinPanel> {
     if (!g.hasPin) {
       return _PanelFrame(guard: g, onCancel: widget.onCancel, child: Text(s.t('lock.noPin'), textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFFFCD34D), height: 1.45)));
     }
+    final stale = context.select<DeviceSession, bool>((x) => x.rosterStale);
     return _PanelFrame(
       guard: g,
       onCancel: widget.onCancel,
@@ -382,8 +428,8 @@ class _PinPanelState extends State<PinPanel> {
               ),
           ],
         ),
-        SizedBox(
-          height: 44,
+        ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44),
           child: Center(
             child: _checking
                 ? Row(mainAxisSize: MainAxisSize.min, children: [
@@ -392,7 +438,7 @@ class _PinPanelState extends State<PinPanel> {
                     Text(s.t('lock.checking'), style: const TextStyle(color: Colors.white70)),
                   ])
                 : Text(
-                    wait > 0 ? s.t('lock.tooMany', {'s': wait}) : (_error ?? ''),
+                    wait > 0 ? s.t('lock.tooMany', {'s': wait}) : (_error ?? (stale ? s.t('sec.rosterStale') : '')),
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: Color(0xFFFCA5A5), fontWeight: FontWeight.w500),
                   ),
@@ -417,15 +463,23 @@ class _PanelFrame extends StatelessWidget {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
       child: Column(children: [
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
+        Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+          TextButton.icon(
             style: TextButton.styleFrom(foregroundColor: Colors.white60),
             onPressed: onCancel,
             icon: const Icon(Icons.arrow_back, size: 18),
             label: Text(s.t('common.back')),
           ),
-        ),
+          const Spacer(),
+          // MOB-3: an emergency never waits for a PIN — always in view.
+          Flexible(
+            flex: 3,
+            child: Text(s.t('sec.sosLockHint'), textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 12.5, height: 1.3)),
+          ),
+          const SizedBox(width: 10),
+          SosButton(compact: true, asGuard: guard),
+        ]),
+        const SizedBox(height: 4),
         Avatar(initials: guard.initials, size: 64, color: guard.isSupervisor ? const Color(0xFF8B9CFF) : const Color(0xFF7DD3FC)),
         const SizedBox(height: 12),
         Text(s.t('lock.hello', {'name': guard.name.split(' ').first}), style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w600)),

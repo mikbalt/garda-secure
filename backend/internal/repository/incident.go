@@ -279,13 +279,16 @@ func AcknowledgeSosAlert(ctx context.Context, db DBTX, id, actor string) (*model
 // ── Defect reports ───────────────────────────────────────────────────────────
 
 const defectColumns = `id, site_id, guard_id, device_id, defect_type, location, description,
-	photo_object_key, status, created_at, updated_at,
+	photo_object_key, status, created_at, updated_at, flags,
 	COALESCE((SELECT g.name FROM guards g WHERE g.id = defect_reports.guard_id), '')`
 
 func scanDefect(row pgx.Row) (model.DefectReport, error) {
 	var d model.DefectReport
 	err := row.Scan(&d.ID, &d.SiteID, &d.GuardID, &d.DeviceID, &d.DefectType, &d.Location,
-		&d.Description, &d.PhotoObjectKey, &d.Status, &d.CreatedAt, &d.UpdatedAt, &d.GuardName)
+		&d.Description, &d.PhotoObjectKey, &d.Status, &d.CreatedAt, &d.UpdatedAt, &d.Flags, &d.GuardName)
+	if d.Flags == nil {
+		d.Flags = []string{}
+	}
 	return d, err
 }
 
@@ -295,12 +298,12 @@ func scanDefectRows(rows pgx.Rows) (model.DefectReport, error) { return scanDefe
 func CreateDefect(ctx context.Context, db DBTX, d model.DefectReport, clientID *string) (*model.DefectReport, bool, error) {
 	out, err := scanDefect(db.QueryRow(ctx, `
 		INSERT INTO defect_reports
-		  (id, site_id, guard_id, device_id, defect_type, location, description, photo_object_key, created_at)
-		VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9)
+		  (id, site_id, guard_id, device_id, defect_type, location, description, photo_object_key, created_at, flags)
+		VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (id) DO NOTHING
 		RETURNING `+defectColumns,
 		clientID, d.SiteID, d.GuardID, d.DeviceID, d.DefectType, d.Location, d.Description,
-		d.PhotoObjectKey, d.CreatedAt))
+		d.PhotoObjectKey, d.CreatedAt, flagsOrEmpty(d.Flags)))
 	if err == nil {
 		return &out, true, nil
 	}
@@ -354,13 +357,16 @@ func UpdateDefectStatus(ctx context.Context, db DBTX, id, status string) (*model
 // ── Visitor logs ─────────────────────────────────────────────────────────────
 
 const visitorColumns = `id, site_id, guard_id, device_id, visitor_name, id_type, id_number, plate,
-	host_name, entry_at, exit_at, purpose, photo_object_key, created_at,
+	host_name, entry_at, exit_at, purpose, photo_object_key, created_at, flags,
 	COALESCE((SELECT g.name FROM guards g WHERE g.id = visitor_logs.guard_id), '')`
 
 func scanVisitor(row pgx.Row) (model.VisitorLog, error) {
 	var v model.VisitorLog
 	err := row.Scan(&v.ID, &v.SiteID, &v.GuardID, &v.DeviceID, &v.VisitorName, &v.IDType, &v.IDNumber,
-		&v.Plate, &v.HostName, &v.EntryAt, &v.ExitAt, &v.Purpose, &v.PhotoObjectKey, &v.CreatedAt, &v.GuardName)
+		&v.Plate, &v.HostName, &v.EntryAt, &v.ExitAt, &v.Purpose, &v.PhotoObjectKey, &v.CreatedAt, &v.Flags, &v.GuardName)
+	if v.Flags == nil {
+		v.Flags = []string{}
+	}
 	return v, err
 }
 
@@ -371,12 +377,12 @@ func CreateVisitor(ctx context.Context, db DBTX, v model.VisitorLog, clientID *s
 	out, err := scanVisitor(db.QueryRow(ctx, `
 		INSERT INTO visitor_logs
 		  (id, site_id, guard_id, device_id, visitor_name, id_type, id_number, plate, host_name,
-		   entry_at, exit_at, purpose, photo_object_key)
-		VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		   entry_at, exit_at, purpose, photo_object_key, flags)
+		VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		ON CONFLICT (id) DO NOTHING
 		RETURNING `+visitorColumns,
 		clientID, v.SiteID, v.GuardID, v.DeviceID, v.VisitorName, v.IDType, v.IDNumber, v.Plate,
-		v.HostName, v.EntryAt, v.ExitAt, v.Purpose, v.PhotoObjectKey))
+		v.HostName, v.EntryAt, v.ExitAt, v.Purpose, v.PhotoObjectKey, flagsOrEmpty(v.Flags)))
 	if err == nil {
 		return &out, true, nil
 	}

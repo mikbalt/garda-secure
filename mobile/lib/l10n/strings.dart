@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import 'strings_patrol.dart';
 import 'strings_reports.dart';
+import 'strings_security.dart';
 
 /// UI strings (Bahasa Indonesia default, English second). Keys are shared by
 /// both dictionaries; `test/strings_test.dart` checks they stay in sync.
@@ -15,6 +16,14 @@ class S {
     return S(code == 'en' ? 'en' : 'id');
   }
 
+  /// Translated explanation of a server (or local) error code, falling back
+  /// to the server's message, then to a generic error.
+  String error(String? code, [String? fallback]) {
+    final key = 'err.$code';
+    if (code != null && (allId.containsKey(key))) return t(key);
+    return (fallback == null || fallback.isEmpty) ? t('common.error') : fallback;
+  }
+
   /// Translate `key`, replacing `{name}` placeholders from `vars`.
   String t(String key, [Map<String, Object?> vars = const {}]) {
     var s = (lang == 'en' ? allEn[key] : allId[key]) ?? allId[key] ?? key;
@@ -23,8 +32,8 @@ class S {
   }
 
   /// Feature modules keep their strings in their own files (merged here).
-  static const allId = <String, String>{...id, ...patrolStringsId, ...reportStringsId};
-  static const allEn = <String, String>{...en, ...patrolStringsEn, ...reportStringsEn};
+  static const allId = <String, String>{...id, ...patrolStringsId, ...reportStringsId, ...securityStringsId};
+  static const allEn = <String, String>{...en, ...patrolStringsEn, ...reportStringsEn, ...securityStringsEn};
 
   static const id = <String, String>{
     'app.name': 'SecurePatrol',
@@ -75,7 +84,7 @@ class S {
     'pending.subtitle': 'Tablet "{name}" sudah terdaftar. Minta administrator menyetujuinya di web: Pengaturan → Tablet, lalu pilih lokasinya.',
     'pending.checking': 'Memeriksa setiap 10 detik…',
     'pending.revoked': 'Tablet ini dicabut',
-    'pending.revokedBody': 'Administrator telah mencabut akses tablet ini. Hubungi administrator untuk mengaktifkannya kembali.',
+    'pending.revokedBody': 'Administrator telah mencabut akses tablet ini. Daftar petugas dan rute sudah dihapus dari tablet. Hubungi administrator untuk mengaktifkannya kembali.',
     'pending.signOut': 'Keluarkan perangkat',
 
     // lock
@@ -248,7 +257,7 @@ class S {
     'dev.server': 'Server',
     'dev.org': 'Organisasi',
     'dev.signOut': 'Keluarkan perangkat',
-    'dev.signOutConfirm': 'Tablet akan keluar dari akun perangkat. Data yang belum terkirim akan hilang. Lanjutkan?',
+    'dev.signOutConfirm': 'Tablet akan keluar dari akun perangkat dan semua data lokal (daftar petugas, rute) dihapus. Lanjutkan?',
     'dev.language': 'Bahasa',
   };
 
@@ -300,7 +309,7 @@ class S {
     'pending.subtitle': 'Tablet "{name}" is registered. Ask the administrator to approve it on the web: Settings → Tablets, and choose its location.',
     'pending.checking': 'Checking every 10 seconds…',
     'pending.revoked': 'This tablet was revoked',
-    'pending.revokedBody': 'The administrator revoked this tablet. Contact them to activate it again.',
+    'pending.revokedBody': 'The administrator revoked this tablet. The guard list and routes were removed from it. Contact them to activate it again.',
     'pending.signOut': 'Sign out device',
 
     'lock.title': 'Who is on duty?',
@@ -465,7 +474,7 @@ class S {
     'dev.server': 'Server',
     'dev.org': 'Organisation',
     'dev.signOut': 'Sign out device',
-    'dev.signOutConfirm': 'The tablet will sign out of its device account. Unsent data will be lost. Continue?',
+    'dev.signOutConfirm': 'The tablet will sign out of its device account and all local data (guard list, routes) is removed. Continue?',
     'dev.language': 'Language',
   };
 }

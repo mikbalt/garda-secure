@@ -33,12 +33,15 @@ const (
 	EventIncidentFiled = "incident_filed"
 	EventDefectOpened  = "defect_opened"
 	EventMonthlyRecap  = "monthly_recap"
+	// EventPatrolNotStarted: a scheduled patrol was not started within its
+	// grace period (D-035).
+	EventPatrolNotStarted = "patrol_not_started"
 )
 
 // EventTypes lists every site event a rule can subscribe to.
 var EventTypes = []string{
 	EventSOS, EventSLAMissed, EventAbsent, EventLateClockIn,
-	EventIncidentHigh, EventIncidentFiled, EventDefectOpened, EventMonthlyRecap,
+	EventIncidentHigh, EventIncidentFiled, EventDefectOpened, EventMonthlyRecap, EventPatrolNotStarted,
 }
 
 // Install-wide operations events. Their recipients are ops_alert_rules, not
@@ -284,6 +287,8 @@ var templates = map[string]map[string]template{
 		EventDefectOpened: {"[Kerusakan] {defect} di {site}",
 			"Laporan kerusakan baru dari {guard} di {site}.\nJenis: {defect}\nLokasi: {location}\n{description}"},
 		EventMonthlyRecap: {"Rekap absensi bulanan {month} — {site}", "Rekap absensi {month} untuk {site}."},
+		EventPatrolNotStarted: {"[Patroli] {route} belum dimulai di {site}",
+			"Patroli terjadwal rute {route} di {site} seharusnya dimulai pukul {due} ({date}) dan belum dimulai hingga {grace_until}. Hubungi petugas jaga."},
 		EventOpsBackupFailed: {"[OPS] Backup database gagal",
 			"Backup {backup} ({trigger}) gagal pada {time}: {error}. Periksa log worker dan ruang penyimpanan MinIO."},
 		EventOpsBackupStale: {"[OPS] Tidak ada backup berhasil sejak {last}",
@@ -309,6 +314,8 @@ var templates = map[string]map[string]template{
 		EventDefectOpened: {"[Defect] {defect} at {site}",
 			"New defect report from {guard} at {site}.\nType: {defect}\nLocation: {location}\n{description}"},
 		EventMonthlyRecap: {"Monthly attendance recap {month} — {site}", "Attendance recap {month} for {site}."},
+		EventPatrolNotStarted: {"[Patrol] {route} not started at {site}",
+			"The scheduled patrol on route {route} at {site} was due at {due} ({date}) and had not been started by {grace_until}. Contact the guard on duty."},
 		EventOpsBackupFailed: {"[OPS] Database backup failed",
 			"Backup {backup} ({trigger}) failed at {time}: {error}. Check the worker logs and MinIO storage."},
 		EventOpsBackupStale: {"[OPS] No successful backup since {last}",

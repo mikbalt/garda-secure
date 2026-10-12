@@ -81,7 +81,8 @@ func TestPlausibilityFlags(t *testing.T) {
 	ok := e.expect(e.do("POST", "/api/v1/patrol/sessions/"+sess+"/scans", f.tablet, f.guard, map[string]any{
 		"qr_code": "GEO-1", "scanned_at": rfc(now.Add(-5 * time.Minute)), "gps_lat": -6.2001, "gps_lng": 106.8001,
 	}), 201, "scan at gate").obj()
-	if fl := flagsOf(ok["flags"]); len(fl) != 0 {
+	// Custom codes are legacy (unsigned) QR codes: qr_unsigned only.
+	if fl := flagsOf(ok["flags"]); !slices.Equal(fl, []string{"qr_unsigned"}) {
 		t.Fatalf("plausible scan flagged: %v", fl)
 	}
 	bad := e.expect(e.do("POST", "/api/v1/patrol/sessions/"+sess+"/scans", f.tablet, f.guard, map[string]any{
@@ -91,7 +92,7 @@ func TestPlausibilityFlags(t *testing.T) {
 		t.Fatalf("implausible scan flags = %v", fl)
 	}
 	prog := e.expect(e.do("GET", "/api/v1/patrol/sessions/"+sess, sup, "", nil), 200, "progress").obj()
-	if cp := prog["checkpoints"].([]any)[1].(map[string]any); len(flagsOf(cp["scan_flags"])) != 2 {
+	if cp := prog["checkpoints"].([]any)[1].(map[string]any); len(flagsOf(cp["scan_flags"])) != 3 {
 		t.Fatalf("progress lacks scan flags: %v", cp)
 	}
 	sums := e.expect(e.do("GET", "/api/v1/patrol/sessions?site_id="+f.site, sup, "", nil), 200, "sessions").list()

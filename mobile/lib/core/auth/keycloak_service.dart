@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 
 import '../../config/env.dart';
+import '../api/tls.dart';
 import '../storage/secure_store.dart';
 
 /// Thrown when the device must sign in again (offline token revoked/expired).
@@ -18,7 +19,7 @@ class AuthExpired implements Exception {
 class LoginFailure implements Exception {
   const LoginFailure(this.reason, [this.detail]);
 
-  /// `bad_credentials`, `not_device`, `unreachable` or `server`.
+  /// `bad_credentials`, `not_device`, `unreachable`, `insecure` or `server`.
   final String reason;
   final String? detail;
   @override
@@ -30,13 +31,14 @@ class LoginFailure implements Exception {
 /// token**, so it stays signed in across restarts until an admin revokes it.
 class KeycloakService {
   KeycloakService(this._store, {Dio? dio})
-      : _dio = dio ?? Dio(BaseOptions(connectTimeout: const Duration(seconds: 15), receiveTimeout: const Duration(seconds: 20)));
+      : _dio = dio ?? TrustStore.dio(BaseOptions(connectTimeout: const Duration(seconds: 15), receiveTimeout: const Duration(seconds: 20)));
 
   final SecureStore _store;
   final Dio _dio;
   Future<String>? _refreshing;
 
   Future<void> login(ServerConfig cfg, String username, String password) async {
+    if (!TrustStore.isAllowed(cfg.tokenEndpoint)) throw const LoginFailure('insecure');
     final Response<dynamic> res;
     try {
       res = await _dio.post<dynamic>(
@@ -84,6 +86,7 @@ class KeycloakService {
   Future<String> _refresh(ServerConfig cfg) async {
     final refresh = await _store.read(SecureKeys.refreshToken);
     if (refresh == null) throw const AuthExpired();
+    TrustStore.checkUrl(cfg.tokenEndpoint);
     final Response<dynamic> res;
     try {
       res = await _dio.post<dynamic>(
@@ -107,6 +110,33 @@ class KeycloakService {
 
   Future<bool> get hasSession async => (await _store.read(SecureKeys.refreshToken)) != null;
 
+  /// `preferred_username` of the signed-in device account, if known.
+  Future<String?> get deviceUsername async => claimsOf(await _store.read(SecureKeys.accessToken) ?? '')['preferred_username'] as String?;
+
+  /// Checks the device account's password online (MOB-2: protected actions
+  /// on the tablet). The tokens of this check are discarded. Returns false
+  /// for wrong credentials or another account; throws [LoginFailure]
+  /// (`unreachable`) when Keycloak cannot be reached.
+  Future<bool> verifyDevicePassword(ServerConfig cfg, String username, String password) async {
+    if (!TrustStore.isAllowed(cfg.tokenEndpoint)) throw const LoginFailure('insecure');
+    final current = claimsOf(await _store.read(SecureKeys.accessToken) ?? '')['sub'];
+    final Response<dynamic> res;
+    try {
+      res = await _dio.post<dynamic>(
+        cfg.tokenEndpoint,
+        data: {'grant_type': 'password', 'client_id': cfg.clientId, 'username': username.trim(), 'password': password, 'scope': 'openid'},
+        options: Options(contentType: Headers.formUrlEncodedContentType, validateStatus: (_) => true),
+      );
+    } on DioException catch (e) {
+      throw LoginFailure('unreachable', e.message);
+    }
+    if (res.statusCode != 200 || res.data is! Map) return false;
+    final access = (res.data as Map)['access_token'] as String? ?? '';
+    if (!rolesOf(access).contains('device')) return false;
+    // Must be this tablet's own account when we know it.
+    return current == null || claimsOf(access)['sub'] == current;
+  }
+
   Future<void> signOut() async {
     await _store.write(SecureKeys.accessToken, null);
     await _store.write(SecureKeys.accessExpiry, null);
@@ -119,6 +149,17 @@ class KeycloakService {
     await _store.write(SecureKeys.accessExpiry, DateTime.now().add(Duration(seconds: expiresIn)).toIso8601String());
     final refresh = data['refresh_token'] as String?;
     if (refresh != null) await _store.write(SecureKeys.refreshToken, refresh);
+  }
+
+  /// Claims of a JWT (unverified; for display and local checks only).
+  static Map<String, dynamic> claimsOf(String jwt) {
+    final parts = jwt.split('.');
+    if (parts.length < 2) return const {};
+    try {
+      return (jsonDecode(utf8.decode(base64Url.decode(base64Url.normalize(parts[1])))) as Map).cast<String, dynamic>();
+    } catch (_) {
+      return const {};
+    }
   }
 
   /// Realm roles in an access token (flat `roles` claim or `realm_access.roles`).

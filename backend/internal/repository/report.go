@@ -21,8 +21,13 @@ type SessionSummaryRow struct {
 	TotalCheckpoints int        `json:"total_checkpoints"`
 	ScannedCount     int        `json:"scanned_count"`
 	SLABreaches      int        `json:"sla_breaches"`
-	FlaggedScans     int        `json:"flagged_scans"` // scans with plausibility flags
+	FlaggedScans     int        `json:"flagged_scans"` // scans with plausibility flags (qr_unsigned alone does not count)
 	CompletionPct    float64    `json:"completion_pct"`
+	Flags            []string   `json:"flags"` // session flags, e.g. guard_unverified
+	// Scheduled patrol this session satisfied (D-035), if any.
+	ExpectationID *string    `json:"expectation_id"`
+	DueAt         *time.Time `json:"due_at"`
+	LateStart     bool       `json:"late_start"`
 }
 
 // SessionSummaries returns the patrol sessions of a site started in [from, to).
@@ -37,10 +42,13 @@ func SessionSummaries(ctx context.Context, db DBTX, siteID string, from, to time
 		           AND cs.checkpoint_id IN (SELECT cp->>'id'
 		                FROM jsonb_array_elements(COALESCE(ps.route_snapshot, r.checkpoints)) cp)) AS scanned,
 		       (SELECT COUNT(*) FROM sla_breaches b WHERE b.session_id = ps.id) AS breaches,
-		       (SELECT COUNT(*) FROM checkpoint_scans cs WHERE cs.session_id = ps.id AND cardinality(cs.flags) > 0) AS flagged
+		       (SELECT COUNT(*) FROM checkpoint_scans cs WHERE cs.session_id = ps.id
+		         AND cardinality(array_remove(cs.flags, 'qr_unsigned')) > 0) AS flagged,
+		       ps.flags, e.id::text, e.due_at, COALESCE(e.late_start, false)
 		FROM patrol_sessions ps
 		JOIN routes r ON r.id = ps.route_id
 		JOIN guards g ON g.id = ps.guard_id
+		LEFT JOIN patrol_expectations e ON e.session_id = ps.id
 		WHERE ps.site_id = $1 AND ps.started_at >= $2 AND ps.started_at < $3
 		ORDER BY ps.started_at DESC`, siteID, from, to)
 	if err != nil {
@@ -49,7 +57,11 @@ func SessionSummaries(ctx context.Context, db DBTX, siteID string, from, to time
 	return collect(rows, func(r pgx.Rows) (SessionSummaryRow, error) {
 		var s SessionSummaryRow
 		err := r.Scan(&s.SessionID, &s.RouteID, &s.RouteName, &s.GuardID, &s.GuardName, &s.StartedAt,
-			&s.EndedAt, &s.Status, &s.TotalCheckpoints, &s.ScannedCount, &s.SLABreaches, &s.FlaggedScans)
+			&s.EndedAt, &s.Status, &s.TotalCheckpoints, &s.ScannedCount, &s.SLABreaches, &s.FlaggedScans,
+			&s.Flags, &s.ExpectationID, &s.DueAt, &s.LateStart)
+		if s.Flags == nil {
+			s.Flags = []string{}
+		}
 		if s.TotalCheckpoints > 0 {
 			s.CompletionPct = round1(float64(s.ScannedCount) / float64(s.TotalCheckpoints) * 100)
 		}
@@ -133,6 +145,10 @@ type GuardKPIRow struct {
 	PatrolCompletePct float64 `json:"patrol_completion_pct"`
 	IncidentsFiled    int     `json:"incidents_filed"`
 	SLABreaches       int     `json:"sla_breaches"`
+	// Scheduled patrols started by the guard's sessions and the share of
+	// them started within the grace period (null = none, D-035).
+	ScheduledPatrols      int      `json:"scheduled_patrols"`
+	ScheduleCompliancePct *float64 `json:"schedule_compliance_pct"`
 }
 
 // GuardKPIs computes per-guard KPIs for a site over [from, to).
@@ -164,6 +180,10 @@ func GuardKPIs(ctx context.Context, db DBTX, siteID string, from, to time.Time) 
 	if err != nil {
 		return nil, fmt.Errorf("GuardKPIs scan: %w", err)
 	}
+	sched, err := GuardScheduleStats(ctx, db, siteID, from, to)
+	if err != nil {
+		return nil, err
+	}
 
 	out := make([]GuardKPIRow, 0, len(recap))
 	for _, m := range recap {
@@ -176,6 +196,10 @@ func GuardKPIs(ctx context.Context, db DBTX, siteID string, from, to time.Time) 
 		}
 		k.IncidentsFiled = byGuard[m.GuardID].incidents
 		k.SLABreaches = byGuard[m.GuardID].breaches
+		if st := sched[m.GuardID]; st.Started > 0 {
+			pct := round1(float64(st.OnTime) / float64(st.Started) * 100)
+			k.ScheduledPatrols, k.ScheduleCompliancePct = st.Started, &pct
+		}
 		out = append(out, k)
 	}
 	return out, nil

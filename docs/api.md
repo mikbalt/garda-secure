@@ -27,7 +27,7 @@ sites of their realm (other realms' resources answer 404).
 
 **Tablet ("field") endpoints** additionally need the device to be approved and
 the header `X-Guard-ID: <guard uuid>` (guard who unlocked the tablet with their
-PIN). Create endpoints accept an optional client `id` (UUID) and event time; a
+PIN), optionally with `X-Guard-Token` (see *Guard verification*). Create endpoints accept an optional client `id` (UUID) and event time; a
 repeat with the same `id` by the **same site and guard** returns the stored row
 with **200** instead of 201. An `id` that already belongs to another site's,
 realm's or guard's record answers **409 `id_conflict`** (the record is not
@@ -45,12 +45,33 @@ a known `id` are never limited), and failed authentications per client IP
 
 **Plausibility flags.** Attendance records, checkpoint scans, incidents and SOS
 alerts carry `flags: []` (never null) and the server receipt time
-`received_at`. Values: `late_sync` (received > 10 min after the event time),
+`received_at`; patrol sessions, defects and visitor logs carry `flags: []`
+too. Values: `late_sync` (received > 10 min after the event time),
 `clock_ahead` (event time > 30 s ahead of the server), `backdated_on_time`
 (on-time clock-in received > 10 min late while the tablet was online after the
 claimed time — also sets `needs_review`), `gps_far` (scan GPS farther from the
 checkpoint than the site's `scan_radius_m`), `too_fast` (> 3 m/s from the
-previous scanned checkpoint). Flags never reject a record.
+previous scanned checkpoint), `guard_unverified` (made without a valid guard
+token, see below — on a clock-in it also sets `needs_review`; on a clock-out it
+is added to the record), `qr_invalid` (scan of a signed QR payload whose
+signature does not match the checkpoint's current code: forged, or printed
+before *regenerate-qr*), `qr_unsigned` (QR scan without a signed payload:
+legacy plain code, or `checkpoint_id` only). Flags never reject a record.
+
+**Guard verification (D-035).** When online, the tablet verifies the PIN with
+the server: `POST /device/guard-sessions {guard_id, pin}` → `{token,
+guard_id, expires_at}`. The token is a compact JWS (HS256) with claims `{sub:
+guard_id, dev: device_id, site: site_id, iat, exp}`, valid `GUARD_SESSION_TTL`
+(default 12 h). The tablet sends it with every request of that guard as
+`X-Guard-Token: <token>` (next to `X-Guard-ID`):
+
+| Header | Result |
+|---|---|
+| none | guard **unverified** — new records get `guard_unverified` |
+| signed by the server for this `X-Guard-ID`, this device and its site | **verified** for a record whose event time is ≤ `exp`, or when the token is still valid now. Expired tokens are accepted up to `GUARD_TOKEN_GRACE` (default 7 days = the offline window) so queued records made before the expiry stay verified; records made after the expiry are unverified (not rejected). Beyond the grace: unverified |
+| anything else (bad signature, malformed, other guard/device/site) | **403 `guard_token_invalid`** — resend the same item without the token (it is then stored unverified). `POST /sos` never rejects: a bad token just counts as unverified |
+
+The same check applies to every endpoint taking `X-Guard-ID` (GET too).
 
 Dates in query strings are site-local calendar dates `YYYY-MM-DD`; months `YYYY-MM`.
 Reports accept `format=csv` (UTF-8 with BOM, opens in Excel).
@@ -68,12 +89,13 @@ Reports accept `format=csv` (UTF-8 with BOM, opens in Excel).
 | POST | `/device/register` | `{name}` → device (`status: pending`) until an admin approves |
 | GET | `/device/me` | `{device, site?, config?}` — config = site settings incl. `idle_lock_minutes` |
 | GET | `/device/roster` | active device: `{site_id, guards:[{id,name,employee_id,role,pin_hash}], generated_at}` — bcrypt PIN hashes for offline unlock |
-| GET | `/device/routes` | active routes of the site (cache for offline QR scanning) |
+| GET | `/device/routes` | active routes of the site (offline cache): `[{id, site_id, name, active, created_at, checkpoints:[{id, name, qr_code, qr_signed, sla_minutes?, order_index, lat?, lng?}]}]` — signed checkpoints have `qr_code: null, qr_signed: true` (the tablet never learns valid payloads; it sends what it scans as `qr_payload`); legacy checkpoints `qr_code: "<text>", qr_signed: false` |
 | GET | `/device/shifts` | field: acting guard's shifts −1 day … +7 days |
-| GET | `/device/status` | field: `{server_time, config, guard, shift? (running or next), shift_attendance?, open_attendance?, session? (progress of the guard's running patrol)}` — call after unlock/restart |
+| GET | `/device/status` | field: `{server_time, config, guard, guard_verified (valid X-Guard-Token now), shift? (running or next), shift_attendance?, open_attendance?, session? (progress of the guard's running patrol; signed checkpoints have qr_code ""), patrols_due}` — call after unlock/restart. `patrols_due`: up to 5 scheduled patrols of the site not started yet, due within the next 24 h or overdue (up to 12 h): `[{route_id, route_name, due_at, grace_until, status: pending\|missed}]`, earliest first |
 | GET | `/device/sos` | active device: unacknowledged SOS alerts of the site (any tablet), for supervisors on duty |
+| POST | `/device/guard-sessions` | active device: `{guard_id, pin}` → 200 `{token, guard_id, expires_at}` (`Cache-Control: no-store`). 401 `{code: invalid_pin, attempts_left}`; 423 `{code: pin_locked, retry_after}` (seconds, also `Retry-After`) — 5 consecutive wrong PINs of a guard (counted on the server across tablets, reset on success or when an admin sets a PIN) lock the check for 15 min; the 5th wrong PIN already answers 423; 403 `guard_not_allowed` (unknown/inactive guard or other site); 409 `pin_not_set`; 400 `pin_required`; 429 `rate_limited` (`RATE_LIMIT_GUARD_SESSIONS_PER_MIN` per tablet, default 20). Every attempt is audited with the guard (`resource_type` `device.guard-sessions`, failures/locks with the lock state as `before`) |
 
-Denials: `403 {code: device_unregistered | device_pending | device_revoked | guard_unknown | guard_not_allowed}`, `400 {code: guard_required}`.
+Denials: `403 {code: device_unregistered | device_pending | device_revoked | guard_unknown | guard_not_allowed | guard_token_invalid}`, `400 {code: guard_required}`.
 
 ## Sites — `GET` web roles, writes `admin`
 
@@ -94,10 +116,10 @@ check). Responses always contain the full effective config.
 | Method | Path | Body / notes |
 |---|---|---|
 | GET | `/guards?site_id=` | without `site_id`: all guards of the realm's sites |
-| GET | `/guards/:id` | guard has `has_pin` |
+| GET | `/guards/:id` | guard has `has_pin`, `pin_locked_until?` (server PIN check locked) |
 | POST | `/guards` | `{name, employee_id?, site_id, role: guard\|supervisor, status: active\|inactive, keycloak_user_id?}` — `employee_id` is unique per client realm: 409 `employee_id_taken` |
 | PUT | `/guards/:id` | same (full replace) |
-| PUT | `/guards/:id/pin` | `{pin}` 4–6 digits; trivial PINs rejected |
+| PUT | `/guards/:id/pin` | `{pin}` 4–6 digits; trivial PINs rejected; clears a PIN lock |
 
 ## Devices — `admin`
 
@@ -134,15 +156,18 @@ check). Responses always contain the full effective config.
 
 | Method | Path | Roles | Body / notes |
 |---|---|---|---|
-| GET | `/patrol/routes?site_id=&active=true` | admin, supervisor, client | |
+| GET | `/patrol/routes?site_id=&active=true` | admin, supervisor, client | checkpoints `{id, name, qr_code, qr_signed, qr_version, sla_minutes?, order_index, lat?, lng?}` — `qr_code` is the text to print (signed: `SP1:<checkpoint id>:<sig>`) |
 | GET | `/patrol/routes/:id` | same | |
-| POST | `/patrol/routes` | admin | `{site_id, name, active?, checkpoints:[{id?, name, qr_code? (generated), sla_minutes? (null = no SLA), order_index, lat?, lng?}]}` — ≤ 500 checkpoints; `lat/lng` enable the `gps_far`/`too_fast` scan checks |
-| PUT | `/patrol/routes/:id` | admin | `{name, checkpoints, active?}` |
+| POST | `/patrol/routes` | admin | `{site_id, name, active?, checkpoints:[{id?, name, qr_code? , sla_minutes? (null = no SLA), order_index, lat?, lng?}]}` — ≤ 500 checkpoints; `lat/lng` enable the `gps_far`/`too_fast` scan checks. QR: without `qr_code` the server generates a **signed** code (`qr_signed: true`, `qr_version: 1`); a custom `qr_code` is a **legacy** (unsigned) code |
+| PUT | `/patrol/routes/:id` | admin | `{name, checkpoints, active?}` — a signed checkpoint (same `id`) keeps its code and version whatever `qr_code` is sent; a legacy one keeps the sent code, or becomes signed when `qr_code` is empty. `qr_signed`/`qr_version` in the body are ignored. Deactivating cancels the route's pending scheduled patrols; reactivating plans them again |
+| POST | `/patrol/routes/:id/regenerate-qr` | admin | → route. Every checkpoint gets a new signed code (`qr_version` + 1, legacy codes become signed); all previously printed codes of the route then scan as `qr_invalid` — reprint the sheet |
+| GET | `/patrol/routes/:id/schedules` | admin, supervisor | `{route_id, schedules:[{id, route_id, weekdays, start_time, end_time?, every_minutes, grace_minutes, active, created_at, updated_at}]}` |
+| PUT | `/patrol/routes/:id/schedules` | admin | `{schedules:[{weekdays [1=Mon…7=Sun], start_time "HH:MM", end_time? "HH:MM", every_minutes? (null = one patrol at start_time; 15–720), grace_minutes? (default 15, 0–180, ≤ every_minutes/2), active? (default true)}]}` (≤ 20, replaces the list; `[]` removes the schedule) → `{route_id, schedules, generated_expectations}`. Repeating windows: patrols due at start, start+every, … strictly before end; `end_time` ≤ `start_time` crosses midnight (equal = 24 h); weekdays = the day the window starts; site time zone. Errors 400: `invalid_weekdays`, `invalid_start_time`, `invalid_end_time`, `end_time_required`, `invalid_every`, `invalid_grace`, `grace_too_long`, `too_many_schedules` (with `field`). Future pending patrols are regenerated |
 | GET | `/patrol/live?site_id=` | admin, supervisor, client | `[{guard_name, progress}]` for running sessions — poll every 10 s |
-| GET | `/patrol/sessions?site_id=&from=&to=` | admin, supervisor, client | session summaries incl. `flagged_scans` |
-| GET | `/patrol/sessions/:id` | web or field | progress: `{session, route_name, checkpoints:[{…checkpoint, scanned_at?, method?, scan_flags?, due_at?, status: on_time\|late\|overdue\|missed\|pending}], total, scanned, completion_pct, next_index?}` |
-| POST | `/patrol/sessions` | field | `{id?, route_id, started_at?}` |
-| POST | `/patrol/sessions/:id/scans` | field | `{id?, checkpoint_id \| qr_code, method: qr\|manual, photo_object_key? (required for manual), scanned_at?, gps_lat?, gps_lng?}` → scan incl. `flags` (`gps_far`, `too_fast`, …) |
+| GET | `/patrol/sessions?site_id=&from=&to=` | admin, supervisor, client | session summaries (same rows as the patrol report) incl. `flagged_scans` (scans with a flag other than `qr_unsigned`), session `flags`, `expectation_id`, `due_at`, `late_start` |
+| GET | `/patrol/sessions/:id` | web or field | progress: `{session, route_name, checkpoints:[{…checkpoint, scanned_at?, method?, scan_flags?, due_at?, status: on_time\|late\|overdue\|missed\|pending}], total, scanned, completion_pct, next_index?}` — for tablets signed checkpoints have `qr_code: ""` |
+| POST | `/patrol/sessions` | field | `{id?, route_id, started_at?}` → session incl. `flags` (`guard_unverified`). Satisfies a scheduled patrol of the route by `started_at` (see *Patrol schedules*) |
+| POST | `/patrol/sessions/:id/scans` | field | `{id?, qr_payload? \| qr_code? \| checkpoint_id?, method: qr\|manual, photo_object_key? (required for manual), scanned_at?, gps_lat?, gps_lng?}` → scan incl. `flags`. `qr_payload` = the raw scanned text: a signed `SP1:<id>:<sig>` names the checkpoint (400 `unknown_checkpoint` if not on the session's route) and is verified against its current version — a mismatch is **accepted** but flagged `qr_invalid`; plain text is matched against legacy codes (`qr_unsigned`). `qr_code` (legacy, still accepted; an `SP1:` value is treated as `qr_payload`) → `qr_unsigned`; `checkpoint_id` with `method: qr` → `qr_unsigned`. Manual check-ins get no QR flag. Other flags: `gps_far`, `too_fast`, `late_sync`, `clock_ahead`, `guard_unverified` |
 | POST | `/patrol/sessions/:id/end` | field | `{ended_at?, abandoned?}` |
 
 ## Incidents, SOS, defects, visitors
@@ -202,10 +227,11 @@ SOS alerts, scans and attendance records include `flags` (and `received_at`).
 |---|---|---|
 | GET | `/dashboard/summary?site_id=` | web — `{shifts_today, attended_today, absent_today, active_patrols, open_incidents, sos_alerts_unacknowledged, open_defects, attendance_pending_review, weekly_attendance:[{date,present,late,absent}], incidents_by_severity}` |
 | GET | `/reports/attendance/daily?site_id=&date=` | web |
-| GET | `/reports/attendance/monthly?site_id=&month=` | web — rows `{guard_name, employee_id, scheduled_shifts, present, late, absent, early_out, pending, total_hours, patrol_sessions, patrol_completion_pct}` |
-| GET | `/reports/patrol/sessions?site_id=&from=&to=` | admin, supervisor, client |
+| GET | `/reports/attendance/monthly?site_id=&month=` | web — `{site_id, month, rows, patrol_compliance}`; rows `{guard_name, employee_id, scheduled_shifts, present, late, absent, early_out, pending, total_hours, patrol_sessions, patrol_completion_pct}`, `patrol_compliance` = the site's schedule compliance totals of the month (shape of `/reports/patrol-compliance` `totals`) |
+| GET | `/reports/patrol/sessions?site_id=&from=&to=` | admin, supervisor, client — `{site_id, rows:[{session_id, route_id, route_name, guard_id, guard_name, started_at, ended_at?, status, total_checkpoints, scanned_count, sla_breaches, flagged_scans, completion_pct, flags, expectation_id (null = not a scheduled patrol), due_at, late_start}]}`; CSV adds *Scheduled for* and *Late start* |
 | GET | `/reports/incidents?…same filters as /incidents` | admin, supervisor, client |
-| GET | `/reports/guards/kpi?site_id=&from=&to=` | admin, supervisor, hr — rows `{guard_name, attendance_rate_pct, on_time_rate_pct, patrol_completion_pct, incidents_filed, sla_breaches}` |
+| GET | `/reports/guards/kpi?site_id=&from=&to=` | admin, supervisor, hr — rows `{guard_name, attendance_rate_pct, on_time_rate_pct, patrol_completion_pct, incidents_filed, sla_breaches, scheduled_patrols, schedule_compliance_pct}` — `scheduled_patrols` = scheduled patrols due in the range that the guard's sessions satisfied, `schedule_compliance_pct` = share started within the grace period (null when 0; missed patrols are not attributable to a guard) |
+| GET | `/reports/patrol-compliance?site_id=&from=&to=` | admin, supervisor, client — `{site_id, from, to, rows:[{date (site-local, by due time), route_id, route_name, expected, started_on_time, late, missed, pending, compliance_pct}], totals:{expected, started_on_time, late, missed, pending, compliance_pct}}`; `compliance_pct` = on time / (on time + late + missed), null when nothing is decided yet; `expected` excludes cancelled patrols. ≤ 92 days, `format=csv` |
 
 ## Administration
 
@@ -246,7 +272,9 @@ others get 403 `platform_admin_required`):
 Event types: `sos`, `sla_missed`, `absent`, `late_clock_in`, `incident_high`,
 `defect_opened`, `monthly_recap` (sent from the 1st at 07:00 site time; if the
 worker was down it catches up until the 5th; e-mail gets an HTML table,
-WhatsApp a plain-text summary). `absent` covers shifts up to 3 days back
+WhatsApp a plain-text summary; both include the site's patrol schedule
+compliance when it has scheduled patrols), `patrol_not_started` (a scheduled
+patrol was not started within its grace period — see *Patrol schedules*). `absent` covers shifts up to 3 days back
 (older flags found after a worker outage are recorded but not notified after
 24 h). `sla_missed` is raised for late scans, for unscanned SLA checkpoints of
 a session that ended (also early or auto-abandoned), and for overdue
@@ -261,3 +289,26 @@ the channel settings): `ops_backup_failed` (a backup run failed),
 with no SOS rule), `ops_job_failing` (a scheduled job failed 5 times in a row;
 hourly). Retry schedules: SOS 10 s, 20 s, 30 s, then every 60 s for 30 min;
 other events 30 s, 2 min, 10 min, 30 min, then `failed`.
+
+## Patrol schedules (D-035)
+
+Routes get schedule windows (`PUT /patrol/routes/:id/schedules`). The worker
+materialises the scheduled patrols ("expectations") 48 h ahead (hourly,
+idempotent) in the site's time zone; changing the schedule replaces the
+pending future ones. Each patrol has `due_at` and `grace_until = due_at +
+grace`; status `pending | started | missed | cancelled`.
+
+* **Matching** (by the session's event time `started_at`, also for sessions
+  synced later from an offline tablet): a session of the route started in
+  `[due_at − grace, grace_until]` satisfies the nearest open patrol → `started`.
+  A session started after `grace_until` (and before the next patrol's window
+  opens, at most 12 h after `due_at`) satisfies the most recent missed/overdue
+  patrol → `started` with `late_start: true`. One session satisfies at most one
+  patrol.
+* **Not started:** every minute, patrols past `grace_until` without a session
+  become `missed` and `patrol_not_started` is staged (transactional outbox,
+  site rules; params `route`, `due`, `date`, `grace_until`, `grace`). An offline
+  tablet does not suppress it — a session synced later still flips the patrol
+  to `started`. Patrols found missed more than 24 h after their grace period
+  (worker outage) are recorded without a notification.
+* Deactivating a route cancels its pending patrols.

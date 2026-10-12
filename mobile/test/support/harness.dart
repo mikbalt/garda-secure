@@ -11,6 +11,7 @@ import 'package:securepatrol/core/auth/auth_provider.dart';
 import 'package:securepatrol/core/auth/keycloak_service.dart';
 import 'package:securepatrol/core/database/local_db.dart';
 import 'package:securepatrol/core/database/sync_service.dart';
+import 'package:securepatrol/core/services/clock.dart';
 import 'package:securepatrol/core/services/location_service.dart';
 import 'package:securepatrol/core/services/photo_service.dart';
 import 'package:securepatrol/core/storage/secure_store.dart';
@@ -19,31 +20,45 @@ import 'package:securepatrol/shared/models/models.dart';
 import 'package:securepatrol/theme/app_theme.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'fake_api.dart';
+
 /// Real app objects backed by an in-memory database, for widget tests and
-/// screenshots. Nothing talks to a network: the outbox is never started.
+/// screenshots. Nothing talks to a network: the API is a [FakeApi] (offline
+/// by default) and the outbox is never started.
 class Harness {
-  Harness._(this.db, this.session, this.outbox, this.actions);
+  Harness._(this.db, this.session, this.outbox, this.actions, this.api, this.store);
 
   final LocalDb db;
   final DeviceSession session;
   final Outbox outbox;
   final FieldActions actions;
+  final FakeApi api;
+  final MemorySecureStore store;
 
-  static Future<Harness> create() async {
+  static Future<Harness> create({FakeApi? api}) async {
     sqfliteFfiInit();
+    AppClock.reset();
     final db = await LocalDb.open(factory: databaseFactoryFfi, path: inMemoryDatabasePath);
     final store = MemorySecureStore();
-    final session = DeviceSession(store: store, auth: KeycloakService(store), db: db);
+    final fake = api ?? FakeApi.offline();
+    final session = DeviceSession(store: store, auth: KeycloakService(store), db: db, api: fake);
     session.config = const ServerConfig(serverUrl: 'https://patrol.test', realm: 'demo');
-    final outbox = Outbox(db, session.api, connectivity: const Stream<List<ConnectivityResult>>.empty());
+    final outbox = Outbox(
+      db,
+      fake,
+      connectivity: const Stream<List<ConnectivityResult>>.empty(),
+      onDeviceDenied: session.onDeviceDenied,
+      onGuardTokenInvalid: session.onGuardTokenInvalid,
+    );
     final actions = FieldActions(session: session, outbox: outbox, db: db, location: LocationService(), photos: PhotoService());
-    return Harness._(db, session, outbox, actions);
+    return Harness._(db, session, outbox, actions, fake, store);
   }
 
   /// A typical active tablet at "Gudang Cikarang".
   void seedSite({bool unlocked = true}) {
     session.device = const Device(id: 'dev-1', name: 'Tablet Pos Utama', status: DeviceStatusKind.active, siteId: 'site-1');
     session.site = const Site(id: 'site-1', name: 'Gudang Cikarang', address: 'Kawasan Industri Jababeka Blok C-12');
+    session.referenceSyncedAt = AppClock.now();
     session.roster = const [
       RosterGuard(id: 'g-1', name: 'Budi Santoso', employeeId: 'GS-0101', role: 'supervisor', pinHash: r'$2a$12$lFmYGucJNe.5H6xUWs6kiOPN2YrL89zSnPhr7fPwNpxA.G5zOIwc.'),
       RosterGuard(id: 'g-2', name: 'Agus Pratama', employeeId: 'GS-0102', pinHash: 'x'),
@@ -74,6 +89,7 @@ class Harness {
   }
 
   Future<void> dispose() async {
+    await outbox.process(); // let a background send finish before closing
     outbox.dispose();
     await db.db.close();
   }

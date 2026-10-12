@@ -164,7 +164,8 @@ func (h *Handler) createIncident(c *fiber.Ctx) error {
 		inc, isNew, err = repository.CreateIncident(c.Context(), tx, model.Incident{
 			SiteID: site.ID, GuardID: guard.ID, DeviceID: deviceID(c), Type: b.Type, Severity: b.Severity,
 			Description: nilIfEmpty(b.Description), Location: nilIfEmpty(b.Location),
-			PhotoObjectKeys: b.PhotoObjectKeys, OccurredAt: at, Flags: service.TimeFlags(at, service.Now()),
+			PhotoObjectKeys: b.PhotoObjectKeys, OccurredAt: at,
+			Flags: append(service.TimeFlags(at, service.Now()), service.GuardFlags(middleware.GetGuardAuth(c), at)...),
 		}, nilIfEmpty(b.ID))
 		if err != nil {
 			return nil, err
@@ -333,7 +334,7 @@ func (h *Handler) createSos(c *fiber.Ctx) error {
 		var err error
 		alert, isNew, err = repository.CreateSosAlert(c.Context(), tx, model.SosAlert{
 			GuardID: guard.ID, SiteID: site.ID, DeviceID: deviceID(c), FiredAt: at, GPSLat: b.GPSLat, GPSLng: b.GPSLng,
-			Flags: service.TimeFlags(at, service.Now()),
+			Flags: append(service.TimeFlags(at, service.Now()), service.GuardFlags(middleware.GetGuardAuth(c), at)...),
 		}, nilIfEmpty(b.ID))
 		if err != nil {
 			return nil, err
@@ -447,6 +448,7 @@ func (h *Handler) createDefect(c *fiber.Ctx) error {
 			SiteID: site.ID, GuardID: guard.ID, DeviceID: deviceID(c), DefectType: b.DefectType,
 			Location: nilIfEmpty(b.Location), Description: nilIfEmpty(b.Description),
 			PhotoObjectKey: nilIfEmpty(b.PhotoObjectKey), CreatedAt: at,
+			Flags: service.GuardFlags(middleware.GetGuardAuth(c), at),
 		}, nilIfEmpty(b.ID))
 		if err != nil {
 			return nil, err
@@ -571,7 +573,7 @@ func (h *Handler) createVisitor(c *fiber.Ctx) error {
 		SiteID: site.ID, GuardID: guard.ID, DeviceID: deviceID(c), VisitorName: b.VisitorName,
 		IDType: nilIfEmpty(b.IDType), IDNumber: idNumber, Plate: nilIfEmpty(b.Plate),
 		HostName: nilIfEmpty(b.HostName), EntryAt: &entry, Purpose: nilIfEmpty(b.Purpose),
-		PhotoObjectKey: nilIfEmpty(b.PhotoObjectKey),
+		PhotoObjectKey: nilIfEmpty(b.PhotoObjectKey), Flags: service.GuardFlags(middleware.GetGuardAuth(c), entry),
 	}, nilIfEmpty(b.ID))
 	if err != nil {
 		return h.fail(c, err)

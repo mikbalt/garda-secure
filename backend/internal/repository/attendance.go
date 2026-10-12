@@ -117,13 +117,15 @@ func ApplyClockInToAbsent(ctx context.Context, db DBTX, recordID string, p Clock
 	return &r, nil
 }
 
-// SetClockOut records the clock-out of an attendance record.
-func SetClockOut(ctx context.Context, db DBTX, id string, at time.Time, earlyOutMinutes int, lat, lng *float64) (*model.AttendanceRecord, error) {
+// SetClockOut records the clock-out of an attendance record; addFlag (e.g.
+// guard_unverified) is appended to the record's flags once.
+func SetClockOut(ctx context.Context, db DBTX, id string, at time.Time, earlyOutMinutes int, lat, lng *float64, addFlag string) (*model.AttendanceRecord, error) {
 	r, err := scanAttendance(db.QueryRow(ctx, `
 		UPDATE attendance_records
-		SET clock_out_at = $2, early_out_minutes = $3, clock_out_gps_lat = $4, clock_out_gps_lng = $5
+		SET clock_out_at = $2, early_out_minutes = $3, clock_out_gps_lat = $4, clock_out_gps_lng = $5,
+		    flags = CASE WHEN $6::text = '' OR $6::text = ANY(flags) THEN flags ELSE array_append(flags, $6::text) END
 		WHERE id = $1
-		RETURNING `+attendanceColumns, id, at, earlyOutMinutes, lat, lng))
+		RETURNING `+attendanceColumns, id, at, earlyOutMinutes, lat, lng, addFlag))
 	if err != nil {
 		return nil, mapNoRows(err)
 	}

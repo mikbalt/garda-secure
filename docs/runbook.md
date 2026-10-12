@@ -193,13 +193,112 @@ API image's `pg_dump` (`postgresql16-client`) must be upgraded with the server.
 
 1. In the site's realm create a user like `tablet-gudang-a-1`, set a strong password,
    assign realm role **`device`** (nothing else).
-2. Install the SecurePatrol CA on the tablet (§6), then log in once in the app with that
-   account; it registers itself and shows "waiting for approval".
+2. Install the app (APK from the CI release, signed with the release key; with a
+   private CA it must be a build that bundles `securepatrol-ca.crt`, see *Kiosk/MDM*
+   below), then log in once with that account; it registers itself and shows
+   "waiting for approval". The server address must be `https://`.
 3. Web app → *Settings → Devices*: approve the tablet and pick its site.
 4. Web app → *Guards*: make sure each guard is assigned to the site and has a PIN.
    The tablet syncs the roster and guards unlock it with their PIN (works offline).
 5. Lost/stolen tablet: *Settings → Devices → Revoke* (takes effect immediately), and
-   disable the Keycloak user.
+   disable the Keycloak user. On its next contact the tablet deletes the guard list
+   (PIN hashes), routes and guard tokens; unsent records stay until they are sent or
+   discarded. A tablet that has not synced its guard list for **7 days** refuses PIN
+   unlocks by itself (SOS still works).
+
+**Verified guards (D-035).** When the tablet is online, unlocking also checks the
+PIN on the server (`POST /device/guard-sessions`) and the tablet sends the returned
+guard token with every request. Records made without a valid token (offline unlock)
+are flagged `guard_unverified`; unverified clock-ins land in the attendance review
+queue. Five wrong PINs in a row lock that guard's server PIN check for 15 minutes
+(on every tablet); setting a new PIN in *Guards* unlocks immediately. Failed and
+locked attempts are in the audit log (`resource_type=device.guard-sessions`).
+
+**Checkpoint QR codes (D-035).** New checkpoints get signed codes
+(`SP1:<checkpoint>:<signature>`); the server verifies every scan and tablets never
+receive the codes, so a code cannot be scanned without the printed sticker. Old
+plain codes keep working but their scans are flagged `qr_unsigned`. To switch a
+route to signed codes — or after a sticker was copied or lost — use *Regenerate QR
+codes* on the route (`POST /patrol/routes/:id/regenerate-qr`) and **reprint the
+whole sheet**: every previously printed code of that route is then flagged
+`qr_invalid`. Changing `QR_SIGNING_SECRET` (or `SETTINGS_ENCRYPTION_KEY` while it
+is unset) invalidates all signed stickers of all routes — regenerate and reprint.
+
+**Patrol schedules (D-035).** Give a route schedule windows (e.g. day 08:00–16:00
+every 60 min, night 22:00–06:00 every 120 min, grace 15 min). The worker plans the
+patrols 48 h ahead; a patrol not started within its grace period raises
+`patrol_not_started` (add a notification rule for it) — also when the tablet is
+offline, because nobody may be patrolling. A session synced later still counts
+(late starts are marked `late_start`). *Reports → Patrol compliance* shows
+expected / on time / late / missed per route and day.
+
+**On the tablet (app behaviour an operator should know).**
+* *Protected actions:* *Sign out device*, *Change server* and *Remove from outbox*
+  need a supervisor PIN (a roster guard with role `supervisor`) or the tablet
+  account's password. Sign-out and server change are refused while records are still
+  queued — send them first (or have a supervisor remove them one by one).
+* *SOS without PIN:* on the lock screen a guard taps their name and holds **SOS**;
+  the alert is sent at once (flagged `guard_unverified`).
+* *Outbox:* items the server rejects are shown as "need attention" on the home
+  screen with the reason; items failing with server errors are parked after 50
+  attempts / 3 days so they cannot block the queue; a pending/revoked device pauses
+  sending without losing anything.
+* *Clock:* event times use the server's clock (offset from every response); the
+  home screen warns when the tablet clock is more than 2 minutes off. Times are
+  shown in the site's time zone.
+* *Local data* (guard list, routes, queued records) is encrypted with a key held in
+  the Android Keystore-backed secure storage; the app is excluded from Android
+  backups and device transfer, and blocks screenshots/recent-apps previews.
+* *Health beacon:* every 15 min the tablet posts app version, queue depth, failed
+  items, last sync, clock offset, repeated PIN failures and its last errors to
+  `POST /api/v1/device/telemetry` (the endpoint must exist on the server; until then
+  the tablet retries every 6 h).
+
+### Kiosk / MDM setup (dedicated device)
+
+A post tablet should run SecurePatrol and nothing else. Preferred: **Android
+Enterprise dedicated device** (a.k.a. COSU) through an EMM — e.g. Google Android
+Management API, Microsoft Intune "Android Enterprise dedicated devices", Samsung
+Knox Manage, Scalefusion, Hexnode, ManageEngine MDM. Steps:
+
+1. **Factory-reset and enrol** the tablet as *fully managed / dedicated* (QR code
+   or `afw#<emm>` at the welcome screen). Do not add a personal Google account.
+2. **Install the app** as a private/managed app: upload the release APK
+   (`securepatrol-tablet-<version>+<build>.apk` from the CI release, package
+   `id.co.securepatrol.tablet`) to the EMM; set it to install automatically and
+   **auto-update** (managed Google Play private app, or the EMM's own app
+   repository for APK updates). Updates keep the local data as long as the signing
+   key stays the same — keep the release keystore safe (CI secrets).
+   *Upgrading from the pre-hardening build (package `id.co.securepatrol.securepatrol`):
+   it is a different app; let its outbox empty first, then uninstall it.*
+3. **Lock-task (kiosk) mode:** single-app kiosk with SecurePatrol as the only
+   allowed app (Android Management API: `kioskCustomLauncherEnabled` off,
+   `applications[].installType: KIOSK`; Intune: *Single app, full screen*). Allow the
+   status bar only for system notifications if your EMM offers it; keep the camera
+   and location permissions **granted by policy** (`permissionGrants` /
+   *Auto grant*) so no dialog interrupts a guard.
+4. **Disable Settings access:** block *Settings*, the notification shade quick
+   settings, factory reset from the UI, USB debugging/developer options, installing
+   unknown apps, adding users/accounts, and safe-mode boot. Leave Wi-Fi configured
+   by policy (or a managed APN for SIM tablets) and screen timeout long.
+5. **Managed configuration / pre-set server:** the app does not read EMM managed
+   configurations (yet). Build the APK with the installation's defaults instead —
+   `flutter build apk --release --dart-define=SP_SERVER=https://patrol.example.co.id
+   --dart-define=SP_REALM=securepatrol-client1` (the first-run screen then only
+   needs *Continue*). One build per installation is normal anyway because of the CA.
+6. **Private CA:** copy `infra/nginx/certs/securepatrol-ca.crt` to
+   `mobile/assets/certs/securepatrol-ca.crt` before the build (git-ignored; in CI
+   write it from a secret). The app's HTTPS (Dart) ignores CAs installed in Android
+   settings, and release builds trust only system CAs at the Android level. Without
+   the file only public certificates (e.g. Let's Encrypt) work.
+7. **Time:** enable automatic date/time and time zone by policy.
+
+**No EMM (small sites): screen pinning fallback.** *Settings → Security → App
+pinning* (or *Pin windows*) → on, "Ask for PIN before unpinning" → on with a device
+PIN only the supervisor knows; open SecurePatrol → Overview → app icon → *Pin*.
+Also: remove other apps or hide them, disable developer options, set a device PIN
+(the app stays usable while pinned), and turn on auto date/time. This prevents
+casual use but is weaker than lock-task mode (anyone with the device PIN can unpin).
 
 ## 4. Notifications
 
@@ -360,9 +459,12 @@ to `SERVER_HOST` + localhost, so it cannot be used to impersonate other websites
 server certificate (`cert.pem`/`key.pem`, 825 days, SAN = `SERVER_HOST` + localhost).
 
 Install the CA once per device (file `nginx/certs/securepatrol-ca.crt`):
-* **Android tablets:** copy the file to the tablet → *Settings → Security → Encryption &
-  credentials → Install a certificate → CA certificate*. (The app must trust user CAs
-  for this host — mobile network-security config.)
+* **Android tablets:** the SecurePatrol app does **not** trust user-installed CAs
+  (Dart's TLS ignores the Android store, and user CAs would allow interception). Bundle
+  the CA into the APK instead: GitHub secret `SECUREPATROL_CA_PEM` = contents of
+  `securepatrol-ca.crt` (the release job writes it to `mobile/assets/certs/`), or copy it
+  there before a local build — see §3. Installing it in Android settings is only needed
+  for the tablet's browser.
 * **Windows:** double-click → *Install certificate → Local machine → Trusted Root
   Certification Authorities*.
 * **macOS:** Keychain Access → System → import → *Always trust*.
@@ -552,6 +654,11 @@ the disk; `DiskAlmostFull` fires at 85 %.
 | `RATE_LIMIT_DEVICE_WRITES_PER_MIN` | `600` | Writes per tablet per minute — high enough for an offline backlog |
 | `RATE_LIMIT_SOS_PER_MIN` | `5` | New SOS alerts per tablet per minute (retries are never limited) |
 | `RATE_LIMIT_AUTH_FAILURES_PER_MIN` | `30` | Failed logins/invalid tokens per client IP before 429 |
+| `RATE_LIMIT_GUARD_SESSIONS_PER_MIN` | `20` | Server PIN checks (`POST /device/guard-sessions`) per tablet per minute |
+| `GUARD_TOKEN_SECRET` | *(derived)* | HS256 key of guard tokens, ≥ 32 bytes. Unset = derived from `SETTINGS_ENCRYPTION_KEY` (HKDF). Changing it ends all guard sessions (guards unlock again online) |
+| `GUARD_SESSION_TTL` | `12h` | Lifetime of a guard token (5m–168h); the tablet re-verifies the PIN after it |
+| `GUARD_TOKEN_GRACE` | `168h` | How long after expiry a token still proves records made before its expiry (offline queue; = the 7-day sync window) |
+| `QR_SIGNING_SECRET` | *(derived)* | HMAC key of checkpoint QR codes, ≥ 32 bytes. Unset = derived from `SETTINGS_ENCRYPTION_KEY`. **Changing it invalidates every printed signed QR code** (regenerate + reprint) |
 
 nginx must pass the client address as `X-Real-IP $remote_addr` (it does in
 `infra/nginx`, §9); otherwise audit IPs and per-IP limits see nginx's address.
@@ -587,6 +694,10 @@ cannot be replaced once uploaded (the photos bucket is also versioned).
 | Off-site backup alert | `docker compose logs backup-offsite`; is the disk mounted? `make offsite-backup`. |
 | Tablet "device_pending" | Approve it in *Settings → Devices*. |
 | Tablet "guard_not_allowed" | Guard inactive or assigned to another site. |
+| Tablet "pin_locked" | Five wrong PINs: wait 15 min, or set a new PIN for the guard in *Guards*. |
+| Many `guard_unverified` records | Tablets unlock offline or the guard token is rejected: check the tablet's connectivity; after changing `GUARD_TOKEN_SECRET` guards must unlock online once. |
+| Scans flagged `qr_invalid` | Sticker printed before *Regenerate QR codes* (or a copied/forged code); reprint the route's QR sheet. `qr_unsigned` = route still uses old plain codes. |
+| `patrol_not_started` while patrols happen | The route's schedule window/grace does not match practice, or the tablet is offline (the alert is real until the session syncs). Check *Patrol compliance*. |
 | Admin gets 403 `platform_admin_required` on Settings → Channels/Backups | Assign the `platform-admin` role (§2) and check `PLATFORM_ADMIN_REALMS`. |
 | Everyone sees 403 after login | Token issued to an unexpected client: check `KEYCLOAK_WEB_CLIENT`/`KEYCLOAK_TABLET_CLIENT` match the Keycloak client IDs. |
 | Saving channels: `secret_required` | Re-enter the password/token when changing host/port/user or API URL/phone number ID. |

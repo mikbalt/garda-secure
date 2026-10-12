@@ -13,6 +13,7 @@ import '../../theme/app_theme.dart';
 import '../field_actions.dart';
 import 'patrol_widgets.dart';
 import 'progress.dart';
+import '../../core/services/clock.dart';
 
 /// Manual check-in (FR-PAT-03) when a QR code is damaged: pick the checkpoint
 /// and take a required photo. Returns the recorded checkpoint, or null.
@@ -50,7 +51,7 @@ class _ManualCheckInSheetState extends State<ManualCheckInSheet> {
   @override
   void initState() {
     super.initState();
-    _cp = widget.initial ?? _actions.patrol?.progress(DateTime.now().toUtc()).next?.checkpoint;
+    _cp = widget.initial ?? _actions.patrol?.progress(AppClock.now()).next?.checkpoint;
     // Started now so a fix is usually ready by the time the photo is taken.
     _fix = _actions.location.current(timeout: const Duration(seconds: 8)).catchError((Object _) => null);
   }
@@ -102,7 +103,7 @@ class _ManualCheckInSheetState extends State<ManualCheckInSheet> {
     final s = S.of(context);
     final tt = Theme.of(context).textTheme;
     final patrol = context.watch<FieldActions>().patrol;
-    final now = DateTime.now().toUtc();
+    final now = AppClock.now();
     final progress = patrol?.progress(now);
     final open = <(int, CheckpointState)>[
       if (progress != null)

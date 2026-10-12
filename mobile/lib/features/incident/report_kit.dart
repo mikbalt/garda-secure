@@ -7,6 +7,7 @@ import '../../core/services/photo_service.dart';
 import '../../l10n/strings.dart';
 import '../../shared/widgets/ui.dart';
 import '../../theme/app_theme.dart';
+import '../../core/services/clock.dart';
 
 /// Building blocks shared by the incident, defect and visitor forms.
 
@@ -85,7 +86,7 @@ class ReporterStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final session = context.watch<DeviceSession>();
-    final now = DateTime.now();
+    final now = AppClock.now();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -405,9 +406,9 @@ void showSaved(BuildContext context, String key) {
   showMessage(context, online ? s.t(key) : '${s.t(key)} ${s.t('att.queued')}');
 }
 
-/// Local wall-clock time as HH:mm.
+/// Site wall-clock time as HH:mm (MOB-9).
 String hhmm(DateTime t) {
-  final l = t.toLocal();
+  final l = AppClock.site(t);
   return '${l.hour.toString().padLeft(2, '0')}:${l.minute.toString().padLeft(2, '0')}';
 }
 

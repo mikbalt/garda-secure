@@ -11,6 +11,7 @@ import '../../l10n/strings.dart';
 import '../../shared/models/models.dart';
 import '../../theme/app_theme.dart';
 import '../field_actions.dart';
+import '../../core/services/clock.dart';
 
 /// What the scanner returns to the patrol screen.
 class ScanResult {
@@ -132,7 +133,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
   Widget build(BuildContext context) {
     final s = S.of(context);
     final p = context.watch<FieldActions>().patrol;
-    final next = p?.progress(DateTime.now().toUtc()).next?.checkpoint;
+    final next = p?.progress(AppClock.now()).next?.checkpoint;
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(

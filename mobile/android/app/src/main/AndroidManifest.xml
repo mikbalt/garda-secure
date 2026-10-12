@@ -7,9 +7,14 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
+    <!-- MOB-6: no cloud backup / device transfer of the local database, the
+         secure-storage key or photos (guard PINs hashes, PII, evidence). -->
     <application
         android:label="SecurePatrol"
         android:networkSecurityConfig="@xml/network_security_config"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

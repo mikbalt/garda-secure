@@ -14,6 +14,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/securepatrol/backend/internal/config"
+	"github.com/securepatrol/backend/internal/fieldauth"
 	"github.com/securepatrol/backend/internal/middleware"
 	"github.com/securepatrol/backend/internal/model"
 	"github.com/securepatrol/backend/internal/notification"
@@ -33,7 +34,9 @@ type Handler struct {
 	Cfg      *config.Config
 	Log      zerolog.Logger
 
-	limiter *middleware.Limiter // set by Mount
+	limiter     *middleware.Limiter    // set by Mount
+	guardTokens *fieldauth.GuardTokens // set by Mount (D-035)
+	qr          *fieldauth.QRSigner    // set by Mount (D-035)
 }
 
 // Role groups used in route registration.
@@ -50,10 +53,12 @@ var (
 func (h *Handler) Register(api fiber.Router) {
 	web := func(roles ...string) fiber.Handler { return middleware.RequireRoles(roles...) }
 	device := middleware.RequireActiveDevice()
-	field := []fiber.Handler{middleware.RequireGuard(h.DB)}
+	field := []fiber.Handler{middleware.RequireGuard(h.DB, h.guardTokens)}
+	// SOS is never rejected because of a bad guard token (D-035).
+	sosField := []fiber.Handler{middleware.RequireGuardLenient(h.DB, h.guardTokens)}
 	// webOrField admits web roles, or an active tablet acting for a guard.
 	webOrField := func(roles ...string) fiber.Handler {
-		return middleware.RequireRolesOrGuard(h.DB, roles...)
+		return middleware.RequireRolesOrGuard(h.DB, h.guardTokens, roles...)
 	}
 	isDevice := middleware.RequireRoles(middleware.RoleDevice)
 
@@ -70,6 +75,7 @@ func (h *Handler) Register(api fiber.Router) {
 	dev.Get("/shifts", append(field, h.deviceShifts)...)
 	dev.Get("/status", append(field, h.deviceStatus)...)
 	dev.Get("/sos", device, h.deviceSos)
+	dev.Post("/guard-sessions", device, h.createGuardSession)
 
 	sites := api.Group("/sites")
 	sites.Get("/", web(rolesWeb...), h.listSites)
@@ -118,6 +124,9 @@ func (h *Handler) Register(api fiber.Router) {
 	pat.Get("/routes/:id", web(rolesOpsCli...), h.getRoute)
 	pat.Post("/routes", web(rolesAdmin...), h.createRoute)
 	pat.Put("/routes/:id", web(rolesAdmin...), h.updateRoute)
+	pat.Post("/routes/:id/regenerate-qr", web(rolesAdmin...), h.regenerateQR)
+	pat.Get("/routes/:id/schedules", web(rolesOps...), h.getRouteSchedules)
+	pat.Put("/routes/:id/schedules", web(rolesAdmin...), h.putRouteSchedules)
 	pat.Get("/live", web(rolesOpsCli...), h.livePatrols)
 	pat.Get("/sessions", web(rolesOpsCli...), h.listSessions)
 	pat.Get("/sessions/:id", webOrField(rolesOpsCli...), h.getSession)
@@ -136,7 +145,7 @@ func (h *Handler) Register(api fiber.Router) {
 	sos := api.Group("/sos")
 	sos.Get("/", web(rolesOps...), h.listSos)
 	sos.Get("/active", web(rolesOps...), h.activeSos)
-	sos.Post("/", append(field, h.createSos)...)
+	sos.Post("/", append(sosField, h.createSos)...)
 	sos.Post("/:id/acknowledge", webOrField(rolesOps...), h.acknowledgeSos)
 
 	def := api.Group("/defects")
@@ -159,6 +168,7 @@ func (h *Handler) Register(api fiber.Router) {
 	rep.Get("/patrol/sessions", web(rolesOpsCli...), h.reportPatrolSessions)
 	rep.Get("/incidents", web(rolesOpsCli...), h.reportIncidents)
 	rep.Get("/guards/kpi", web(rolesStaff...), h.reportGuardKPI)
+	rep.Get("/patrol-compliance", web(rolesOpsCli...), h.reportPatrolCompliance)
 
 	api.Get("/dashboard/summary", web(rolesWeb...), h.dashboardSummary)
 

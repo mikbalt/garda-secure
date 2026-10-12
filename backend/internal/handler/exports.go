@@ -2,6 +2,7 @@ package handler
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -65,6 +66,8 @@ func (h *Handler) sendExport(c *fiber.Ctx, format, base string, t *export.Table)
 	c.Set(fiber.HeaderCacheControl, "no-store")
 	return c.Send(data)
 }
+
+func itoa(n int) string { return strconv.Itoa(n) }
 
 // siteNow is the generation time shown on exports (site-local).
 func siteNow(site *model.Site) time.Time { return service.Now().In(site.Location()) }

@@ -8,6 +8,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/securepatrol/backend/internal/config"
+	"github.com/securepatrol/backend/internal/fieldauth"
 	"github.com/securepatrol/backend/internal/middleware"
 )
 
@@ -83,6 +84,7 @@ func ErrorHandler(log zerolog.Logger) fiber.ErrorHandler {
 // audit log, then every route.
 func (h *Handler) Mount(app *fiber.App, v *middleware.Validator) {
 	h.limiter = middleware.NewLimiter(h.Redis, h.Log)
+	h.guardTokens, h.qr = FieldAuth(h.Cfg)
 	api := app.Group("/api/v1",
 		middleware.LimitAuthFailures(h.limiter, h.Cfg.RateLimitAuthFailures),
 		middleware.JWT(v),
@@ -92,4 +94,15 @@ func (h *Handler) Mount(app *fiber.App, v *middleware.Validator) {
 		middleware.Audit(h.DB),
 	)
 	h.Register(api)
+}
+
+// FieldAuth builds the guard-token issuer and the QR signer from the
+// configuration (D-035): explicit secrets, else keys derived from
+// SETTINGS_ENCRYPTION_KEY.
+func FieldAuth(cfg *config.Config) (*fieldauth.GuardTokens, *fieldauth.QRSigner) {
+	tokens := fieldauth.NewGuardTokens(
+		fieldauth.DeriveKey(cfg.GuardTokenSecret, cfg.SettingsEncryptionKey, fieldauth.GuardTokenInfo),
+		cfg.GuardSessionTTL, cfg.GuardTokenGrace)
+	qr := fieldauth.NewQRSigner(fieldauth.DeriveKey(cfg.QRSigningSecret, cfg.SettingsEncryptionKey, fieldauth.QRInfo))
+	return tokens, qr
 }

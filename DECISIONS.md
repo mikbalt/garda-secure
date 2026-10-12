@@ -330,3 +330,51 @@ in PRD §9 (OQ-x). New entries go at the bottom with the next free number.
   fully on-prem; no online map tiles.
 - **Clock window:** keep current behaviour (clock-in from start − window until
   shift end, late after start; clock-out until end + window). The PRD follows.
+
+### D-036 — Guard sessions (implements D-035 "both")
+- **Date:** 2026-10-12 · **Status:** Accepted
+- `POST /device/guard-sessions` checks the PIN on the server and returns a
+  12 h HS256 guard token bound to guard, device and site (`X-Guard-Token`).
+  5 wrong PINs lock the guard for 15 min, counted server-side across tablets;
+  every attempt is audited. Verification is by event time with a 7-day grace
+  for queued records; a bad token is 403 `guard_token_invalid` (never for SOS).
+  Records without proof are flagged `guard_unverified`; such clock-ins go to
+  review. Offline unlock with the local bcrypt PIN stays possible.
+
+### D-037 — Signed checkpoint QR codes
+- **Date:** 2026-10-12 · **Status:** Accepted
+- `SP1:<checkpoint_id>:<sig>` (HMAC, version stored in the checkpoint JSON).
+  Tablets never receive payloads. Custom codes remain legacy (`qr_unsigned`);
+  bad/outdated signatures are accepted but flagged `qr_invalid`.
+  `POST /patrol/routes/:id/regenerate-qr` = reprint; rotating
+  `QR_SIGNING_SECRET` invalidates every printed code.
+
+### D-038 — Patrol schedules
+- **Date:** 2026-10-12 · **Status:** Accepted
+- Schedule windows per route (weekdays, start/end, every N minutes, grace);
+  expectations materialised 48 h ahead; matched by session event time, one
+  session per expected patrol, late starts recorded within 12 h. Missed patrols
+  raise `patrol_not_started` even when the tablet is offline. Compliance = on
+  time / decided (`GET /reports/patrol-compliance`, KPI, monthly recap).
+
+### D-039 — Tablet app hardening (audit MOB-2..MOB-11)
+- **Date:** 2026-10-12 · **Status:** Accepted
+- App id `id.co.securepatrol.tablet` (installs as a new app: drain the old
+  app's outbox, then uninstall it). Release builds only with the release key
+  (`android/key.properties` from CI secrets); never debug-signed by accident.
+- Local data: field-level AES-256-GCM (key in secure storage) for every cached
+  value and outbox body/token — chosen over SQLCipher (no native build to verify
+  here); `allowBackup=false`, data-extraction rules exclude everything.
+- TLS: system CAs only; a private CA is bundled into the APK as a Flutter asset
+  (`SECUREPATROL_CA_PEM` secret in CI), because Dart's TLS ignores the Android
+  network-security config. `http://` servers refused outside debug builds.
+- Protected actions: device sign-out, server change and discarding outbox items
+  need a supervisor PIN or the device account password, and are refused while
+  items are queued. SOS works from the lock screen without a PIN (flagged
+  `guard_unverified`). Unlock is refused after 7 days without a roster sync.
+- Outbox: priority then local sequence; server-time offset applied to event
+  times; poison items parked after 50 attempts / 3 days; replayed "already
+  done" answers count as sent; device-level 403s pause the queue; 429 honours
+  Retry-After.
+- Health beacon every 15 min to `POST /device/telemetry` (backend endpoint to
+  be added); crashes kept in a local ring buffer.

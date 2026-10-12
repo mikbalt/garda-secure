@@ -6,6 +6,9 @@ abstract class SecureStore {
   Future<String?> read(String key);
   Future<void> write(String key, String? value);
   Future<void> clear();
+
+  /// Deletes every key starting with [prefix].
+  Future<void> deletePrefix(String prefix);
 }
 
 class DeviceSecureStore implements SecureStore {
@@ -21,6 +24,14 @@ class DeviceSecureStore implements SecureStore {
 
   @override
   Future<void> clear() => _s.deleteAll();
+
+  @override
+  Future<void> deletePrefix(String prefix) async {
+    final all = await _s.readAll();
+    for (final k in all.keys.where((k) => k.startsWith(prefix))) {
+      await _s.delete(key: k);
+    }
+  }
 }
 
 class MemorySecureStore implements SecureStore {
@@ -34,6 +45,9 @@ class MemorySecureStore implements SecureStore {
 
   @override
   Future<void> clear() async => data.clear();
+
+  @override
+  Future<void> deletePrefix(String prefix) async => data.removeWhere((k, _) => k.startsWith(prefix));
 }
 
 /// Keys used in the secure store.
@@ -43,4 +57,10 @@ class SecureKeys {
   static const accessToken = 'sp.access';
   static const accessExpiry = 'sp.access.exp';
   static const language = 'sp.lang';
+
+  /// AES key of the local database fields (MOB-6, [FieldCipher]).
+  static const dbKey = 'sp.dbkey';
+
+  /// Server-issued guard session token of one guard (D-035).
+  static String guardToken(String guardId) => 'sp.gt.$guardId';
 }
