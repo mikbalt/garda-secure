@@ -11,7 +11,7 @@ RUN npm run build
 
 # Production stage — configuration is injected at container start (see
 # docker-entrypoint.d/40-securepatrol-config.sh), not baked in at build time.
-FROM nginx:1.30-alpine
+FROM nginx:1.31-alpine
 
 # config.js is written to /tmp (tmpfs) so the container can run with a
 # read-only root filesystem; nginx.conf serves it from there.
