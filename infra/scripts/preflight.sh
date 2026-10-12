@@ -62,6 +62,13 @@ done
 if [ "${#SETTINGS_ENCRYPTION_KEY}" -lt 32 ] || printf '%s' "$SETTINGS_ENCRYPTION_KEY" | grep -q '[[:space:]]'; then
   fail "SETTINGS_ENCRYPTION_KEY must be >= 32 characters without spaces"
 fi
+# Optional field-identity keys (D-035): empty = derived from SETTINGS_ENCRYPTION_KEY.
+for v in GUARD_TOKEN_SECRET QR_SIGNING_SECRET; do
+  eval "val=\${$v:-}"
+  if [ -n "$val" ] && [ "${#val}" -lt 32 ]; then
+    fail "$v must be >= 32 characters (or empty to derive it)"
+  fi
+done
 ok "secret format checked"
 
 # Names embedded in URLs / SQL.

@@ -201,6 +201,32 @@ API image's `pg_dump` (`postgresql16-client`) must be upgraded with the server.
 5. Lost/stolen tablet: *Settings → Devices → Revoke* (takes effect immediately), and
    disable the Keycloak user.
 
+**Verified guards (D-035).** When the tablet is online, unlocking also checks the
+PIN on the server (`POST /device/guard-sessions`) and the tablet sends the returned
+guard token with every request. Records made without a valid token (offline unlock)
+are flagged `guard_unverified`; unverified clock-ins land in the attendance review
+queue. Five wrong PINs in a row lock that guard's server PIN check for 15 minutes
+(on every tablet); setting a new PIN in *Guards* unlocks immediately. Failed and
+locked attempts are in the audit log (`resource_type=device.guard-sessions`).
+
+**Checkpoint QR codes (D-035).** New checkpoints get signed codes
+(`SP1:<checkpoint>:<signature>`); the server verifies every scan and tablets never
+receive the codes, so a code cannot be scanned without the printed sticker. Old
+plain codes keep working but their scans are flagged `qr_unsigned`. To switch a
+route to signed codes — or after a sticker was copied or lost — use *Regenerate QR
+codes* on the route (`POST /patrol/routes/:id/regenerate-qr`) and **reprint the
+whole sheet**: every previously printed code of that route is then flagged
+`qr_invalid`. Changing `QR_SIGNING_SECRET` (or `SETTINGS_ENCRYPTION_KEY` while it
+is unset) invalidates all signed stickers of all routes — regenerate and reprint.
+
+**Patrol schedules (D-035).** Give a route schedule windows (e.g. day 08:00–16:00
+every 60 min, night 22:00–06:00 every 120 min, grace 15 min). The worker plans the
+patrols 48 h ahead; a patrol not started within its grace period raises
+`patrol_not_started` (add a notification rule for it) — also when the tablet is
+offline, because nobody may be patrolling. A session synced later still counts
+(late starts are marked `late_start`). *Reports → Patrol compliance* shows
+expected / on time / late / missed per route and day.
+
 ## 4. Notifications
 
 *Settings → Channels* (`platform-admin` only): SMTP and WhatsApp credentials
@@ -552,6 +578,11 @@ the disk; `DiskAlmostFull` fires at 85 %.
 | `RATE_LIMIT_DEVICE_WRITES_PER_MIN` | `600` | Writes per tablet per minute — high enough for an offline backlog |
 | `RATE_LIMIT_SOS_PER_MIN` | `5` | New SOS alerts per tablet per minute (retries are never limited) |
 | `RATE_LIMIT_AUTH_FAILURES_PER_MIN` | `30` | Failed logins/invalid tokens per client IP before 429 |
+| `RATE_LIMIT_GUARD_SESSIONS_PER_MIN` | `20` | Server PIN checks (`POST /device/guard-sessions`) per tablet per minute |
+| `GUARD_TOKEN_SECRET` | *(derived)* | HS256 key of guard tokens, ≥ 32 bytes. Unset = derived from `SETTINGS_ENCRYPTION_KEY` (HKDF). Changing it ends all guard sessions (guards unlock again online) |
+| `GUARD_SESSION_TTL` | `12h` | Lifetime of a guard token (5m–168h); the tablet re-verifies the PIN after it |
+| `GUARD_TOKEN_GRACE` | `168h` | How long after expiry a token still proves records made before its expiry (offline queue; = the 7-day sync window) |
+| `QR_SIGNING_SECRET` | *(derived)* | HMAC key of checkpoint QR codes, ≥ 32 bytes. Unset = derived from `SETTINGS_ENCRYPTION_KEY`. **Changing it invalidates every printed signed QR code** (regenerate + reprint) |
 
 nginx must pass the client address as `X-Real-IP $remote_addr` (it does in
 `infra/nginx`, §9); otherwise audit IPs and per-IP limits see nginx's address.
@@ -587,6 +618,10 @@ cannot be replaced once uploaded (the photos bucket is also versioned).
 | Off-site backup alert | `docker compose logs backup-offsite`; is the disk mounted? `make offsite-backup`. |
 | Tablet "device_pending" | Approve it in *Settings → Devices*. |
 | Tablet "guard_not_allowed" | Guard inactive or assigned to another site. |
+| Tablet "pin_locked" | Five wrong PINs: wait 15 min, or set a new PIN for the guard in *Guards*. |
+| Many `guard_unverified` records | Tablets unlock offline or the guard token is rejected: check the tablet's connectivity; after changing `GUARD_TOKEN_SECRET` guards must unlock online once. |
+| Scans flagged `qr_invalid` | Sticker printed before *Regenerate QR codes* (or a copied/forged code); reprint the route's QR sheet. `qr_unsigned` = route still uses old plain codes. |
+| `patrol_not_started` while patrols happen | The route's schedule window/grace does not match practice, or the tablet is offline (the alert is real until the session syncs). Check *Patrol compliance*. |
 | Admin gets 403 `platform_admin_required` on Settings → Channels/Backups | Assign the `platform-admin` role (§2) and check `PLATFORM_ADMIN_REALMS`. |
 | Everyone sees 403 after login | Token issued to an unexpected client: check `KEYCLOAK_WEB_CLIENT`/`KEYCLOAK_TABLET_CLIENT` match the Keycloak client IDs. |
 | Saving channels: `secret_required` | Re-enter the password/token when changing host/port/user or API URL/phone number ID. |
