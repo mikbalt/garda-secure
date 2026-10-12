@@ -378,3 +378,18 @@ in PRD §9 (OQ-x). New entries go at the bottom with the next free number.
   Retry-After.
 - Health beacon every 15 min to `POST /device/telemetry` (backend endpoint to
   be added); crashes kept in a local ring buffer.
+
+### D-040 — Web hardening conventions (audit WEB-*)
+- **Date:** 2026-10-12 · **Status:** Accepted
+- Settings split: Channels, Backups, Ops alerts and Ops log are visible to
+  `platform-admin` only; realm admins see an explanation.
+- App idle logout after `IDLE_LOGOUT_MINUTES` (default 30, 0 = off) of no
+  keyboard/pointer input; polling never counts as activity.
+- SOS banner covers every site the user may see (`GET /sos/active`, falling
+  back to per-site polling), with sound, title flash and optional desktop
+  notifications.
+- Demo mode refuses to start when the runtime config points at a real API or
+  Keycloak unless `DEMO_FORCE=true`.
+- Tests: Vitest unit tests + Playwright smoke with axe (serious/critical fail)
+  in demo mode for every role at 1280 px and 390 px; the e2e server sends the
+  production CSP, so CSP violations fail CI.

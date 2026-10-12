@@ -10,7 +10,6 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 | Task | Agent | Since | Notes |
 |---|---|---|---|
 | Wave 2 backend — PRD gaps: user management via Keycloak admin API + per-site client scoping, incident_filed, amended values in reports, override history, xlsx, route snapshots, channel registry, site floor plans, retention job, realm-wide SOS | `muhamhad-pc1/claude-be-features` | 2026-10-12 | branch `agent/muhamhad-pc1/be-features`; migration 007 |
-| Wave 2 web — hardening (WEB-*) + UIs for ops alerts, audit log, platform-admin, flags | `muhamhad-pc1/claude-web` | 2026-10-12 | branch `agent/muhamhad-pc1/web-hardening` |
 
 ## Migration numbers
 
@@ -52,12 +51,12 @@ Backend
 - [ ] Retention/cleanup for old backups in MinIO (lifecycle rule)
 
 Web
+- [ ] Tailwind 4 migration (dev-only `npm audit` findings in tailwind 3 build deps)
 - [ ] Manual UI pass against a running stack (all roles, both languages)
 - [ ] Promote page-local kits to `components/ui`: Avatar/PersonCell, FilterChips/ChipGroup, Segmented, PeriodStepper/DateRangeFilter, ConfirmDialog, Switch, Stat tiles, LiveIndicator (see `pages/guards/PeopleKit.tsx`, `pages/patrol/kit.tsx`, `pages/reports/ReportKit.tsx`, `pages/settings/kit.tsx`)
 - [ ] `Table`: optional row-click prop (Patrol history uses its own table markup)
 - [ ] Attendance "Perlu ditinjau" chip counts only the selected day while the tab counts all days — align or label
 - [ ] Device dialog: "set back to pending" action
-- [ ] Web unit tests (no test runner yet — add Vitest)
 - [ ] Live patrol map (needs checkpoint lat/lng in routes)
 
 Infra / Ops
@@ -89,3 +88,4 @@ Mobile (D-024) — open audit items, see docs/audit-2026-10.md
 | Hardening wave 1 — infra/ops/CI: SERVER_HOST + private CA + preflight, healthchecks, nginx (DNS, headers, CSP, rate limits, admin allow-list, :9443), Silo, enforced staff OTP, least privilege, monitoring/alerting, restic off-site backups, deploy/restore scripts, SHA-pinned CI, Trivy, e2e stack job, GHCR CD (D-034) | `muhamhad-pc1/claude-infra` | 2026-10-12 | merge e906804, 05e9cf1 |
 | Wave 2 backend — server-verified guard sessions, signed checkpoint QR, patrol schedules + `patrol_not_started` + compliance report (D-036..D-038) | `muhamhad-pc1/claude-be-field` | 2026-10-12 | merge agent/muhamhad-pc1/be-field |
 | Wave 2 mobile — hardening MOB-2..MOB-11 (protected sign-out, lock-screen SOS, server time offset, outbox failure handling, encrypted local data, release signing + new app id, bundled CA, site time zone, EXIF strip) + guard-session and signed-QR client; 63 tests (D-039) | `muhamhad-pc1/claude-mobile` | 2026-10-12 | merge d916d4f |
+| Wave 2 web — WEB-1..10: deps (0 high), CSP-clean build, realm-wide SOS banner + sound, idle logout, a11y (axe clean), all error codes EN/ID, per-route error boundary, safe URLs, lazy charts, demo guard; UIs for platform-admin settings, ops alerts/log, audit log, plausibility flags; 100 unit + 82 e2e tests (D-040) | `muhamhad-pc1/claude-web` | 2026-10-12 | merge 9feb63b |
