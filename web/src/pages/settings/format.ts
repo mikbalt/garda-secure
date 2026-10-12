@@ -1,4 +1,11 @@
+import { DELIVERY_REASONS } from '../../i18n/errors'
 import { localeOf, type Lang } from '../../lib/time'
+
+/** `last_error` of a delivery: translated when it is a known reason code, else the raw text for the operator. */
+export function deliveryErrorText(raw: string, lang: Lang): string {
+  const known = DELIVERY_REASONS[raw.trim()]
+  return known ? known[lang] : raw
+}
 
 /** "2 menit lalu" / "2 minutes ago" for an ISO timestamp (now = Date.now()). */
 export function relativeTime(iso: string | undefined | null, lang: Lang, now = Date.now()): string {

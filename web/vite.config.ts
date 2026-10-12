@@ -13,7 +13,7 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          react: ['react', 'react-dom', 'react-router-dom', '@tanstack/react-query'],
+          react: ['react', 'react-dom', 'react-router', 'react-router-dom', '@tanstack/react-query'],
           charts: ['recharts'],
           vendor: ['axios', 'keycloak-js', 'lucide-react', 'qrcode'],
         },

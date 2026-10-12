@@ -1,4 +1,18 @@
-import { CalendarRange, Clock4, Mail, MessageCircle, ShieldAlert, Siren, TimerOff, UserX, Wrench, type LucideIcon } from 'lucide-react'
+import {
+  CalendarRange,
+  Clock4,
+  DatabaseBackup,
+  HardDriveDownload,
+  Mail,
+  MessageCircle,
+  ServerCrash,
+  ShieldAlert,
+  Siren,
+  TimerOff,
+  UserX,
+  Wrench,
+  type LucideIcon,
+} from 'lucide-react'
 import type { Key } from '../../i18n/context'
 import type { Channel, ChannelSettings } from '../../types'
 import type { TintTone } from './kit'
@@ -14,7 +28,20 @@ export interface EventMeta {
 }
 
 /** Display order and plain-language meaning of each notification event. */
-export const EVENT_ORDER = ['sos', 'incident_high', 'absent', 'late_clock_in', 'sla_missed', 'defect_opened', 'monthly_recap']
+export const EVENT_ORDER = [
+  'sos',
+  'incident_high',
+  'absent',
+  'late_clock_in',
+  'sla_missed',
+  'defect_opened',
+  'monthly_recap',
+  // install-wide ops alerts (platform-admin)
+  'ops_sos_undelivered',
+  'ops_backup_failed',
+  'ops_backup_stale',
+  'ops_job_failing',
+]
 
 export const EVENT_META: Record<string, EventMeta> = {
   sos: { icon: Siren, tone: 'red', title: 'adm.ev.sos', desc: 'adm.ev.sosDesc' },
@@ -24,6 +51,10 @@ export const EVENT_META: Record<string, EventMeta> = {
   sla_missed: { icon: TimerOff, tone: 'orange', title: 'adm.ev.sla', desc: 'adm.ev.slaDesc' },
   defect_opened: { icon: Wrench, tone: 'amber', title: 'adm.ev.defect', desc: 'adm.ev.defectDesc' },
   monthly_recap: { icon: CalendarRange, tone: 'blue', title: 'adm.ev.recap', desc: 'adm.ev.recapDesc' },
+  ops_sos_undelivered: { icon: Siren, tone: 'red', title: 'plat.ev.sosUndelivered', desc: 'plat.ev.sosUndeliveredDesc' },
+  ops_backup_failed: { icon: DatabaseBackup, tone: 'red', title: 'plat.ev.backupFailed', desc: 'plat.ev.backupFailedDesc' },
+  ops_backup_stale: { icon: HardDriveDownload, tone: 'amber', title: 'plat.ev.backupStale', desc: 'plat.ev.backupStaleDesc' },
+  ops_job_failing: { icon: ServerCrash, tone: 'orange', title: 'plat.ev.jobFailing', desc: 'plat.ev.jobFailingDesc' },
 }
 
 export function sortEvents(types: string[]): string[] {

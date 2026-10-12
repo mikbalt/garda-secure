@@ -20,6 +20,8 @@ export interface SiteConfig {
   absent_after_minutes: number
   idle_lock_minutes: number
   language: 'id' | 'en'
+  /** GPS plausibility radius for scans (0 disables `gps_far`). */
+  scan_radius_m?: number
 }
 
 export interface Site {
@@ -148,6 +150,8 @@ export interface DailyAttendanceRow {
   needs_review: boolean
   override_reason?: string
   selfie_object_key?: string
+  /** Plausibility flags of the clock-in (docs/api.md). */
+  flags?: string[]
 }
 
 export interface DailyAttendance {
@@ -180,6 +184,9 @@ export interface AttendanceRecord {
   reviewed_by?: string
   reviewed_at?: string
   created_at: string
+  /** Server receipt time of the clock-in. */
+  received_at?: string
+  flags?: string[]
 }
 
 // ── Patrol ───────────────────────────────────────────────────────────────────
@@ -242,6 +249,8 @@ export interface CheckpointProgress extends Checkpoint {
   scanned_by?: string
   due_at?: string
   status: CheckpointStatus
+  /** Plausibility flags of the scan (gps_far, too_fast, …). */
+  scan_flags?: string[]
 }
 
 export interface SessionProgress {
@@ -272,6 +281,8 @@ export interface SessionSummary {
   scanned_count: number
   sla_breaches: number
   completion_pct: number
+  /** Scans with plausibility flags. */
+  flagged_scans?: number
 }
 
 // ── Incidents, SOS, defects, visitors ────────────────────────────────────────
@@ -295,6 +306,8 @@ export interface Incident {
   occurred_at: string
   created_at: string
   updated_at: string
+  received_at?: string
+  flags?: string[]
 }
 
 export interface IncidentAmendment {
@@ -333,6 +346,7 @@ export interface SosAlert {
   gps_lng?: number
   acknowledged_by?: string
   acknowledged_at?: string
+  flags?: string[]
 }
 
 export interface DefectReport {
@@ -484,4 +498,50 @@ export interface Backup {
   created_at: string
   started_at?: string
   finished_at?: string
+  /** Keycloak database dump of the same run (when configured). */
+  keycloak_object_key?: string
+  keycloak_size_bytes?: number
+}
+
+/** Install-wide operations alert recipient (platform-admin, D-027). */
+export interface OpsRule {
+  id: string
+  event_type: string
+  channel: Channel
+  recipient: string
+  enabled: boolean
+  created_by?: string
+  created_at: string
+}
+
+/** One row of GET /audit (append-only audit log of the realm). */
+export interface AuditRow {
+  id: string
+  user_id: string
+  realm?: string
+  actor?: string
+  guard_id?: string
+  roles: string[]
+  action: string
+  method?: string
+  route?: string
+  resource_type?: string
+  resource_id?: string
+  params?: Record<string, unknown>
+  request_id?: string
+  /** Redacted JSON body of the request (staff writes). */
+  summary?: unknown
+  before?: unknown
+  after?: unknown
+  ip: string
+  user_agent: string
+  status_code: number
+  created_at: string
+}
+
+export interface AuditPage {
+  rows: AuditRow[]
+  limit: number
+  offset: number
+  has_more: boolean
 }

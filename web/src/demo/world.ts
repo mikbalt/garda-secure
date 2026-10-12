@@ -5,6 +5,7 @@
  */
 import type {
   AttendanceRecord,
+  AuditRow,
   Backup,
   ChannelSettings,
   DefectReport,
@@ -14,6 +15,7 @@ import type {
   IncidentAmendment,
   NotificationLogEntry,
   NotificationRule,
+  OpsRule,
   PatrolRoute,
   PatrolSession,
   Shift,
@@ -30,6 +32,7 @@ export interface Scan {
   guard_id: string
   scanned_at: string
   method: 'qr' | 'manual'
+  flags?: string[]
 }
 
 export interface World {
@@ -51,6 +54,11 @@ export interface World {
   log: NotificationLogEntry[]
   backups: Backup[]
   channels: ChannelSettings
+  /** Install-wide ops alerts (platform-admin). */
+  opsRules: OpsRule[]
+  opsLog: NotificationLogEntry[]
+  /** Audit log of the demo realm, newest last. */
+  audit: AuditRow[]
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -100,7 +108,7 @@ export function emptyWorld(): World {
   return {
     sites: [], guards: [], devices: [], templates: [], shifts: [], attendance: [], routes: [], sessions: [],
     scans: [], incidents: [], amendments: [], sos: [], defects: [], visitors: [], rules: [], log: [], backups: [],
-    channels: structuredClone(emptyChannels),
+    channels: structuredClone(emptyChannels), opsRules: [], opsLog: [], audit: [],
   }
 }
 
@@ -206,14 +214,25 @@ export function seedWorld(): World {
   if (review) {
     review.needs_review = true
     review.review_note = 'Clock-in synced after the shift was auto-flagged absent'
+    review.flags = ['late_sync']
   }
+  // Plausibility flags (docs/api.md): a back-dated "on time" clock-in goes to review too.
+  const present = w.attendance.filter((a) => a.status === 'present' && a.clock_in_at)
+  const backdated = present[present.length - 3]
+  if (backdated) {
+    backdated.flags = ['backdated_on_time', 'late_sync']
+    backdated.needs_review = true
+    backdated.received_at = iso(minutes(new Date(backdated.clock_in_at!), 47))
+  }
+  const ahead = present[present.length - 6]
+  if (ahead) ahead.flags = ['clock_ahead']
 
   function record(shift: Shift, status: AttendanceRecord['status'], inAt?: Date, outAt?: Date): AttendanceRecord {
     return {
       id: uid(), shift_id: shift.id, guard_id: shift.guard_id, site_id: shift.site_id, status,
       clock_in_at: inAt && iso(inAt), clock_out_at: outAt && iso(outAt), late_minutes: 0, early_out_minutes: 0,
       selfie_object_key: inAt ? `sites/${shift.site_id}/selfie/${uid()}.jpg` : undefined,
-      needs_review: false, created_at: iso(inAt ?? new Date(shift.start_time)),
+      needs_review: false, created_at: iso(inAt ?? new Date(shift.start_time)), received_at: inAt && iso(inAt), flags: [],
     }
   }
 
@@ -233,7 +252,7 @@ export function seedWorld(): World {
   }
   w.routes.push(routeA, routeA2, routeB)
 
-  const addSession = (route: PatrolRoute, guard: Guard, startedMinAgo: number, scanned: number[], ended: boolean) => {
+  const addSession = (route: PatrolRoute, guard: Guard, startedMinAgo: number, scanned: number[], ended: boolean, flags: Record<number, string[]> = {}) => {
     const start = minutes(now, -startedMinAgo)
     const s: PatrolSession = {
       id: uid(), route_id: route.id, site_id: route.site_id, guard_id: guard.id, started_at: iso(start),
@@ -242,12 +261,12 @@ export function seedWorld(): World {
     }
     w.sessions.push(s)
     scanned.forEach((m, i) => {
-      w.scans.push({ id: uid(), session_id: s.id, checkpoint_id: route.checkpoints[i].id, guard_id: guard.id, scanned_at: iso(minutes(start, m)), method: i === 2 ? 'manual' : 'qr' })
+      w.scans.push({ id: uid(), session_id: s.id, checkpoint_id: route.checkpoints[i].id, guard_id: guard.id, scanned_at: iso(minutes(start, m)), method: i === 2 ? 'manual' : 'qr', flags: flags[i] ?? [] })
     })
   }
   addSession(routeA, A[1], 34, [6, 19, 31], false) // running, on track
-  addSession(routeB, B[1], 41, [8, 30], false) // running, one overdue
-  addSession(routeA, A[0], 300, [7, 20, 33, 41, 55, 70], true)
+  addSession(routeB, B[1], 41, [8, 30], false, { 1: ['gps_far'] }) // running, one overdue
+  addSession(routeA, A[0], 300, [7, 20, 33, 41, 55, 70], true, { 4: ['too_fast'] })
   addSession(routeA2, A[4], 600, [10, 28, 45], true)
   addSession(routeB, B[0], 1500, [9, 22, 30, 44], true)
 
@@ -257,21 +276,22 @@ export function seedWorld(): World {
     const i: Incident = {
       id: uid(), site_id: site.id, guard_id: g.id, guard_name: g.name, type, severity, description, location, status,
       photo_object_keys: Array.from({ length: photos }, () => `sites/${site.id}/incident/${uid()}.jpg`),
-      occurred_at: at, created_at: at, updated_at: at,
+      occurred_at: at, created_at: at, updated_at: at, received_at: at, flags: [],
     }
     w.incidents.push(i)
     return i
   }
   inc(siteA, A[2], 'trespassing', 'high', 1.5, 'open', 'Dua orang tidak dikenal terlihat di area pagar belakang, kabur saat didekati.', 'Pagar Belakang', 2)
-  inc(siteA, A[1], 'theft', 'critical', 26, 'in_progress', 'Satu palet kabel tembaga hilang dari Gudang Bahan Baku. Segel pintu rusak.', 'Gudang Bahan Baku', 3)
+  inc(siteA, A[1], 'theft', 'critical', 26, 'in_progress', 'Satu palet kabel tembaga hilang dari Gudang Bahan Baku. Segel pintu rusak.', 'Gudang Bahan Baku', 3).flags = ['late_sync']
   inc(siteA, A[5], 'medical', 'medium', 50, 'resolved', 'Operator forklift pingsan karena kelelahan, sudah ditangani klinik.', 'Dock Bongkar Muat')
   inc(siteB, B[2], 'fire_hazard', 'medium', 5, 'open', 'Stop kontak terbakar di pantry lantai 3, sudah dicabut.', 'Pantry Lt. 3')
   inc(siteB, B[1], 'other', 'low', 72, 'resolved', 'Lampu tangga darurat mati.', 'Tangga Darurat', 0)
 
   // SOS: one live, one acknowledged.
   w.sos.push(
-    { id: uid(), guard_id: A[3].id, guard_name: A[3].name, site_id: siteA.id, fired_at: iso(minutes(now, -3)), received_at: iso(minutes(now, -3)), gps_lat: -6.2944, gps_lng: 107.1531 },
-    { id: uid(), guard_id: B[3].id, guard_name: B[3].name, site_id: siteB.id, fired_at: iso(minutes(now, -60 * 30)), received_at: iso(minutes(now, -60 * 30)), gps_lat: -6.2253, gps_lng: 106.8099, acknowledged_by: 'demo/supervisor', acknowledged_at: iso(minutes(now, -60 * 30 + 2)) },
+    { id: uid(), guard_id: A[3].id, guard_name: A[3].name, site_id: siteA.id, fired_at: iso(minutes(now, -3)), received_at: iso(minutes(now, -3)), gps_lat: -6.2944, gps_lng: 107.1531, flags: [] },
+    { id: uid(), guard_id: B[2].id, guard_name: B[2].name, site_id: siteB.id, fired_at: iso(minutes(now, -12)), received_at: iso(minutes(now, -1)), flags: ['late_sync'] },
+    { id: uid(), guard_id: B[3].id, guard_name: B[3].name, site_id: siteB.id, fired_at: iso(minutes(now, -60 * 30)), received_at: iso(minutes(now, -60 * 30)), gps_lat: -6.2253, gps_lng: 106.8099, acknowledged_by: 'demo/supervisor', acknowledged_at: iso(minutes(now, -60 * 30 + 2)), flags: [] },
   )
 
   // Defects and visitors.
@@ -305,10 +325,58 @@ export function seedWorld(): World {
   logEntry('absent', 'email', 'hr@logistiknusantara.co.id', '[Absen] Dedi Kurniawan tidak hadir di Gudang Cikarang', 'failed', 400, 'SMTP is not configured')
 
   w.backups.push(
-    { id: uid(), object_key: 'postgres/securepatrol-daily.dump', size_bytes: 18_400_000, status: 'succeeded', trigger: 'scheduled', created_at: iso(wib(0, 2)), started_at: iso(wib(0, 2)), finished_at: iso(minutes(wib(0, 2), 1)) },
+    { id: uid(), object_key: 'postgres/securepatrol-daily.dump', size_bytes: 18_400_000, status: 'succeeded', trigger: 'scheduled', created_at: iso(wib(0, 2)), started_at: iso(wib(0, 2)), finished_at: iso(minutes(wib(0, 2), 1)), keycloak_object_key: 'postgres/keycloak-daily.dump', keycloak_size_bytes: 2_300_000 },
     { id: uid(), object_key: 'postgres/securepatrol-prev.dump', size_bytes: 18_100_000, status: 'succeeded', trigger: 'scheduled', created_at: iso(wib(-1, 2)), started_at: iso(wib(-1, 2)), finished_at: iso(minutes(wib(-1, 2), 1)) },
   )
   w.channels.whatsapp = { api_url: 'https://graph.facebook.com/v18.0', token: '********', phone_number_id: '109876543210', template_name: 'securepatrol_alert', template_lang: 'id' }
+
+  // Install-wide ops alerts (platform-admin).
+  w.opsRules.push(
+    { id: uid(), event_type: 'ops_backup_failed', channel: 'email', recipient: 'noc@operator.example', enabled: true, created_by: 'demo/platform-admin', created_at: created },
+    { id: uid(), event_type: 'ops_sos_undelivered', channel: 'whatsapp', recipient: '6281100002222', enabled: true, created_by: 'demo/platform-admin', created_at: created },
+    { id: uid(), event_type: 'ops_backup_stale', channel: 'email', recipient: 'noc@operator.example', enabled: false, created_by: 'demo/platform-admin', created_at: created },
+  )
+  w.opsLog.push(
+    { id: uid(), event_type: 'ops_backup_failed', channel: 'email', recipient: 'noc@operator.example', subject: '[Ops] Backup failed', body: 'pg_dump exited with status 1', status: 'failed', attempts: 5, last_error: 'timeout', created_at: iso(minutes(now, -60 * 26)) },
+    { id: uid(), event_type: 'ops_sos_undelivered', channel: 'whatsapp', recipient: '6281100002222', subject: '[Ops] SOS not delivered', body: 'Site has no SOS rule', status: 'sent', attempts: 1, created_at: iso(minutes(now, -60 * 50)), sent_at: iso(minutes(now, -60 * 50 + 1)) },
+  )
+
+  // Audit log (GET /audit).
+  const audit = (minAgo: number, actor: string, roles: string[], method: string, route: string, resourceType: string, resourceId: string | undefined, extra: Partial<AuditRow> = {}) =>
+    w.audit.push({
+      id: uid(), user_id: `demo/${actor}`, realm: 'demo', actor, roles, action: `${method} ${route}`, method, route, resource_type: resourceType, resource_id: resourceId,
+      ip: '10.0.0.24', user_agent: 'Mozilla/5.0 (Windows NT 10.0) Chrome/141', status_code: method === 'POST' ? 201 : 200, created_at: iso(minutes(now, -minAgo)), request_id: uid().slice(-12), ...extra,
+    })
+  const g = A[7]
+  audit(60 * 30, 'admin.rina', ['admin'], 'PUT', '/api/v1/guards/:id', 'guards', g.id, {
+    params: { id: g.id },
+    before: { name: g.name, employee_id: 'GS-0180', status: 'inactive', role: 'guard', site_id: siteA.id },
+    after: { name: g.name, employee_id: g.employee_id, status: 'active', role: 'guard', site_id: siteA.id },
+    summary: { name: g.name, employee_id: g.employee_id, status: 'active', role: 'guard', site_id: siteA.id },
+  })
+  audit(60 * 20, 'admin.rina', ['admin'], 'PUT', '/api/v1/guards/:id/pin', 'guards', g.id, { params: { id: g.id }, summary: { pin: '[redacted]' } })
+  const absent = w.attendance.find((a) => a.status === 'absent')
+  if (absent) {
+    audit(60 * 6, 'admin.rina', ['admin'], 'PUT', '/api/v1/attendance/shifts/:shiftId/override', 'attendance.shifts', absent.shift_id, {
+      params: { shiftId: absent.shift_id },
+      before: { status: 'absent', clock_in_at: null, override_reason: null },
+      after: { status: 'present', clock_in_at: absent.created_at, override_reason: 'Tablet rusak, absen manual di buku' },
+      summary: { status: 'present', reason: 'Tablet rusak, absen manual di buku' },
+    })
+  }
+  audit(180, 'spv.budi', ['supervisor'], 'POST', '/api/v1/incidents/:id/amendments', 'incidents', w.incidents[1]?.id, {
+    params: { id: w.incidents[1]?.id },
+    summary: { changes: { severity: 'critical' }, reason: 'Nilai kerugian dikonfirmasi gudang' },
+  })
+  audit(45, 'admin.rina', ['admin'], 'POST', '/api/v1/notifications/rules', 'notifications.rules', undefined, { summary: { site_id: siteA.id, event_type: 'sla_missed', channel: 'email', recipient: 'ops@logistiknusantara.co.id' } })
+  audit(20, 'admin.rina', ['admin'], 'PUT', '/api/v1/devices/:id', 'devices', w.devices[0].id, {
+    params: { id: w.devices[0].id },
+    before: { status: 'pending', site_id: null },
+    after: { status: 'active', site_id: siteA.id },
+    summary: { status: 'active', site_id: siteA.id },
+  })
+  audit(8, 'spv.budi', ['supervisor'], 'POST', '/api/v1/sos/:id/acknowledge', 'sos', w.sos[2]?.id, { params: { id: w.sos[2]?.id } })
+  audit(4, 'admin.rina', ['admin'], 'PUT', '/api/v1/guards/:id', 'guards', A[2].id, { params: { id: A[2].id }, status_code: 409, summary: { name: A[2].name, employee_id: 'GS-0101' } })
 
   return w
 }

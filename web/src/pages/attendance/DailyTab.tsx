@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { CalendarClock, CalendarX2, Flag, Info, Moon, Pencil, Search } from 'lucide-react'
 import { apiGet } from '../../api/client'
 import { DownloadCsvButton } from '../../components/DownloadButton'
+import { FlagBadges } from '../../components/FlagBadges'
 import { TableSkeleton } from '../../components/LoadingSkeleton'
 import { MediaPhotoButton } from '../../components/MediaPhoto'
 import { Badge, StatusBadge } from '../../components/ui/Badge'
@@ -20,7 +21,7 @@ import { formatLongDay } from '../guards/peopleUtil'
 import { OverrideModal } from './OverrideModal'
 import type { DailyAttendance, DailyAttendanceRow, Site } from '../../types'
 
-type Filter = 'all' | 'present' | 'late' | 'absent' | 'pending' | 'review'
+type Filter = 'all' | 'present' | 'late' | 'absent' | 'pending' | 'review' | 'flagged'
 
 interface Props {
   site: Site
@@ -53,10 +54,18 @@ export function DailyTab({ site, date, today, onDateChange }: Props) {
       absent: all.filter((r) => r.status === 'absent').length,
       pending: all.filter((r) => r.status === 'pending').length,
       review: all.filter((r) => r.needs_review).length,
+      flagged: all.filter((r) => (r.flags?.length ?? 0) > 0).length,
     }),
     [all]
   )
-  const rows = filter === 'all' ? all : filter === 'review' ? all.filter((r) => r.needs_review) : all.filter((r) => r.status === filter)
+  const rows =
+    filter === 'all'
+      ? all
+      : filter === 'review'
+        ? all.filter((r) => r.needs_review)
+        : filter === 'flagged'
+          ? all.filter((r) => (r.flags?.length ?? 0) > 0)
+          : all.filter((r) => r.status === filter)
 
   const chips: ChipItem<Filter>[] = [
     { key: 'all', label: t('ppl.att.f.all'), count: counts.all },
@@ -65,6 +74,7 @@ export function DailyTab({ site, date, today, onDateChange }: Props) {
     { key: 'absent', label: t('status.absent'), count: counts.absent, dot: 'bg-red-500' },
     { key: 'pending', label: t('ppl.att.notIn'), count: counts.pending, dot: 'bg-gray-400' },
     { key: 'review', label: t('att.needsReview'), count: counts.review, dot: 'bg-violet-500' },
+    ...(counts.flagged > 0 ? [{ key: 'flagged' as const, label: t('flag.filter'), count: counts.flagged, dot: 'bg-amber-500' }] : []),
   ]
 
   const now = Date.now()
@@ -78,7 +88,7 @@ export function DailyTab({ site, date, today, onDateChange }: Props) {
           <Badge tone={started ? 'orange' : 'gray'} dot>
             {t('ppl.att.notIn')}
           </Badge>
-          <p className="mt-1 text-xs text-gray-500">
+          <p className="mt-1 text-xs text-gray-600">
             {started ? t('ppl.att.startedNoClockIn') : t('ppl.att.startsAt', { time: formatTime(r.shift_start, tz) })}
           </p>
         </div>
@@ -102,6 +112,7 @@ export function DailyTab({ site, date, today, onDateChange }: Props) {
             {t('att.needsReview')}
           </Badge>
         )}
+        <FlagBadges flags={r.flags} />
       </div>
     )
   }
@@ -136,7 +147,7 @@ export function DailyTab({ site, date, today, onDateChange }: Props) {
       header: t('att.clockIn'),
       cell: (r) => (
         <span className="inline-flex items-center gap-1.5 whitespace-nowrap tabular-nums">
-          <span className={r.clock_in_at ? 'font-medium text-gray-900' : 'text-gray-400'}>{formatTime(r.clock_in_at, tz)}</span>
+          <span className={r.clock_in_at ? 'font-medium text-gray-900' : 'text-gray-500'}>{formatTime(r.clock_in_at, tz)}</span>
           {r.late_minutes > 0 && (
             <span title={t('ppl.att.lateTitle', { n: r.late_minutes })}>
               <Badge tone="yellow">{t('ppl.att.lateBy', { n: r.late_minutes })}</Badge>
@@ -156,7 +167,7 @@ export function DailyTab({ site, date, today, onDateChange }: Props) {
             {onDuty ? (
               <span className="text-xs font-medium text-emerald-700">{t('ppl.att.onDuty')}</span>
             ) : (
-              <span className={r.clock_out_at ? 'font-medium text-gray-900' : 'text-gray-400'}>{formatTime(r.clock_out_at, tz)}</span>
+              <span className={r.clock_out_at ? 'font-medium text-gray-900' : 'text-gray-500'}>{formatTime(r.clock_out_at, tz)}</span>
             )}
             {r.early_out_minutes > 0 && (
               <span title={t('ppl.att.earlyTitle', { n: r.early_out_minutes })}>
@@ -172,15 +183,18 @@ export function DailyTab({ site, date, today, onDateChange }: Props) {
       key: 'hours',
       header: t('ppl.att.hoursWorked'),
       numeric: true,
-      cell: (r) => (r.hours_worked ? <span className="text-gray-900">{formatNumber(r.hours_worked, lang, 1)}</span> : <span className="text-gray-400">—</span>),
+      cell: (r) => (r.hours_worked ? <span className="text-gray-900">{formatNumber(r.hours_worked, lang, 1)}</span> : <span className="text-gray-500">—</span>),
     },
-    {
+  ]
+  // Selfies are HR evidence: client-readonly may not open them (media_forbidden).
+  if (can('viewSelfies')) {
+    columns.push({
       key: 'selfie',
       header: t('att.selfie'),
       className: '[&_span]:whitespace-nowrap',
       cell: (r) => <MediaPhotoButton objectKey={r.selfie_object_key} title={`${t('att.selfie')}: ${r.guard_name}`} />,
-    },
-  ]
+    })
+  }
   if (canOverride) {
     columns.push({
       key: 'actions',
@@ -240,7 +254,7 @@ export function DailyTab({ site, date, today, onDateChange }: Props) {
             label={formatLongDay(date, lang)}
             sublabel={
               <>
-                {date === today && <span className="font-medium text-primary-600">{t('ppl.att.today')} · </span>}
+                {date === today && <span className="font-medium text-primary-700">{t('ppl.att.today')} · </span>}
                 {data ? t('ppl.att.shiftsCount', { n: all.length }) : '…'} · {t('ppl.att.tzNote', { tz })}
               </>
             }

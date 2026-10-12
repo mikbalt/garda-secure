@@ -68,8 +68,32 @@ export function BackupsTab() {
         </div>
       ),
     },
-    { key: 'size', header: t('bk.size'), numeric: true, cell: (b) => formatBytes(b.size_bytes) },
-    { key: 'object', header: t('adm.bk.file'), cell: (b) => <span className="break-all font-mono text-xs text-gray-500">{b.object_key}</span> },
+    {
+      key: 'size',
+      header: t('bk.size'),
+      numeric: true,
+      cell: (b) => (
+        <span className="whitespace-nowrap">
+          {formatBytes(b.size_bytes)}
+          {b.keycloak_size_bytes ? <span className="block text-xs text-gray-600">+ {formatBytes(b.keycloak_size_bytes)}</span> : null}
+        </span>
+      ),
+    },
+    {
+      key: 'object',
+      header: t('adm.bk.file'),
+      cell: (b) => (
+        <span className="break-all font-mono text-xs text-gray-600">
+          {b.object_key}
+          {b.keycloak_object_key && (
+            <span className="mt-0.5 block">
+              <span className="font-sans font-medium text-gray-700">{t('bk.keycloak')}: </span>
+              {b.keycloak_object_key}
+            </span>
+          )}
+        </span>
+      ),
+    },
   ]
 
   const action = (

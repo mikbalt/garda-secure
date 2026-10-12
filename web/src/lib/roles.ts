@@ -1,11 +1,18 @@
 /**
  * Role → capability matrix, mirroring the route roles in docs/api.md.
  * Pages and navigation consult `can(roles, capability)`.
+ *
+ * `platform-admin` is the install-wide operator (D-025, D-032): channel
+ * settings, backups and ops alerts. A realm `admin` administers only its own
+ * realm; the operator usually holds both roles.
  */
 
-export type Role = 'admin' | 'supervisor' | 'hr' | 'client-readonly'
+export type Role = 'admin' | 'supervisor' | 'hr' | 'client-readonly' | 'platform-admin'
+
+export const WEB_ROLES: readonly Role[] = ['admin', 'supervisor', 'hr', 'client-readonly', 'platform-admin']
 
 const ADMIN: Role[] = ['admin']
+const PLATFORM: Role[] = ['platform-admin']
 const OPS: Role[] = ['admin', 'supervisor']
 const OPS_CLIENT: Role[] = ['admin', 'supervisor', 'client-readonly']
 const STAFF: Role[] = ['admin', 'supervisor', 'hr']
@@ -20,7 +27,14 @@ export const CAPABILITIES = {
   viewPatrol: OPS_CLIENT,
   viewIncidents: OPS_CLIENT,
   viewReports: WEB,
-  viewSettings: ADMIN,
+  /** Settings page: realm sections (admin) and install-wide sections (platform-admin). */
+  viewSettings: ['admin', 'platform-admin'] as Role[],
+  viewSetup: ADMIN,
+  viewAudit: ADMIN,
+  // settings sections
+  manageRealmSettings: ADMIN,
+  /** Channels, backups, ops alerts and the ops delivery log (install-wide). */
+  managePlatform: PLATFORM,
   // attendance
   reviewAttendance: OPS,
   overrideAttendance: ADMIN,
@@ -34,6 +48,10 @@ export const CAPABILITIES = {
   viewSos: OPS,
   viewDefects: OPS,
   viewVisitors: OPS,
+  // photos by kind (GET /media/url, docs/api.md)
+  viewSelfies: STAFF,
+  viewFieldPhotos: OPS,
+  viewIncidentPhotos: OPS_CLIENT,
   // reports
   reportAttendanceDaily: WEB,
   reportAttendanceMonthly: WEB,
@@ -48,4 +66,35 @@ export type Capability = keyof typeof CAPABILITIES
 
 export function can(roles: readonly string[], cap: Capability): boolean {
   return CAPABILITIES[cap].some((r) => roles.includes(r))
+}
+
+/** Photo kinds of `sites/<site>/<kind>/<id>.<ext>` object keys. */
+export type MediaKind = 'selfie' | 'checkpoint' | 'incident' | 'defect' | 'visitor'
+
+const MEDIA_CAP: Record<MediaKind, Capability> = {
+  selfie: 'viewSelfies',
+  visitor: 'viewFieldPhotos',
+  defect: 'viewFieldPhotos',
+  incident: 'viewIncidentPhotos',
+  checkpoint: 'viewIncidentPhotos',
+}
+
+/** Kind of a stored photo key, or undefined for an unexpected key. */
+export function mediaKindOf(key: string | null | undefined): MediaKind | undefined {
+  const kind = key?.split('/')[2]
+  return kind && kind in MEDIA_CAP ? (kind as MediaKind) : undefined
+}
+
+/**
+ * Whether the roles may open a photo of this kind (the API answers 403
+ * `media_forbidden` otherwise). Unknown kinds are allowed — the API decides.
+ */
+export function canSeeMedia(roles: readonly string[], kind: MediaKind | undefined): boolean {
+  return kind ? can(roles, MEDIA_CAP[kind]) : true
+}
+
+/** The role shown in the user menu (most privileged first). */
+export function primaryRole(roles: readonly string[]): Role | undefined {
+  const order: Role[] = ['platform-admin', 'admin', 'supervisor', 'hr', 'client-readonly']
+  return order.find((r) => roles.includes(r))
 }
