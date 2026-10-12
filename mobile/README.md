@@ -9,15 +9,30 @@ Flutter 3.24 app for the **shared post tablet** at a site (DECISIONS.md D-001, D
 2. **Device sign-in**: the tablet's Keycloak account (realm role `device`, client
    `securepatrol-tablet`, password grant + offline token). It registers itself and
    waits until an admin approves it on the web (*Settings → Tablets*).
-3. **Lock screen**: guards pick their name and enter their PIN, verified locally
-   against the bcrypt hash synced from `/device/roster` — works offline. The tablet
-   locks after the site's idle time (relaxed to 30 min during a patrol).
+3. **Lock screen**: guards pick their name and enter their PIN. It is checked locally
+   against the bcrypt hash synced from `/device/roster` (works offline) and, when
+   online, by the server (`POST /device/guard-sessions`, D-035) — the server decides
+   when it answers within 3 s; its guard token is stored with every queued action and
+   sent as `X-Guard-Token`. Home shows *Verified* / *Offline unlock*. Wrong PINs lock
+   the guard out (30 s, then 2/10/30/60 min, persisted). No unlock after 7 days
+   without a roster sync. **SOS works on the lock screen without a PIN** (tap your
+   name, hold SOS). The tablet locks after the site's idle time (30 min during a
+   patrol) and after 30 s in the background (the camera excepted).
 4. **Field work**: clock in/out (selfie + GPS), QR patrol with live SLA progress,
    incidents (≤ 5 photos), defects, visitor log, SOS (hold 2 s).
-5. **Offline outbox**: every action is stored in SQLite first and sent in order with
-   client UUIDs and event times (idempotent, D-006). Photos upload first with
-   deterministic keys. SOS jumps the queue and retries every 10 s; the guard sees a
-   red banner until the server confirms.
+5. **Offline outbox**: every action is stored in SQLite first and sent in order (local
+   sequence) with client UUIDs and **server-corrected** event times (offset from
+   `server_time` / the `Date` header; idempotent, D-006). Photos upload first with
+   deterministic keys, EXIF/GPS stripped on the tablet. SOS jumps the queue and
+   retries every 10 s; the guard sees a red banner until the server confirms.
+   Failures: network → retry forever; 5xx → parked after 50 attempts / 3 days; 429 →
+   `Retry-After`; replays answered "already done" → success; `media_exists` →
+   uploaded; device-level 403 → whole queue paused; `guard_token_invalid` → resent
+   without the token; anything else → parked and shown (translated) as
+   "needs attention". Removing an item needs a supervisor PIN or the device password.
+6. **Signed checkpoint QR**: `SP1:<checkpoint uuid>:<sig>` is matched to the route
+   locally and the raw text sent as `qr_payload` (the server verifies); legacy codes
+   match exactly.
 
 ```
 lib/
@@ -47,8 +62,44 @@ flutter run --dart-define=SP_SERVER=https://<server> --dart-define=SP_REALM=<rea
 flutter test screenshots/ --update-goldens   # writes screenshots/out/*.png (git-ignored)
 ```
 
+## Security notes (audit MOB-*)
+
+- **Local data** — `kv` values and outbox bodies/labels/tokens are AES-256-GCM
+  encrypted (`lib/core/storage/field_cipher.dart`, pure Dart); the key lives in
+  `flutter_secure_storage` (Android Keystore). A plaintext v1 database is migrated
+  on first start. Field encryption was chosen over SQLCipher: no native library to
+  build/verify per ABI, fully unit-tested, and the plaintext→encrypted migration is
+  testable; the trade-off is that non-sensitive columns (kind, status, times) stay
+  readable. No Android backup / device transfer (`allowBackup=false`,
+  `data_extraction_rules.xml`), `FLAG_SECURE` on the activity.
+- **TLS** — Dart's `HttpClient` ignores Android's network security config and
+  user CAs. A private CA is **bundled at build time**:
+  `cp infra/nginx/certs/securepatrol-ca.crt mobile/assets/certs/securepatrol-ca.crt`
+  (git-ignored; see `assets/certs/README.txt`). `http://` servers are refused unless
+  debug build or `--dart-define=SP_ALLOW_HTTP=true`. The Android config trusts system
+  CAs only (user CAs in debug builds).
+- **Protected actions** — sign-out, server change and outbox discard need a supervisor
+  PIN or the device account password; sign-out/server change are refused while items
+  are queued.
+- **Revoked device** — roster, routes, guard state and tokens are deleted at once;
+  unsent items stay.
+- **Errors & health** — `FlutterError.onError`, `PlatformDispatcher.onError` and the
+  root zone write to a local ring buffer; a beacon posts version, queue depth, failed
+  items, last sync, clock offset and recent errors to `POST /device/telemetry` every
+  15 min (backend endpoint required).
+- **Times** — shown in the site's IANA zone (`timezone` package), stored UTC.
+
+## Release build
+
+- Package / bundle id: `id.co.securepatrol.tablet`; version from `pubspec.yaml`
+  (`version:`) or `--build-name/--build-number` (CI uses the tag and run number).
+- Signing: `android/key.properties` (never committed) with `storeFile` (relative to
+  `android/app`), `storePassword`, `keyAlias`, `keyPassword` — the CI release job
+  writes it from secrets. **Without it a release build fails**; for a local
+  `flutter run --release` only: `SP_ALLOW_DEBUG_SIGNING=true flutter run --release`.
+
 ## Tablet provisioning
 
-See [docs/runbook.md](../docs/runbook.md) §3. With a self-signed server certificate,
-install the certificate on the tablet (Settings → Security → Install certificate);
-the app trusts user-installed CAs (`android/app/src/main/res/xml/network_security_config.xml`).
+See [docs/runbook.md](../docs/runbook.md) §3 (incl. kiosk / MDM setup). With a
+private-CA server certificate, build the APK with the CA bundled (above);
+installing the CA in Android settings is not enough for the app.

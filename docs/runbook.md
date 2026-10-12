@@ -193,13 +193,18 @@ API image's `pg_dump` (`postgresql16-client`) must be upgraded with the server.
 
 1. In the site's realm create a user like `tablet-gudang-a-1`, set a strong password,
    assign realm role **`device`** (nothing else).
-2. Install the SecurePatrol CA on the tablet (§6), then log in once in the app with that
-   account; it registers itself and shows "waiting for approval".
+2. Install the app (APK from the CI release, signed with the release key; with a
+   private CA it must be a build that bundles `securepatrol-ca.crt`, see *Kiosk/MDM*
+   below), then log in once with that account; it registers itself and shows
+   "waiting for approval". The server address must be `https://`.
 3. Web app → *Settings → Devices*: approve the tablet and pick its site.
 4. Web app → *Guards*: make sure each guard is assigned to the site and has a PIN.
    The tablet syncs the roster and guards unlock it with their PIN (works offline).
 5. Lost/stolen tablet: *Settings → Devices → Revoke* (takes effect immediately), and
-   disable the Keycloak user.
+   disable the Keycloak user. On its next contact the tablet deletes the guard list
+   (PIN hashes), routes and guard tokens; unsent records stay until they are sent or
+   discarded. A tablet that has not synced its guard list for **7 days** refuses PIN
+   unlocks by itself (SOS still works).
 
 **Verified guards (D-035).** When the tablet is online, unlocking also checks the
 PIN on the server (`POST /device/guard-sessions`) and the tablet sends the returned
@@ -226,6 +231,74 @@ patrols 48 h ahead; a patrol not started within its grace period raises
 offline, because nobody may be patrolling. A session synced later still counts
 (late starts are marked `late_start`). *Reports → Patrol compliance* shows
 expected / on time / late / missed per route and day.
+
+**On the tablet (app behaviour an operator should know).**
+* *Protected actions:* *Sign out device*, *Change server* and *Remove from outbox*
+  need a supervisor PIN (a roster guard with role `supervisor`) or the tablet
+  account's password. Sign-out and server change are refused while records are still
+  queued — send them first (or have a supervisor remove them one by one).
+* *SOS without PIN:* on the lock screen a guard taps their name and holds **SOS**;
+  the alert is sent at once (flagged `guard_unverified`).
+* *Outbox:* items the server rejects are shown as "need attention" on the home
+  screen with the reason; items failing with server errors are parked after 50
+  attempts / 3 days so they cannot block the queue; a pending/revoked device pauses
+  sending without losing anything.
+* *Clock:* event times use the server's clock (offset from every response); the
+  home screen warns when the tablet clock is more than 2 minutes off. Times are
+  shown in the site's time zone.
+* *Local data* (guard list, routes, queued records) is encrypted with a key held in
+  the Android Keystore-backed secure storage; the app is excluded from Android
+  backups and device transfer, and blocks screenshots/recent-apps previews.
+* *Health beacon:* every 15 min the tablet posts app version, queue depth, failed
+  items, last sync, clock offset, repeated PIN failures and its last errors to
+  `POST /api/v1/device/telemetry` (the endpoint must exist on the server; until then
+  the tablet retries every 6 h).
+
+### Kiosk / MDM setup (dedicated device)
+
+A post tablet should run SecurePatrol and nothing else. Preferred: **Android
+Enterprise dedicated device** (a.k.a. COSU) through an EMM — e.g. Google Android
+Management API, Microsoft Intune "Android Enterprise dedicated devices", Samsung
+Knox Manage, Scalefusion, Hexnode, ManageEngine MDM. Steps:
+
+1. **Factory-reset and enrol** the tablet as *fully managed / dedicated* (QR code
+   or `afw#<emm>` at the welcome screen). Do not add a personal Google account.
+2. **Install the app** as a private/managed app: upload the release APK
+   (`securepatrol-tablet-<version>+<build>.apk` from the CI release, package
+   `id.co.securepatrol.tablet`) to the EMM; set it to install automatically and
+   **auto-update** (managed Google Play private app, or the EMM's own app
+   repository for APK updates). Updates keep the local data as long as the signing
+   key stays the same — keep the release keystore safe (CI secrets).
+   *Upgrading from the pre-hardening build (package `id.co.securepatrol.securepatrol`):
+   it is a different app; let its outbox empty first, then uninstall it.*
+3. **Lock-task (kiosk) mode:** single-app kiosk with SecurePatrol as the only
+   allowed app (Android Management API: `kioskCustomLauncherEnabled` off,
+   `applications[].installType: KIOSK`; Intune: *Single app, full screen*). Allow the
+   status bar only for system notifications if your EMM offers it; keep the camera
+   and location permissions **granted by policy** (`permissionGrants` /
+   *Auto grant*) so no dialog interrupts a guard.
+4. **Disable Settings access:** block *Settings*, the notification shade quick
+   settings, factory reset from the UI, USB debugging/developer options, installing
+   unknown apps, adding users/accounts, and safe-mode boot. Leave Wi-Fi configured
+   by policy (or a managed APN for SIM tablets) and screen timeout long.
+5. **Managed configuration / pre-set server:** the app does not read EMM managed
+   configurations (yet). Build the APK with the installation's defaults instead —
+   `flutter build apk --release --dart-define=SP_SERVER=https://patrol.example.co.id
+   --dart-define=SP_REALM=securepatrol-client1` (the first-run screen then only
+   needs *Continue*). One build per installation is normal anyway because of the CA.
+6. **Private CA:** copy `infra/nginx/certs/securepatrol-ca.crt` to
+   `mobile/assets/certs/securepatrol-ca.crt` before the build (git-ignored; in CI
+   write it from a secret). The app's HTTPS (Dart) ignores CAs installed in Android
+   settings, and release builds trust only system CAs at the Android level. Without
+   the file only public certificates (e.g. Let's Encrypt) work.
+7. **Time:** enable automatic date/time and time zone by policy.
+
+**No EMM (small sites): screen pinning fallback.** *Settings → Security → App
+pinning* (or *Pin windows*) → on, "Ask for PIN before unpinning" → on with a device
+PIN only the supervisor knows; open SecurePatrol → Overview → app icon → *Pin*.
+Also: remove other apps or hide them, disable developer options, set a device PIN
+(the app stays usable while pinned), and turn on auto date/time. This prevents
+casual use but is weaker than lock-task mode (anyone with the device PIN can unpin).
 
 ## 4. Notifications
 
