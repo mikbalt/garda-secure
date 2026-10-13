@@ -8,7 +8,7 @@ COMPOSE_INFRA = $(COMPOSE) -f docker-compose.yml
 SERVER_HOST ?=
 
 .PHONY: help env certs certs-renew preflight up up-infra down logs ps build restart \
-        keycloak-config backup-db offsite-backup offsite-check offsite-snapshots
+        keycloak-config keycloak-smoke backup-db offsite-backup offsite-check offsite-snapshots
 
 help:
 	@echo "make env SERVER_HOST=<dns|ip> - create .env with random secrets (once)"
@@ -17,7 +17,8 @@ help:
 	@echo "make preflight                - check .env, URLs, secrets and certificate"
 	@echo "make up                       - preflight, start the full stack, configure Keycloak"
 	@echo "make up-infra                 - infrastructure only (local backend/web dev)"
-	@echo "make keycloak-config          - sync redirect URIs + OTP policy into running realms"
+	@echo "make keycloak-config          - sync redirect URIs, OTP policy, token scopes into running realms"
+	@echo "make keycloak-smoke [REALM=r] - end-to-end login/token check (after Keycloak upgrades)"
 	@echo "make backup-db                - dump app + Keycloak DBs to infra/backups/"
 	@echo "make offsite-backup           - run the off-site (restic) backup now"
 	@echo "make offsite-check            - verify the off-site repository (reads 10 % of data)"
@@ -51,6 +52,9 @@ up: preflight
 up-infra:
 	@test -f .env || (echo "missing infra/.env — run: make env SERVER_HOST=localhost" && exit 1)
 	$(COMPOSE_INFRA) up -d
+
+keycloak-smoke:
+	sh scripts/keycloak-smoke.sh $(REALM)
 
 keycloak-config:
 	sh scripts/keycloak-config.sh

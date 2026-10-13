@@ -31,11 +31,16 @@ load_env "$envfile"
 defaults=$(grep -E '^[A-Za-z_][A-Za-z0-9_]*=.*change_me' "$envfile" | cut -d= -f1 | tr '\n' ' ' || true)
 if [ -n "$defaults" ]; then fail "still set to change_me: $defaults"; else ok "no change_me values"; fi
 
+# ── Keycloak 24 -> 26 rename (runbook §2) ───────────────────────────────────
+if grep -Eq '^KEYCLOAK_ADMIN(_PASSWORD)?=' "$envfile"; then
+  fail "KEYCLOAK_ADMIN / KEYCLOAK_ADMIN_PASSWORD are Keycloak 24 names — rename them: sed -i 's/^KEYCLOAK_ADMIN=/KC_BOOTSTRAP_ADMIN_USERNAME=/; s/^KEYCLOAK_ADMIN_PASSWORD=/KC_BOOTSTRAP_ADMIN_PASSWORD=/' $envfile"
+fi
+
 # ── required values ─────────────────────────────────────────────────────────
 for v in SERVER_HOST PUBLIC_URL KEYCLOAK_PUBLIC_URL MINIO_PUBLIC_ENDPOINT POSTGRES_DB POSTGRES_USER \
          POSTGRES_PASSWORD APP_DB_USER APP_DB_PASSWORD KC_DB_NAME KC_DB_USER KC_DB_PASSWORD \
          PG_MONITOR_PASSWORD REDIS_PASSWORD MINIO_ROOT_USER MINIO_ROOT_PASSWORD MINIO_BUCKET_PHOTOS \
-         MINIO_BUCKET_BACKUPS KEYCLOAK_ADMIN KEYCLOAK_ADMIN_PASSWORD KEYCLOAK_REALMS WEB_KEYCLOAK_REALMS \
+         MINIO_BUCKET_BACKUPS KC_BOOTSTRAP_ADMIN_USERNAME KC_BOOTSTRAP_ADMIN_PASSWORD KEYCLOAK_REALMS WEB_KEYCLOAK_REALMS \
          SETTINGS_ENCRYPTION_KEY GF_SECURITY_ADMIN_PASSWORD OFFSITE_BACKUP_REPO OFFSITE_RESTIC_PASSWORD; do
   eval "val=\${$v:-}"
   [ -n "$val" ] || fail "$v is empty"
@@ -50,7 +55,7 @@ check_secret() { # name value
 }
 seen=""
 for v in POSTGRES_PASSWORD APP_DB_PASSWORD KC_DB_PASSWORD PG_MONITOR_PASSWORD REDIS_PASSWORD \
-         MINIO_ROOT_PASSWORD KEYCLOAK_ADMIN_PASSWORD GF_SECURITY_ADMIN_PASSWORD OFFSITE_RESTIC_PASSWORD \
+         MINIO_ROOT_PASSWORD KC_BOOTSTRAP_ADMIN_PASSWORD GF_SECURITY_ADMIN_PASSWORD OFFSITE_RESTIC_PASSWORD \
          MINIO_APP_SECRET_KEY MINIO_OFFSITE_SECRET_KEY; do
   eval "val=\${$v:-}"
   case $v in MINIO_APP_SECRET_KEY|MINIO_OFFSITE_SECRET_KEY) [ -z "$val" ] && continue ;; esac

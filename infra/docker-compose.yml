@@ -137,38 +137,46 @@ services:
       - securepatrol
 
   keycloak:
-    # Keycloak 24 is out of support; the 26.x migration path is in the
-    # runbook (§2, INF-D8). Pinned to the last 24 patch release.
-    image: quay.io/keycloak/keycloak:24.0.5
+    # Keycloak 26 (D-034 / runbook §2). The first start of a new minor
+    # migrates the Keycloak database schema one way: take `make backup-db`
+    # first (deploy.sh does) — rollback = old image + that dump.
+    image: quay.io/keycloak/keycloak:26.8.0@sha256:27b3230fbabb8c9ff3c66c864cf09dcd8a41aca82e5100679d109ef0eeb05741
     restart: always
     <<: *hardening
     logging: *logging
     mem_limit: ${KEYCLOAK_MEM_LIMIT:-1536m}
-    # `start` (production mode) behind the TLS-terminating nginx; realms in
-    # ./keycloak/realms are imported on first start only — afterwards
-    # `make keycloak-config` keeps redirect URIs / MFA in sync.
+    # `start` (production mode) behind the TLS-terminating nginx. The stock
+    # image re-augments itself on start for the build options below (KC_DB,
+    # health, metrics; ~30 s). Realms in ./keycloak/realms are imported only
+    # when they do not exist yet — afterwards `make keycloak-config` keeps
+    # redirect URIs / MFA / scopes in sync.
     command: ["start", "--import-realm"]
     environment:
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      # Temporary admin of the master realm, created only on the very first
+      # start (empty database); ignored afterwards (runbook §2).
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD}
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/${KC_DB_NAME}
       KC_DB_USERNAME: ${KC_DB_USER}
       KC_DB_PASSWORD: ${KC_DB_PASSWORD}
+      # Plain HTTP on 8080 behind nginx (edge TLS termination), under /auth.
       KC_HTTP_ENABLED: "true"
       KC_HTTP_RELATIVE_PATH: /auth
-      # Only nginx (and 127.0.0.1:8081) can reach Keycloak, so trusting its
-      # X-Forwarded-* headers is safe.
+      # Only nginx (and 127.0.0.1:8081) can reach Keycloak, and only the
+      # stack's network may send X-Forwarded-* (nginx overwrites them).
       KC_PROXY_HEADERS: xforwarded
-      # Must equal the API's KEYCLOAK_PUBLIC_URL: it becomes the token issuer.
-      KC_HOSTNAME_URL: ${KEYCLOAK_PUBLIC_URL}
-      KC_HOSTNAME_ADMIN_URL: ${KEYCLOAK_PUBLIC_URL}
-      KC_HOSTNAME_STRICT: "true"
-      # The API fetches JWKS via http://keycloak:8080 (back channel).
-      KC_HOSTNAME_STRICT_BACKCHANNEL: "false"
+      KC_PROXY_TRUSTED_ADDRESSES: ${SP_DOCKER_SUBNET:-172.28.0.0/24},127.0.0.1
+      # Hostname v2: the full public URL incl. /auth. Must equal the API's
+      # KEYCLOAK_PUBLIC_URL — it is the token issuer for every request, also
+      # for back-channel calls of the API via http://keycloak:8080/auth
+      # (hostname-backchannel-dynamic stays false). The admin console uses
+      # the same URL (no KC_HOSTNAME_ADMIN).
+      KC_HOSTNAME: ${KEYCLOAK_PUBLIC_URL}
+      # Health and metrics live on the management port 9000 (same /auth
+      # prefix: /auth/health/ready, /auth/metrics); never published or
+      # proxied — only the healthcheck and Prometheus use it.
       KC_HEALTH_ENABLED: "true"
-      # Keycloak 24 serves /auth/health and /auth/metrics on the main port;
-      # nginx blocks both, Prometheus scrapes them internally.
       KC_METRICS_ENABLED: "true"
       TZ: UTC
     volumes:
@@ -179,11 +187,13 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /auth/health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK'"]
+      # Keycloak 26 opens its ports while it is still migrating/importing;
+      # only /health/ready (management port) says it is serving.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /auth/health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK'"]
       interval: 20s
       timeout: 10s
       retries: 10
-      start_period: 90s
+      start_period: 180s
     networks:
       - securepatrol
 
