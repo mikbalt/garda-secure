@@ -170,7 +170,7 @@ The entire platform runs as a single Docker Compose stack — designed to be ope
 | **Mobile app** | Flutter | Single codebase for iOS + Android tablet; offline SQLite via `sqflite` |
 | **Database** | PostgreSQL 16 | ACID, strong query planner for reports, JSONB for flexible config fields |
 | **Object storage** | MinIO | S3-compatible, on-premise; stores all photos and backup dumps; no data leaves the site |
-| **Identity & Auth** | Keycloak 24 | OIDC/OAuth2, RBAC, TOTP 2FA, brute-force protection — one realm per client, no custom auth code |
+| **Identity & Auth** | Keycloak 26 | OIDC/OAuth2, RBAC, TOTP 2FA, brute-force protection — one realm per client, no custom auth code |
 | **Job queue / cache** | Redis | Notification queue, rate limiting, WebSocket presence |
 | **Notifications** | Go worker | SMTP + WhatsApp Business API only |
 | **Reverse proxy** | Nginx (or Caddy) | TLS termination, static file serving, route proxying |

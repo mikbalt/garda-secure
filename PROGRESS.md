@@ -9,7 +9,6 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
-| Keycloak 24 → 26 upgrade (infra, keycloak-config.sh, realms, web keycloak-js, runbook) | `muhamhad-pc1/claude-kc26` | 2026-10-13 | branch `agent/muhamhad-pc1/keycloak-26` |
 
 ## Migration numbers
 
@@ -54,6 +53,7 @@ Web
 - [ ] Device dialog: "set back to pending" action
 
 Infra / Ops
+- [ ] Rehearse the Keycloak 24→26 DB migration on a copy of the production Keycloak dump before upgrading production (runbook §2/§5)
 - [ ] Configure the `production` environment secrets and do a first tagged deploy (runbook §7)
 - [ ] Let's Encrypt / production TLS notes
 - [ ] Load test 2 sites / 10 guards (M7)
@@ -85,3 +85,4 @@ Mobile (D-024) — open audit items, see docs/audit-2026-10.md
 | Wave 3 web — Users & access (Keycloak users, roles, site scope, reset password/OTP), tablet accounts + health drawer, setup guide tablet step, scope hint, attendance override history, visitor detail (audited reveal); 135 unit + 97 e2e tests | `muhamhad-pc1/claude-web-people` | 2026-10-13 | merge f5811b7 |
 | Wave 3 web — floor plans + checkpoint placement, live patrol on the plan, patrol schedules editor, compliance report + KPI/monthly columns, regenerate QR, Excel/CSV/PDF downloads, amended incidents, incident GPS, `incident_filed`/`patrol_not_started` rules, channel list, paging, `/sos/active`; 156 unit + 119 e2e tests after merge | `muhamhad-pc1/claude-web-patrol` | 2026-10-13 | merge with web-people |
 | Monthly recap per guard-day (F13): backend report + totals, CSV/XLSX total row, recap e-mail/WA in site language, web table + totals (D-051) | `muhamhad-pc1/claude-recap-days` | 2026-10-13 | merge recap-days |
+| Keycloak 24.0.5 → 26.8.0: hostname v2, management port 9000, bootstrap admin vars, token contract (full scope off, `basic` scope), keycloak-js 26.2.4, `make keycloak-smoke`, `RESTORE_FRESH` rollback, CI stack checks, runbook upgrade procedure (D-052) | `muhamhad-pc1/claude-kc26` | 2026-10-13 | merge keycloak-26 |

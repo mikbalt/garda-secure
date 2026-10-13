@@ -480,3 +480,21 @@ in PRD §9 (OQ-x). New entries go at the bottom with the next free number.
 - Per-shift fields keep their names (KPI rates stay per shift); responses add
   per-site `totals`; exports end with a total row; e-mail/WhatsApp in the site's
   language. Indonesian zones have no DST.
+
+### D-052 — Keycloak 26 (supersedes the Keycloak 24 parts of D-034 and the "Keycloak 24 profile" note in D-041)
+- **Date:** 2026-10-13 · **Status:** Accepted (user decision)
+- Keycloak `26.8.0` pinned by digest, stock image with `start`. Hostname v2
+  `KC_HOSTNAME=KEYCLOAK_PUBLIC_URL` (issuer unchanged:
+  `https://<host>/auth/realms/<realm>`); `xforwarded` headers trusted only from
+  the stack network; nginx drops client `X-Forwarded-Prefix`. Health and
+  metrics only on management port 9000 (`/auth/...`), never published/proxied.
+- Bootstrap admin via `KC_BOOTSTRAP_ADMIN_*` (preflight rejects the old
+  `KEYCLOAK_ADMIN*` names).
+- Token contract: Full Scope Allowed off on web, tablet and admin-api clients
+  with explicit role scope (web: the 5 web roles; tablet: `device`; admin-api:
+  its 4 realm-management roles); the tablet client always has default scope
+  `basic` (`sub`). Device accounts keep a full profile (VERIFY_PROFILE).
+- Every Keycloak update migrates its DB one way: backup → deploy →
+  `make keycloak-smoke`. Rollback = previous image + pre-upgrade dump restored
+  with `RESTORE_FRESH=1`. Rehearse the 24→26 migration on a copy of the
+  production Keycloak dump first. keycloak-js follows its own 26.x line.
