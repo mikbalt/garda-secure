@@ -178,7 +178,7 @@ export const adminId: Record<keyof typeof adminEn, string> = {
   'adm.dev.howTitle': 'Cara menghubungkan tablet',
   'adm.dev.howDesc': 'Sekitar 5 menit per pos jaga.',
   'adm.dev.how1': 'Pasang & masuk',
-  'adm.dev.how1Body': 'Pasang aplikasi SecurePatrol di tablet, lalu masuk dengan akun perangkat dari administrator.',
+  'adm.dev.how1Body': 'Buat akun tablet di bawah ("Akun tablet"), pasang aplikasi SecurePatrol di tablet, lalu masuk dengan akun dan kata sandinya.',
   'adm.dev.how2': 'Tunggu di halaman ini',
   'adm.dev.how2Body': 'Dalam beberapa detik tablet muncul di halaman ini dengan status "menunggu persetujuan".',
   'adm.dev.how3': 'Setujui & pilih lokasi',

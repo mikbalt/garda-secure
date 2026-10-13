@@ -45,6 +45,19 @@ export async function openAs(page: Page, role: DemoRole, path = '/', lang: 'id' 
 export async function settle(page: Page) {
   await expect(page.locator('main h1').first()).toBeVisible()
   await expect(page.locator('main .animate-pulse')).toHaveCount(0, { timeout: 15_000 })
+  await quiet(page)
+}
+
+/**
+ * Waits for finite CSS animations/transitions (dialog slide-in, button colour
+ * transitions) to end, so axe measures final colours. Endless ones (live dots) are ignored.
+ */
+export async function quiet(page: Page) {
+  await page.waitForFunction(
+    () => document.getAnimations().every((a) => a.playState !== 'running' || a.effect?.getComputedTiming().iterations === Infinity),
+    undefined,
+    { timeout: 5_000 }
+  )
 }
 
 /** axe-core scan (WCAG 2.1 A/AA); returns serious + critical violations. */

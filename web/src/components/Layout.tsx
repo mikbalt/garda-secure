@@ -16,6 +16,7 @@ import {
   Route,
   Settings2,
   ShieldAlert,
+  UserCog,
   ShieldCheck,
   Users,
   X,
@@ -23,6 +24,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useSetupProgress } from '../hooks/useSetupProgress'
+import { useMe } from '../hooks/useMe'
 import { useI18n, type Key } from '../i18n/context'
 import { useSite } from '../context/site'
 import { config } from '../config'
@@ -71,6 +73,7 @@ const groups: { label?: Key; items: NavItem[] }[] = [
     items: [
       { to: '/setup', label: 'nav.setup', icon: ListChecks, cap: 'viewSetup' },
       { to: '/settings', label: 'nav.settings', icon: Settings2, cap: 'viewSettings' },
+      { to: '/users', label: 'nav.users', icon: UserCog, cap: 'manageUsers' },
       { to: '/audit', label: 'nav.audit', icon: FileClock, cap: 'viewAudit' },
     ],
   },
@@ -128,6 +131,22 @@ function SetupMiniCard() {
   )
 }
 
+/** "Limited to N locations" for a site-scoped user (D-042), with the names as a tooltip. */
+function ScopeHint() {
+  const { t } = useI18n()
+  const { sites } = useSite()
+  const { data } = useMe()
+  if (!data?.sites_restricted) return null
+  const n = data.sites?.length ?? 0
+  const names = (data.sites ?? []).map((id) => sites.find((s) => s.id === id)?.name).filter(Boolean)
+  return (
+    <p className="mt-1 inline-flex items-center gap-1 rounded-md bg-primary-50 px-1.5 py-0.5 text-xs text-primary-800" title={names.join(', ') || undefined}>
+      <Building2 className="h-3 w-3" aria-hidden="true" />
+      {t('acc.scope.limited', { n })}
+    </p>
+  )
+}
+
 function UserPanel() {
   const { user, logout, switchOrganisation, multiRealm } = useAuth()
   const { t, lang, setLang } = useI18n()
@@ -168,6 +187,7 @@ function UserPanel() {
             <p className="truncate text-xs text-gray-600">
               {roleLabel} · {user.realmLabel}
             </p>
+            <ScopeHint />
           </div>
           <div className="px-3.5 py-2.5">
             <p className="mb-1.5 text-xs font-medium text-gray-600">{t('shell.language')}</p>

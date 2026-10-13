@@ -1,15 +1,18 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { DoorOpen } from 'lucide-react'
+import { DoorOpen, IdCard } from 'lucide-react'
 import { apiGet } from '../../api/client'
 import { Badge } from '../../components/ui/Badge'
+import { Button } from '../../components/ui/Button'
 import { MediaPhotoButton } from '../../components/MediaPhoto'
 import { EmptyState, Notice, Toolbar } from '../../components/ui/States'
 import { Table, type Column } from '../../components/ui/Table'
+import { useAuth } from '../../hooks/useAuth'
 import { useI18n } from '../../i18n/context'
 import { addDays, daysBetween, formatDay, formatTime, localDateOf, todayIn } from '../../lib/time'
 import { fmtDuration, presetRange, useNow } from '../patrol/format'
 import { Avatar, DateRangeFilter, Segmented } from '../patrol/kit'
+import { VisitorDrawer } from './VisitorDrawer'
 import type { Site, VisitorLog } from '../../types'
 
 const MAX_DAYS = 92
@@ -35,6 +38,8 @@ export function VisitorsTab({ site }: { site: Site }) {
   const now = useNow(60_000)
   const [range, setRange] = useState(() => presetRange('7d', tz))
   const [filter, setFilter] = useState<Filter>('all')
+  const [detail, setDetail] = useState<VisitorLog | null>(null)
+  const { can } = useAuth()
   const { from, to } = range
   const valid = !!from && !!to && from <= to && daysBetween(from, to) <= MAX_DAYS
 
@@ -118,6 +123,18 @@ export function VisitorsTab({ site }: { site: Site }) {
       ),
     },
   ]
+  if (can('viewVisitorDetail')) {
+    columns.push({
+      key: 'detail',
+      header: <span className="sr-only">{t('common.details')}</span>,
+      cell: (r) => (
+        <Button size="sm" variant="ghost" onClick={() => setDetail(r)} aria-label={`${t('common.details')} — ${r.visitor_name}`}>
+          <IdCard className="h-4 w-4" aria-hidden="true" />
+          <span className="sr-only sm:not-sr-only">{t('common.details')}</span>
+        </Button>
+      ),
+    })
+  }
 
   return (
     <>
@@ -149,6 +166,7 @@ export function VisitorsTab({ site }: { site: Site }) {
           caption={t('inc.tabVisitors')}
         />
       )}
+      {detail && <VisitorDrawer visitor={detail} tz={tz} onClose={() => setDetail(null)} />}
     </>
   )
 }

@@ -51,7 +51,7 @@ export const uxEn = {
   'setup.step.routes.cta': 'Create route',
   'setup.step.routes.status': '{n} routes · {m} checkpoints',
   'setup.step.device.title': 'Connect the post tablet',
-  'setup.step.device.body': 'Sign in on the tablet with its device account, then approve the tablet here and assign it to this location.',
+  'setup.step.device.body': 'Create a tablet account in Settings → Tablets, sign in on the tablet with it, then approve the tablet there and assign it to this location.',
   'setup.step.device.cta': 'Approve tablets',
   'setup.step.device.status': '{n} active · {m} waiting for approval',
   'setup.step.notif.title': 'Set up alerts',

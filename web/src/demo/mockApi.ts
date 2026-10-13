@@ -18,6 +18,7 @@ import type {
 } from '../types'
 import { getUserRoles } from '../keycloak'
 import { emptyWorld, iso, seedWorld, uid, wib, type World } from './world'
+import { demoHealth, demoMe, registerPeopleMocks, visibleSites, visitorReadAudit } from './mockPeople'
 
 const STORE_KEY = 'sp.demo.world'
 const MODE_KEY = 'sp.demo.mode'
@@ -68,7 +69,11 @@ export function resetDemo(mode: DemoMode = demoMode()) {
 // ── HTTP helpers ─────────────────────────────────────────────────────────────
 
 class HttpError {
-  constructor(public status: number, public code: string, public msg: string) {}
+  constructor(public status: number, public code: string, public msg: string, public field?: string) {}
+}
+/** A page of a paged list: the body is `rows`, `X-Total-Count` is `total`. */
+class Paged {
+  constructor(public rows: unknown[], public total: number) {}
 }
 const notFound = () => new HttpError(404, 'not_found', 'not found')
 const bad = (code: string, msg: string) => new HttpError(400, code, msg)
@@ -251,10 +256,10 @@ function monthly(siteId: string, range: [Date, Date]): MonthlyRecapRow[] {
 
 // ── Routes ───────────────────────────────────────────────────────────────────
 
-on('GET', '/me', () => ({ subject: 'demo', username: 'demo', realm: 'demo', client_id: 'securepatrol-web', roles: [], sites: [], sites_restricted: false }))
+on('GET', '/me', () => demoMe(w.sites))
 
 // Sites
-on('GET', '/sites', () => w.sites)
+on('GET', '/sites', () => visibleSites(w.sites))
 on('GET', '/sites/:id', ({ params }) => byId(w.sites, params.id))
 on('POST', '/sites', ({ body }) => {
   if (!String(body.name ?? '').trim()) throw bad('name_required', 'name is required')
@@ -282,16 +287,7 @@ on('PUT', '/guards/:id/pin', ({ params, body }) => {
 })
 
 // Devices
-on('GET', '/devices', () =>
-  w.devices.map((d, i) => ({
-    ...d,
-    health_at: d.status === 'active' ? iso(new Date(Date.now() - (i + 1) * 60_000)) : undefined,
-    health:
-      d.status === 'active'
-        ? { app_version: '1.4.0', app_build: '42', platform: 'android', os_version: '14', outbox_pending: i, outbox_failed: 0, sos_pending: 0, last_sync: iso(now()), clock_offset_ms: -800, private_ca: true, errors: [], received_at: iso(now()) }
-        : undefined,
-  })),
-)
+on('GET', '/devices', () => w.devices.map((d, i) => ({ ...d, ...demoHealth(d, i) })))
 on('PUT', '/devices/:id', ({ params, body }) => {
   const d = byId(w.devices, params.id)
   if (body.status === 'active' && !body.site_id) throw bad('site_required', 'assign a site before activating the device')
@@ -491,7 +487,10 @@ on('GET', '/visitors', ({ query }) =>
   w.visitors.filter((v) => v.site_id === query.site_id && inRange(v.entry_at, dateRange(query.from, query.to))).map((v) => ({ flags: [], ...v, id_number: mask(v.id_number) })),
 )
 on('GET', '/visitors/:id', ({ params }) => {
+  requireRoles('admin', 'supervisor')
   const v = byId(w.visitors, params.id)
+  w.audit.push(visitorReadAudit(v.id)) // reading the full ID number is audited (D-046)
+  persist()
   return { visitor: { flags: [], ...v }, photos: v.photo_object_key ? [{ key: v.photo_object_key, uploaded: true, url: photoUrl(v.photo_object_key) }] : [] }
 })
 on('GET', '/media/url', ({ query }) => {
@@ -731,61 +730,15 @@ on('DELETE', '/sites/:id/floorplans/:floorplanId', ({ params }) => {
   return null
 })
 
-const users = () =>
-  (fx.users ??= [
-    { id: uid(), username: 'dewi.admin', email: 'dewi@example.com', first_name: 'Dewi', last_name: 'Lestari', enabled: true, roles: ['admin'], sites: [], otp_configured: true, required_actions: [], created_at: iso(new Date(Date.now() - 90 * 86_400_000)) },
-    { id: uid(), username: 'agus.spv', email: 'agus@example.com', first_name: 'Agus', last_name: 'Setiawan', enabled: true, roles: ['supervisor'], sites: w.sites.slice(0, 1).map((s) => s.id), otp_configured: true, required_actions: [], created_at: iso(new Date(Date.now() - 40 * 86_400_000)) },
-    { id: uid(), username: 'klien.gedung', email: 'owner@example.com', first_name: 'Pemilik', last_name: 'Gedung', enabled: true, roles: ['client-readonly'], sites: w.sites.slice(0, 1).map((s) => s.id), otp_configured: false, required_actions: [], created_at: iso(new Date(Date.now() - 10 * 86_400_000)) },
-  ])
-const demoPassword = () => 'Demo-' + Math.random().toString(36).slice(2, 8) + 'X7'
-on('GET', '/users', ({ query }) =>
-  users().filter(
-    (u) =>
-      (!query.role || u.roles.includes(query.role)) &&
-      (query.enabled === undefined || String(u.enabled) === query.enabled) &&
-      (!query.search || `${u.username} ${u.email} ${u.first_name} ${u.last_name}`.toLowerCase().includes(query.search.toLowerCase())),
-  ),
-)
-on('GET', '/users/:id', ({ params }) => byId(users(), params.id))
-on('POST', '/users', ({ body }) => {
-  const username = String(body.username ?? '').toLowerCase().trim()
-  if (!/^[a-z0-9][a-z0-9._@-]{2,63}$/.test(username)) throw bad('invalid_username', 'invalid username')
-  if (users().some((u) => u.username === username)) throw new HttpError(409, 'username_taken', 'this username is already used')
-  const roles = (body.roles as string[] | undefined) ?? []
-  if (!roles.length) throw bad('roles_required', 'choose at least one role')
-  const u: DemoUser = {
-    id: uid(), username, email: String(body.email ?? ''), first_name: String(body.first_name ?? ''), last_name: String(body.last_name ?? ''), enabled: true, roles, sites: (body.sites as string[] | undefined) ?? [],
-    otp_configured: false, required_actions: ['UPDATE_PASSWORD', ...(roles.some((r) => r !== 'client-readonly') ? ['CONFIGURE_TOTP'] : [])], created_at: iso(now()),
-  }
-  users().push(u)
-  return body.send_invite ? { user: u, invite_sent: true } : { user: u, invite_sent: false, temporary_password: String(body.temporary_password || demoPassword()) }
+// Users, tablet accounts (F1) — see mockPeople.ts.
+registerPeopleMocks({
+  on,
+  world: w,
+  fail: (status, code, msg, field) => {
+    throw new HttpError(status, code, msg, field)
+  },
+  paged: (rows, total) => new Paged(rows, total),
 })
-on('PUT', '/users/:id', ({ params, body }) => {
-  const u = byId(users(), params.id)
-  for (const k of ['first_name', 'last_name', 'email', 'enabled', 'roles', 'sites'] as const) if (body[k] !== undefined) Object.assign(u, { [k]: body[k] })
-  return u
-})
-on('POST', '/users/:id/reset-password', ({ params, body }) => (byId(users(), params.id), body.send_email ? { email_sent: true } : { temporary_password: demoPassword() }))
-on('POST', '/users/:id/reset-otp', ({ params }) => {
-  const u = byId(users(), params.id)
-  Object.assign(u, { otp_configured: false, required_actions: [...new Set([...u.required_actions, 'CONFIGURE_TOTP'])] })
-  return { user_id: u.id, otp_removed: 1, otp_configured: false }
-})
-on('POST', '/users/:id/logout', ({ params }) => (byId(users(), params.id), { logged_out: true }))
-const deviceAccounts = () =>
-  (fx.device_accounts ??= w.devices.map((d) => ({ id: d.keycloak_user_id, username: 'device-' + d.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), name: d.name, enabled: d.status !== 'revoked', created_at: d.created_at })))
-on('GET', '/device-accounts', () => deviceAccounts().map((a) => ({ ...a, device: w.devices.find((d) => d.keycloak_user_id === a.id) })))
-on('POST', '/device-accounts', ({ body }) => {
-  const name = String(body.name ?? '').trim()
-  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-  if (!slug) throw bad('invalid_name', 'name is required')
-  if (deviceAccounts().some((a) => a.username === 'device-' + slug)) throw new HttpError(409, 'username_taken', 'this username is already used')
-  const a = { id: uid(), username: 'device-' + slug, name, enabled: true, created_at: iso(now()) }
-  deviceAccounts().push(a)
-  return { account: a, password: demoPassword() + demoPassword() }
-})
-on('POST', '/device-accounts/:id/reset-password', ({ params }) => ({ account: byId(deviceAccounts(), params.id), password: demoPassword() + demoPassword() }))
-on('PUT', '/device-accounts/:id', ({ params, body }) => Object.assign(byId(deviceAccounts(), params.id), { enabled: !!body.enabled }))
 
 // ── Adapter ──────────────────────────────────────────────────────────────────
 
@@ -825,6 +778,9 @@ const adapter: AxiosAdapter = async (cfg: InternalAxiosRequestConfig) => {
       if (query.format === 'pdf') {
         return respond(200, demoPdf(path), { 'content-disposition': `attachment; filename="demo${path.replace(/\//g, '-')}.pdf"` })
       }
+      if (data instanceof Paged) {
+        return respond(200, data.rows, { 'x-total-count': String(data.total) })
+      }
       if (Array.isArray(data)) {
         return respond(200, data, { 'x-total-count': String(data.length) })
       }
@@ -835,7 +791,7 @@ const adapter: AxiosAdapter = async (cfg: InternalAxiosRequestConfig) => {
         const err = Object.assign(new Error(e.msg), {
           isAxiosError: true,
           config: cfg,
-          response: respond(e.status, { error: e.msg, code: e.code, ...(extra ? { reason: extra } : {}) }),
+          response: respond(e.status, { error: e.msg, code: e.code, ...(e.field ? { field: e.field } : {}), ...(extra ? { reason: extra } : {}) }),
         })
         throw err
       }

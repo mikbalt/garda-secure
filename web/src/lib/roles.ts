@@ -60,6 +60,13 @@ export const CAPABILITIES = {
   reportKpi: STAFF,
   // site creation
   manageSites: ADMIN,
+  // people & access (F1): web users and tablet accounts of the realm
+  manageUsers: ADMIN,
+  manageDeviceAccounts: ADMIN,
+  /** Attendance override history (GET /attendance/:id/history). */
+  viewAttendanceHistory: STAFF,
+  /** Full visitor ID number + photos (GET /visitors/:id, audited). */
+  viewVisitorDetail: OPS,
 } satisfies Record<string, Role[]>
 
 export type Capability = keyof typeof CAPABILITIES

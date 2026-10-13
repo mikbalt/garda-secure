@@ -51,6 +51,7 @@ export function OverrideModal({ site, row, onClose }: Props) {
       qc.invalidateQueries({ queryKey: ['attendance-daily', site.id] })
       qc.invalidateQueries({ queryKey: ['attendance-review', site.id] })
       qc.invalidateQueries({ queryKey: ['dashboard', site.id] })
+      qc.invalidateQueries({ queryKey: ['attendance-history'] })
       onClose()
     },
   })

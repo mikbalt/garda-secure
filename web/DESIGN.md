@@ -44,6 +44,7 @@ and what to do next.
 | `Field`, `Input`, `Select`, `Textarea`, `Checkbox`, `FormError` | Forms; always give `hint` for non-obvious fields. |
 | `Popover` | Small dropdown panels — WAI-ARIA *disclosure* (trigger with `aria-expanded`, ordinary buttons/links inside, Escape returns focus). Do not add `menu`/`listbox` roles unless you implement the full arrow-key pattern. |
 | `FlagBadges` / `FlagIndicator` | Plausibility flags of a record (`flags`, `scan_flags`): amber badges whose disclosure explains the flag (EN/ID, unknown flags generic). Use `FlagIndicator` (no button) inside rows that are themselves buttons. |
+| `SecretOnce` | A secret the API returns once (temporary / tablet password): "shown only once" warning, read-only field, copy button. Never store it. |
 
 Hooks: `useSite()` (selected location), `useAuth().can(cap)` (role checks —
 hide actions the user cannot perform; `canSeeMedia(kind)` for photos),

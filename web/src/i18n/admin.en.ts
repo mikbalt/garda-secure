@@ -176,7 +176,7 @@ export const adminEn = {
   'adm.dev.howTitle': 'How to connect a tablet',
   'adm.dev.howDesc': 'About 5 minutes per guard post.',
   'adm.dev.how1': 'Install & sign in',
-  'adm.dev.how1Body': 'Install the SecurePatrol app on the tablet and sign in with a device account from your administrator.',
+  'adm.dev.how1Body': 'Create a tablet account below ("Tablet accounts"), install the SecurePatrol app on the tablet and sign in with that account and its password.',
   'adm.dev.how2': 'Wait for it here',
   'adm.dev.how2Body': 'Within seconds the tablet shows up on this page as "waiting for approval".',
   'adm.dev.how3': 'Approve & choose location',

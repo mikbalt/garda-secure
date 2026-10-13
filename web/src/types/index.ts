@@ -1,6 +1,9 @@
 // API types — mirror docs/api.md and backend/internal/{model,repository,service}.
 // Timestamps are RFC 3339 strings (UTC); dates are site-local "YYYY-MM-DD".
 
+import type { DeviceHealth } from './people'
+export * from './people'
+
 // ── Identity ─────────────────────────────────────────────────────────────────
 
 export interface Me {
@@ -9,6 +12,9 @@ export interface Me {
   realm: string
   client_id: string
   roles: string[]
+  /** Allowed sites of a site-scoped user (D-042); empty = whole realm. */
+  sites?: string[]
+  sites_restricted?: boolean
 }
 
 // ── Sites ────────────────────────────────────────────────────────────────────
@@ -84,6 +90,9 @@ export interface Device {
   last_seen_at?: string
   created_at: string
   updated_at: string
+  /** Latest health beacon of the tablet (D-049). */
+  health?: DeviceHealth
+  health_at?: string
 }
 
 // ── Schedules ────────────────────────────────────────────────────────────────
