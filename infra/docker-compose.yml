@@ -200,7 +200,7 @@ services:
   # Infra-only mode placeholder; docker-compose.app.yml swaps in the TLS
   # config and public ports.
   nginx:
-    image: nginx:1.30-alpine
+    image: nginx:1.31-alpine
     restart: always
     <<: *hardening
     logging: *logging
