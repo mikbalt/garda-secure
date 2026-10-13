@@ -7,9 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"html"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -376,7 +374,7 @@ func (s *Scheduler) recapSite(ctx context.Context, site *model.Site) error {
 	if err != nil {
 		return err
 	}
-	rows, err := repository.MonthlyRecap(ctx, s.pool, site.ID, from, to)
+	rows, err := repository.MonthlyRecap(ctx, s.pool, site.ID, loc, from, to)
 	if err != nil {
 		return err
 	}
@@ -387,64 +385,18 @@ func (s *Scheduler) recapSite(ctx context.Context, site *model.Site) error {
 	lang := site.Config().Language
 	subject, _ := notification.Render(notification.EventMonthlyRecap, lang,
 		map[string]string{"site": site.Name, "month": month})
-	text := recapText(site, month, rows, s.cfg.AppPublicURL)
+	totals := repository.RecapTotals(rows)
+	text := recapText(site, month, rows, totals, s.cfg.AppPublicURL)
 	if line := recapCompliance(compliance, lang, false); line != "" {
 		text = line + "\n" + text
 	}
 	_, err = s.notifier.Publish(ctx, notification.Event{
 		Type: notification.EventMonthlyRecap, Site: site, DedupeKey: "recap:" + site.ID + ":" + month,
 		Subject:  subject,
-		Body:     recapHTML(site, month, rows, s.cfg.AppPublicURL) + recapCompliance(compliance, lang, true),
+		Body:     recapHTML(site, month, rows, totals, s.cfg.AppPublicURL) + recapCompliance(compliance, lang, true),
 		TextBody: text,
 	})
 	return err
-}
-
-func recapHTML(site *model.Site, month string, rows []repository.MonthlyRecapRow, appURL string) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "<h2>%s — %s</h2>", html.EscapeString(site.Name), month)
-	b.WriteString(`<table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse;font-family:sans-serif;font-size:13px">`)
-	b.WriteString("<tr><th>Guard</th><th>Employee ID</th><th>Shifts</th><th>Present</th><th>Late</th><th>Absent</th><th>Early-out</th><th>Hours</th><th>Patrol %</th></tr>")
-	for _, r := range rows {
-		emp := ""
-		if r.EmployeeID != nil {
-			emp = *r.EmployeeID
-		}
-		fmt.Fprintf(&b, "<tr><td>%s</td><td>%s</td><td>%d</td><td>%d</td><td>%d</td><td>%d</td><td>%d</td><td>%.1f</td><td>%.1f</td></tr>",
-			html.EscapeString(r.GuardName), html.EscapeString(emp), r.ScheduledShifts, r.Present, r.Late,
-			r.Absent, r.EarlyOut, r.TotalHours, r.PatrolCompletePct)
-	}
-	b.WriteString("</table>")
-	if appURL != "" {
-		fmt.Fprintf(&b, `<p><a href="%s/reports?site=%s&amp;month=%s">Open in SecurePatrol</a></p>`,
-			html.EscapeString(appURL), site.ID, month)
-	}
-	return b.String()
-}
-
-// recapText is the plain-text recap for WhatsApp (which cannot render HTML):
-// one line per guard, in the site's language.
-func recapText(site *model.Site, month string, rows []repository.MonthlyRecapRow, appURL string) string {
-	en := site.Config().Language == "en"
-	var b strings.Builder
-	if en {
-		fmt.Fprintf(&b, "Attendance recap %s — %s (%d guards)\n", month, site.Name, len(rows))
-	} else {
-		fmt.Fprintf(&b, "Rekap absensi %s — %s (%d petugas)\n", month, site.Name, len(rows))
-	}
-	for _, r := range rows {
-		if en {
-			fmt.Fprintf(&b, "- %s: %d shifts, present %d, late %d, absent %d, %.1f h, patrol %.0f%%\n",
-				r.GuardName, r.ScheduledShifts, r.Present, r.Late, r.Absent, r.TotalHours, r.PatrolCompletePct)
-		} else {
-			fmt.Fprintf(&b, "- %s: %d shift, hadir %d, telat %d, absen %d, %.1f jam, patroli %.0f%%\n",
-				r.GuardName, r.ScheduledShifts, r.Present, r.Late, r.Absent, r.TotalHours, r.PatrolCompletePct)
-		}
-	}
-	if appURL != "" {
-		fmt.Fprintf(&b, "%s/reports?site=%s&month=%s", appURL, site.ID, month)
-	}
-	return strings.TrimSpace(b.String())
 }
 
 // eachIsolated runs fn for items 0..n-1. A failing item is logged and
