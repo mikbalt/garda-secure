@@ -3,6 +3,7 @@ import { peopleEn } from './people.en'
 import { opsEn } from './ops.en'
 import { adminEn } from './admin.en'
 import { platformEn } from './platform.en'
+import { patrol2En } from './patrol2.en'
 
 /** English dictionary. Keys are the source of truth for the `Key` type. */
 export const en = {
@@ -430,6 +431,7 @@ export const en = {
   ...opsEn,
   ...adminEn,
   ...platformEn,
+  ...patrol2En,
 } as const
 
 export type Key = keyof typeof en
