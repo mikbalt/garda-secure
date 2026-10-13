@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { CheckCircle2, Circle, Clock, Flag, Hand, Play, QrCode, TimerOff, XCircle, type LucideIcon } from 'lucide-react'
 import { apiGet } from '../../api/client'
@@ -9,7 +10,9 @@ import { ErrorState } from '../../components/ui/States'
 import { useI18n } from '../../i18n/context'
 import { formatDay, formatTime, localDateOf } from '../../lib/time'
 import { cpTone, fmtDuration, useNow } from './format'
-import { Avatar, CheckpointLegend, SegmentedBar } from './kit'
+import { Avatar, CheckpointLegend, Segmented, SegmentedBar } from './kit'
+import { LivePlan } from './plan/LivePlan'
+import { hasPlanPositions } from './plan/planState'
 import type { CheckpointProgress, CheckpointStatus, SessionProgress, Site } from '../../types'
 
 const cpIcon: Record<CheckpointStatus, LucideIcon> = {
@@ -100,6 +103,7 @@ export function SessionDrawer({ site, sessionId, guardName, onClose }: { site: S
   const { t, lang } = useI18n()
   const tz = site.timezone
   const now = useNow(30_000)
+  const [view, setView] = useState<'timeline' | 'plan'>('timeline')
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['patrol-session', sessionId],
     queryFn: () => apiGet<SessionProgress>(`/patrol/sessions/${sessionId}`),
@@ -144,12 +148,35 @@ export function SessionDrawer({ site, sessionId, guardName, onClose }: { site: S
             <CheckpointLegend />
           </div>
 
+          {s.flags && s.flags.length > 0 && <FlagBadges flags={s.flags} />}
+
           <section aria-labelledby="sess-timeline">
-            <h3 id="sess-timeline" className="mb-1 text-sm font-semibold text-gray-900">
-              {t('pat.timeline')}
-            </h3>
-            <p className="mb-4 text-xs text-gray-500">{t('ops.pat.timelineHint')}</p>
-            <SessionTimeline progress={data} tz={tz} />
+            <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+              <h3 id="sess-timeline" className="text-sm font-semibold text-gray-900">
+                {view === 'plan' ? t('p2.live.planTitle') : t('pat.timeline')}
+              </h3>
+              {hasPlanPositions(data) && (
+                <Segmented<'timeline' | 'plan'>
+                  label={t('p2.live.view')}
+                  hideLabel
+                  size="sm"
+                  value={view}
+                  onChange={setView}
+                  options={[
+                    { value: 'timeline', label: t('p2.live.viewTimeline') },
+                    { value: 'plan', label: t('p2.live.viewPlan') },
+                  ]}
+                />
+              )}
+            </div>
+            {view === 'plan' && hasPlanPositions(data) ? (
+              <LivePlan site={site} progress={data} />
+            ) : (
+              <>
+                <p className="mb-4 text-xs text-gray-500">{t('ops.pat.timelineHint')}</p>
+                <SessionTimeline progress={data} tz={tz} />
+              </>
+            )}
           </section>
         </div>
       ) : null}

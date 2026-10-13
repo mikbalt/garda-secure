@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import QRCode from 'qrcode'
-import { Printer } from 'lucide-react'
+import { Printer, RefreshCw } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { Modal } from '../../components/ui/Modal'
 import { Notice } from '../../components/ui/States'
@@ -33,7 +33,7 @@ function Grid({ route, size }: { route: PatrolRoute; size: number }) {
             <div className="text-sm font-semibold text-gray-900">
               {cp.order_index + 1}. {cp.name}
             </div>
-            <div className="font-mono text-xs text-gray-700">{cp.qr_code}</div>
+            <div className="break-all font-mono text-[11px] text-gray-700">{cp.qr_code}</div>
             <div className="text-xs text-gray-600">{route.name}</div>
           </figcaption>
         </figure>
@@ -43,8 +43,18 @@ function Grid({ route, size }: { route: PatrolRoute; size: number }) {
 }
 
 /** Shows a route's QR codes and prints them as a clean sheet. */
-export function QrSheet({ route, onClose }: { route: PatrolRoute; onClose: () => void }) {
+export function QrSheet({
+  route,
+  onClose,
+  onRegenerate,
+}: {
+  route: PatrolRoute
+  onClose: () => void
+  /** Admins: regenerate the route's codes (D-037); opens the confirmation. */
+  onRegenerate?: () => void
+}) {
   const { t } = useI18n()
+  const legacy = route.checkpoints.filter((c) => c.qr_signed === false).length
 
   const print = () => {
     document.body.classList.add('printing-sheet')
@@ -66,6 +76,12 @@ export function QrSheet({ route, onClose }: { route: PatrolRoute; onClose: () =>
         title={t('pat.qrSheet', { route: route.name })}
         footer={
           <>
+            {onRegenerate && (
+              <Button variant="ghost" className="mr-auto text-red-700 hover:bg-red-50 hover:text-red-800" onClick={onRegenerate}>
+                <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                {t('p2.qr.action')}
+              </Button>
+            )}
             <Button variant="secondary" onClick={onClose}>
               {t('common.close')}
             </Button>
@@ -77,8 +93,12 @@ export function QrSheet({ route, onClose }: { route: PatrolRoute; onClose: () =>
         }
       >
         <Notice>{t('ops.pat.qrHint')}</Notice>
+        {legacy > 0 && (
+          <Notice tone="warn">{t(onRegenerate ? 'p2.qr.legacySheet' : 'p2.qr.legacySheetRo', { n: legacy })}</Notice>
+        )}
         <Grid route={route} size={160} />
       </Modal>
+
       {createPortal(
         <div className="print-sheet" aria-hidden="true">
           <h1 className="mb-4 text-lg font-bold">{t('pat.qrSheet', { route: route.name })}</h1>
