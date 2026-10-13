@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { DoorOpen, IdCard } from 'lucide-react'
-import { apiGet } from '../../api/client'
+import { apiGetPage } from '../../api/paging'
+import { PageFooter } from '../../components/PageInfo'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { MediaPhotoButton } from '../../components/MediaPhoto'
@@ -45,11 +46,11 @@ export function VisitorsTab({ site }: { site: Site }) {
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['visitors', site.id, from, to],
-    queryFn: () => apiGet<VisitorLog[]>('/visitors', { site_id: site.id, from, to }),
+    queryFn: () => apiGetPage<VisitorLog>('/visitors', { site_id: site.id, from, to, limit: 1000 }),
     enabled: valid,
   })
 
-  const all = [...(data ?? [])].sort((a, b) => (b.entry_at ?? b.created_at).localeCompare(a.entry_at ?? a.created_at))
+  const all = [...(data?.rows ?? [])].sort((a, b) => (b.entry_at ?? b.created_at).localeCompare(a.entry_at ?? a.created_at))
   const inside = all.filter((v) => !v.exit_at)
   const rows = filter === 'inside' ? inside : all
 
@@ -167,6 +168,7 @@ export function VisitorsTab({ site }: { site: Site }) {
         />
       )}
       {detail && <VisitorDrawer visitor={detail} tz={tz} onClose={() => setDetail(null)} />}
+      {valid && data && <PageFooter shown={all.length} total={data.total} truncated={data.truncated} />}
     </>
   )
 }

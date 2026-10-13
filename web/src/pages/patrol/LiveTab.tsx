@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronRight, Clock4, MapPin, Route as RouteIcon, TimerOff } from 'lucide-react'
 import { apiGet } from '../../api/client'
@@ -9,8 +10,12 @@ import { EmptyState, ErrorState } from '../../components/ui/States'
 import { useI18n } from '../../i18n/context'
 import { formatTime } from '../../lib/time'
 import { fmtDuration, useNow } from './format'
-import { Avatar, CheckpointLegend, LiveIndicator, Meta, SegmentedBar } from './kit'
-import { SessionDrawer } from './SessionDrawer'
+import { Avatar, CheckpointLegend, LiveIndicator, Meta, Segmented, SegmentedBar } from './kit'
+import { SessionDrawer, SessionTimeline } from './SessionDrawer'
+import { LivePlan } from './plan/LivePlan'
+import { hasPlanPositions } from './plan/planState'
+import { Select } from '../../components/ui/Form'
+import { Notice } from '../../components/ui/States'
 import type { LivePatrol, Site } from '../../types'
 
 function LiveCard({ patrol, tz, now, onOpen }: { patrol: LivePatrol; tz: string; now: number; onOpen: () => void }) {
@@ -88,12 +93,66 @@ function LiveCard({ patrol, tz, now, onOpen }: { patrol: LivePatrol; tz: string;
   )
 }
 
+type View = 'cards' | 'plan'
+
+/** Plan view (FR-PAT-05): one running patrol on the site floor plan, or its list when nothing is placed. */
+function PlanView({ site, list, onOpen }: { site: Site; list: LivePatrol[]; onOpen: (p: LivePatrol) => void }) {
+  const { t } = useI18n()
+  const [choice, setChoice] = useState<string | null>(null)
+  const current = list.find((p) => p.progress.session.id === choice) ?? list[0]
+  if (!current) return null
+  const p = current.progress
+  const placed = hasPlanPositions(p)
+  return (
+    <div className="rounded-2xl border border-gray-200/80 bg-white p-4 shadow-card sm:p-5">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0">
+          <label htmlFor="live-plan-patrol" className="mb-1.5 block text-sm font-medium text-gray-700">
+            {t('p2.live.patrol')}
+          </label>
+          <Select id="live-plan-patrol" value={p.session.id} onChange={(e) => setChoice(e.target.value)} className="!h-9 !w-80 max-w-full !py-1">
+            {list.map((x) => (
+              <option key={x.progress.session.id} value={x.progress.session.id}>
+                {`${x.guard_name || '—'} — ${x.progress.route_name}${x.progress.checkpoints.some((c) => c.status === 'overdue') ? ` (${t('status.overdue')})` : ''}`}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <Button variant="secondary" size="sm" onClick={() => onOpen(current)}>
+          {t('ops.pat.openTimeline')}
+          <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+        </Button>
+      </div>
+      {placed ? (
+        <LivePlan site={site} progress={p} lastScanAt={current.last_scan_at} />
+      ) : (
+        <>
+          <Notice>{t('p2.live.notPlaced')}</Notice>
+          <SessionTimeline progress={p} tz={site.timezone} />
+        </>
+      )}
+    </div>
+  )
+}
+
 /** Running patrols, polled every 10 s (D-014). */
 export function LiveTab({ site, onShowHistory }: { site: Site; onShowHistory: () => void }) {
   const { t } = useI18n()
   const tz = site.timezone
   const now = useNow(15_000)
   const [open, setOpen] = useState<LivePatrol | null>(null)
+  const [params, setParams] = useSearchParams()
+  const view: View = params.get('view') === 'plan' ? 'plan' : 'cards'
+  const setView = (v: View) =>
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        if (v === 'plan') next.set('view', 'plan')
+        else next.delete('view')
+        return next
+      },
+      { replace: true }
+    )
   const { data, isLoading, error, refetch, dataUpdatedAt, isFetching } = useQuery({
     queryKey: ['patrol-live', site.id],
     queryFn: () => apiGet<LivePatrol[]>('/patrol/live', { site_id: site.id }),
@@ -124,7 +183,20 @@ export function LiveTab({ site, onShowHistory }: { site: Site; onShowHistory: ()
             </>
           )}
         </div>
-        <LiveIndicator updatedAt={dataUpdatedAt} fetching={isFetching} />
+        <div className="flex flex-wrap items-center gap-3">
+          <Segmented<View>
+            label={t('p2.live.view')}
+            hideLabel
+            size="sm"
+            value={view}
+            onChange={setView}
+            options={[
+              { value: 'cards', label: t('p2.live.viewCards') },
+              { value: 'plan', label: t('p2.live.viewPlan') },
+            ]}
+          />
+          <LiveIndicator updatedAt={dataUpdatedAt} fetching={isFetching} />
+        </div>
       </div>
 
       <div aria-live="polite" aria-busy={isLoading}>
@@ -140,6 +212,8 @@ export function LiveTab({ site, onShowHistory }: { site: Site; onShowHistory: ()
               {t('ops.pat.viewHistory')}
             </Button>
           </EmptyState>
+        ) : view === 'plan' ? (
+          <PlanView site={site} list={sorted} onOpen={setOpen} />
         ) : (
           <>
             <ul className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">

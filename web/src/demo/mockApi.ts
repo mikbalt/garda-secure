@@ -19,6 +19,21 @@ import type {
 import { getUserRoles } from '../keycloak'
 import { emptyWorld, iso, seedWorld, uid, wib, type World } from './world'
 import { demoHealth, demoMe, registerPeopleMocks, visibleSites, visitorReadAudit } from './mockPeople'
+import { csvBlob, pdfBlob, xlsxBlob } from './files'
+import {
+  compliance,
+  expectations,
+  floorplanUrl,
+  guardSchedule,
+  newId,
+  planPositionError,
+  scheduleError,
+  seedPatrolDemo,
+  sessionSchedule,
+  signedQR,
+  type DemoSchedule,
+  type PatrolWorld,
+} from './patrolDemo'
 
 const STORE_KEY = 'sp.demo.world'
 const MODE_KEY = 'sp.demo.mode'
@@ -37,6 +52,9 @@ function load(): World {
 }
 
 const w: World = load()
+/** Floor plans, schedules, signed QR codes and amendments of the sample data (D-037/38/43/48). */
+const pw = w as PatrolWorld
+if (demoMode() === 'sample') seedPatrolDemo(pw)
 
 function persist() {
   try {
@@ -165,51 +183,15 @@ function summary(s: PatrolSession): SessionSummary {
     started_at: s.started_at, ended_at: s.ended_at, status: s.status, total_checkpoints: p.total, scanned_count: p.scanned,
     sla_breaches: p.checkpoints.filter((c) => c.status === 'late' || c.status === 'overdue').length, completion_pct: p.completion_pct,
     flagged_scans: w.scans.filter((x) => x.session_id === s.id && (x.flags?.length ?? 0) > 0).length,
-    // D-035: session flags and the scheduled patrol it satisfied (none in the demo data).
-    flags: (s as { flags?: string[] }).flags ?? [], expectation_id: null, due_at: null, late_start: false,
+    // D-035: session flags and the scheduled patrol it satisfied.
+    flags: (s as { flags?: string[] }).flags ?? [], ...sessionSchedule(pw, s),
   } as SessionSummary
 }
 
-// ── Patrol schedules (D-035), kept on the world object ───────────────────────
+// ── Patrol schedules (D-038): see patrolDemo.ts ───────────────────────────────
 
-type RouteScheduleInput = { weekdays: number[]; start_time: string; end_time?: string | null; every_minutes?: number | null; grace_minutes?: number; active?: boolean }
-const ws = w as World & { route_schedules?: Record<string, (RouteScheduleInput & { id: string; route_id: string })[]> }
-const schedulesOf = (routeId: string) => (ws.route_schedules ??= {})[routeId] ?? []
-
-/** Number of patrols a window plans on one day (weekday 1 = Monday). */
-function patrolsPerDay(sc: RouteScheduleInput, weekday: number): number {
-  if (sc.active === false || !sc.weekdays.includes(weekday)) return 0
-  if (!sc.every_minutes || !sc.end_time) return 1
-  const [sh, sm] = sc.start_time.split(':').map(Number)
-  const [eh, em] = sc.end_time.split(':').map(Number)
-  let span = eh * 60 + em - (sh * 60 + sm)
-  if (span <= 0) span += 1440
-  return Math.ceil(span / sc.every_minutes)
-}
-
-type Compliance = { expected: number; started_on_time: number; late: number; missed: number; pending: number; compliance_pct: number | null }
-const pct = (c: Compliance) => (c.started_on_time + c.late + c.missed ? Math.round((c.started_on_time / (c.started_on_time + c.late + c.missed)) * 1000) / 10 : null)
-
-/** Demo approximation of /reports/patrol-compliance: sessions of the day count as on-time starts. */
-function compliance(siteId: string, range: [Date, Date]) {
-  const rows: (Compliance & { date: string; route_id: string; route_name: string })[] = []
-  const totals: Compliance = { expected: 0, started_on_time: 0, late: 0, missed: 0, pending: 0, compliance_pct: null }
-  for (let t = range[0].getTime(); t < range[1].getTime() && t <= Date.now(); t += 86_400_000) {
-    const date = new Date(t + 7 * 3600_000).toISOString().slice(0, 10)
-    const weekday = ((new Date(t + 7 * 3600_000).getUTCDay() + 6) % 7) + 1
-    for (const r of w.routes.filter((x) => x.site_id === siteId && x.active)) {
-      const expected = schedulesOf(r.id).reduce((n, sc) => n + patrolsPerDay(sc, weekday), 0)
-      if (!expected) continue
-      const started = Math.min(expected, w.sessions.filter((x) => x.route_id === r.id && inRange(x.started_at, dayRange(date))).length)
-      const row = { date, route_id: r.id, route_name: r.name, expected, started_on_time: started, late: 0, missed: expected - started, pending: 0, compliance_pct: null as number | null }
-      row.compliance_pct = pct(row)
-      rows.push(row)
-      for (const k of ['expected', 'started_on_time', 'late', 'missed', 'pending'] as const) totals[k] += row[k]
-    }
-  }
-  totals.compliance_pct = pct(totals)
-  return { rows, totals }
-}
+const schedulesOf = (routeId: string) => (pw.route_schedules ??= {})[routeId] ?? []
+const rangeMs = ([a, b]: [Date, Date]): [number, number] => [a.getTime(), b.getTime()]
 
 function dailyRows(siteId: string, range: [Date, Date]): DailyAttendanceRow[] {
   return w.shifts
@@ -385,8 +367,6 @@ on('GET', '/attendance/shifts/:shiftId/history', ({ params }) => {
 // Patrol
 on('GET', '/patrol/routes', ({ query }) => w.routes.filter((r) => r.site_id === query.site_id && (query.active !== 'true' || r.active)))
 on('GET', '/patrol/routes/:id', ({ params }) => byId(w.routes, params.id))
-/** Demo stand-in for the server's signed payload SP1:<checkpoint id>:<22-char signature>. */
-const signedQR = (id: string, version: number) => `SP1:${id}:${btoa(`${id}:${version}`).replace(/[^A-Za-z0-9]/g, '').padEnd(22, 'A').slice(-22)}`
 type QRCheckpoint = PatrolRoute['checkpoints'][0] & { qr_signed?: boolean; qr_version?: number }
 const normalizeRoute = (body: Body, base?: PatrolRoute): PatrolRoute => {
   const stored = new Map(((base?.checkpoints ?? []) as QRCheckpoint[]).map((c) => [c.id, c]))
@@ -405,12 +385,18 @@ const normalizeRoute = (body: Body, base?: PatrolRoute): PatrolRoute => {
   if (cps.length === 0) throw bad('checkpoints_required', 'a route needs at least one checkpoint')
   return { ...(base ?? { id: uid(), site_id: String(body.site_id), created_at: iso(now()) }), name: String(body.name), active: body.active !== false, checkpoints: cps } as PatrolRoute
 }
+function checkPlans(siteId: string, body: Body) {
+  const e = planPositionError(pw, siteId, (body.checkpoints as never[]) ?? [])
+  if (e) throw bad(e.code, e.msg)
+}
 on('POST', '/patrol/routes', ({ body }) => {
+  checkPlans(String(body.site_id), body)
   const r = normalizeRoute(body)
   w.routes.push(r)
   return r
 })
 on('PUT', '/patrol/routes/:id', ({ params, body }) => {
+  checkPlans(byId(w.routes, params.id).site_id, body)
   const r = normalizeRoute(body, byId(w.routes, params.id))
   w.routes = w.routes.map((x) => (x.id === r.id ? r : x))
   return r
@@ -426,14 +412,16 @@ on('POST', '/patrol/routes/:id/regenerate-qr', ({ params }) => {
 on('GET', '/patrol/routes/:id/schedules', ({ params }) => ({ route_id: params.id, schedules: schedulesOf(byId(w.routes, params.id).id) }))
 on('PUT', '/patrol/routes/:id/schedules', ({ params, body }) => {
   const r = byId(w.routes, params.id)
-  const list = ((body.schedules as RouteScheduleInput[]) ?? []).map((sc, i) => {
-    if (!sc.weekdays?.length) throw bad('invalid_weekdays', `schedule ${i + 1}: weekdays must be 1 (Monday) … 7 (Sunday)`)
-    if (!/^\d{2}:\d{2}$/.test(sc.start_time ?? '')) throw bad('invalid_start_time', `schedule ${i + 1}: start_time must be HH:MM`)
-    if (sc.every_minutes && !sc.end_time) throw bad('end_time_required', `schedule ${i + 1}: end_time is required with every_minutes`)
-    return { id: uid(), route_id: r.id, end_time: null, every_minutes: null, grace_minutes: 15, active: true, created_at: iso(now()), updated_at: iso(now()), ...sc }
-  })
-  ;(ws.route_schedules ??= {})[r.id] = list
-  return { route_id: r.id, schedules: list, generated_expectations: list.reduce((n, sc) => n + 2 * patrolsPerDay(sc, sc.weekdays[0]), 0) }
+  const input = ((body.schedules as Partial<DemoSchedule>[]) ?? []).map((sc) => ({
+    weekdays: [...new Set(sc.weekdays ?? [])].sort((a, b) => a - b), start_time: sc.start_time ?? '', end_time: sc.end_time || null,
+    every_minutes: sc.every_minutes ?? null, grace_minutes: sc.grace_minutes ?? 15, active: sc.active !== false,
+  }))
+  const err = scheduleError(input)
+  if (err) throw new HttpError(400, err.code, err.msg, err.field)
+  const list: DemoSchedule[] = input.map((sc) => ({ id: newId(), route_id: r.id, created_at: iso(now()), updated_at: iso(now()), ...sc }))
+  ;(pw.route_schedules ??= {})[r.id] = list
+  const ahead = expectations(pw, r.site_id, Date.now(), Date.now() + 48 * 3600_000).filter((e) => e.route_id === r.id).length
+  return { route_id: r.id, schedules: list, generated_expectations: ahead }
 })
 on('GET', '/patrol/live', ({ query }) =>
   w.sessions
@@ -460,7 +448,18 @@ on('GET', '/incidents/:id', ({ params }) => {
   const i = effective(byId(w.incidents, params.id))
   return { incident: i, guard_name: guardName(i.guard_id), amendments: w.amendments.filter((a) => a.incident_id === i.id), photos: i.photo_object_keys.map((key) => ({ key, uploaded: true, url: photoUrl(key) })) }
 })
-on('GET', '/incidents/:id/pdf', ({ params }) => demoPdf(`Incident ${byId(w.incidents, params.id).id}`))
+on('GET', '/incidents/:id/pdf', ({ params }) => {
+  const i = effective(byId(w.incidents, params.id)) as World['incidents'][0] & Record<string, unknown>
+  const site = w.sites.find((x) => x.id === i.site_id)
+  const lines = [
+    `Site: ${site?.name ?? ''}`, `Occurred: ${i.occurred_at}`, `Category: ${i.type}`, `Severity: ${i.severity}`, `Status: ${i.status}`,
+    `Location: ${i.location ?? '-'}`, `Reported by: ${guardName(i.guard_id)}`, `GPS: ${i.gps_lat != null ? `${i.gps_lat}, ${i.gps_lng}` : 'not recorded'}`, '',
+    'Description:', ...(String(i.description ?? '-').match(/.{1,95}(\s|$)/g) ?? []),
+    ...(i.amended ? ['', 'Amended after filing (originals):', ...['type', 'severity', 'location', 'description'].filter((k) => i[`original_${k}`] != null).map((k) => `  ${k}: ${String(i[`original_${k}`]).slice(0, 90)}`)] : []),
+    '', `Photos: ${i.photo_object_keys.length}`,
+  ]
+  return Object.assign(pdfBlob(`Incident report - ${i.type}`, lines), { __file: `incident-${i.id}.pdf` })
+})
 on('PUT', '/incidents/:id/status', ({ params, body }) => Object.assign(byId(w.incidents, params.id), { status: body.status, updated_at: iso(now()) }))
 on('POST', '/incidents/:id/amendments', ({ params, body }) => {
   if (!String(body.reason ?? '').trim()) throw bad('reason_required', 'a reason is required')
@@ -535,15 +534,16 @@ on('GET', '/dashboard/summary', ({ query }) => {
 on('GET', '/reports/attendance/daily', ({ query }) => ({ site_id: query.site_id, date: query.date, rows: dailyRows(siteOf(query).id, dayRange(query.date)) }))
 on('GET', '/reports/attendance/monthly', ({ query }) => ({
   site_id: query.site_id, month: query.month, rows: monthly(siteOf(query).id, monthRange(query.month)),
-  patrol_compliance: compliance(siteOf(query).id, monthRange(query.month)).totals,
+  patrol_compliance: compliance(pw, siteOf(query).id, ...rangeMs(monthRange(query.month))).totals,
 }))
-on('GET', '/reports/patrol-compliance', ({ query }) => ({ site_id: query.site_id, from: query.from, to: query.to, ...compliance(siteOf(query).id, dateRange(query.from, query.to)) }))
+on('GET', '/reports/patrol-compliance', ({ query }) => ({ site_id: query.site_id, from: query.from, to: query.to, ...compliance(pw, siteOf(query).id, ...rangeMs(dateRange(query.from, query.to))) }))
 on('GET', '/reports/patrol/sessions', ({ query }) => ({
   site_id: query.site_id,
   rows: w.sessions.filter((s) => s.site_id === query.site_id && inRange(s.started_at, dateRange(query.from, query.to))).map(summary),
 }))
 on('GET', '/reports/incidents', ({ query }) =>
   w.incidents
+    .map(effective)
     .filter((i) => i.site_id === query.site_id && (!query.type || i.type === query.type) && (!query.severity || i.severity === query.severity) && (!query.status || i.status === query.status) && (!query.from || inRange(i.occurred_at, dateRange(query.from, query.to))))
     .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at)),
 )
@@ -560,7 +560,7 @@ on('GET', '/reports/guards/kpi', ({ query }): { site_id?: string; rows: GuardKpi
       sla_breaches: w.sessions
         .filter((s) => s.guard_id === m.guard_id && s.site_id === query.site_id)
         .reduce((n, s) => n + progress(s).checkpoints.filter((c) => c.status === 'late' || c.status === 'overdue').length, 0),
-      scheduled_patrols: 0, schedule_compliance_pct: null, // D-035 (no scheduled patrols in the demo data)
+      ...guardSchedule(pw, String(query.site_id), ...rangeMs(dateRange(query.from, query.to)), m.guard_id),
     } as GuardKpiRow
   }),
 }))
@@ -705,28 +705,31 @@ function effective<T extends { id: string; type: string; severity: string; descr
   return out as T & { amended: boolean }
 }
 
-function demoPdf(title: string) {
-  return new Blob([`%PDF-1.4\n% SecurePatrol demo: ${title}\n`], { type: 'application/pdf' })
-}
-
-const planSvg = (name: string) =>
-  'data:image/svg+xml;utf8,' +
-  encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800"><rect width="1200" height="800" fill="#f8fafc"/><rect x="60" y="60" width="1080" height="680" fill="none" stroke="#334155" stroke-width="8"/><line x1="600" y1="60" x2="600" y2="500" stroke="#334155" stroke-width="6"/><line x1="60" y1="420" x2="420" y2="420" stroke="#334155" stroke-width="6"/><text x="600" y="780" font-family="sans-serif" font-size="28" text-anchor="middle" fill="#64748b">${name}</text></svg>`)
-
-on('GET', '/sites/:id/floorplans', ({ params }) => (fx.floorplans ?? []).filter((f) => f.site_id === params.id).map((f) => ({ ...f, url: planSvg(f.name) })))
+on('GET', '/sites/:id/floorplans', ({ params }) => (pw.floorplans ?? []).filter((f) => f.site_id === params.id).map((f) => ({ ...f, url: floorplanUrl(f) })))
 on('POST', '/sites/:id/floorplans', ({ params, body }) => {
+  requireRoles('admin')
+  const site = byId(w.sites, params.id)
   const form = body as unknown as { get?: (k: string) => unknown }
-  const name = String(form.get?.('name') ?? 'Floor plan')
-  const id = uid()
-  const f: DemoFloorplan = { id, site_id: byId(w.sites, params.id).id, name, object_key: `sites/${params.id}/floorplan/${id}.png`, content_type: 'image/png', width: 1200, height: 800, size_bytes: 48_000, created_at: iso(now()) }
-  ;(fx.floorplans ??= []).push(f)
-  return { ...f, url: planSvg(name) }
+  const file = form.get?.('file') as File | null | undefined
+  const name = String(form.get?.('name') ?? '').trim()
+  if (!file || typeof file !== 'object') throw bad('file_required', 'file is required')
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw bad('invalid_file_type', 'only JPEG, PNG or WebP')
+  if (file.size > 10 * 1024 * 1024) throw bad('file_too_large', 'file is larger than 10 MB')
+  if (!name) throw bad('name_required', 'name is required')
+  if ((pw.floorplans ?? []).filter((f) => f.site_id === site.id).length >= 20) throw new HttpError(409, 'too_many_floorplans', 'a site can have at most 20 floor plans')
+  const id = newId()
+  const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg'
+  const f = { id, site_id: site.id, name, object_key: `sites/${site.id}/floorplan/${id}.${ext}`, content_type: file.type, width: 1200, height: 800, size_bytes: file.size, created_by: 'demo/admin', created_at: iso(now()) }
+  ;(pw.floorplans ??= []).push(f)
+  return { ...f, url: floorplanUrl(f) }
 })
 on('DELETE', '/sites/:id/floorplans/:floorplanId', ({ params }) => {
-  if (w.routes.some((r) => r.checkpoints.some((c) => (c as { floorplan_id?: string }).floorplan_id === params.floorplanId))) {
+  requireRoles('admin')
+  if (w.routes.some((r) => r.site_id === params.id && r.checkpoints.some((c) => c.floorplan_id === params.floorplanId))) {
     throw new HttpError(409, 'floorplan_in_use', 'checkpoints are placed on this floor plan; move them first')
   }
-  fx.floorplans = (fx.floorplans ?? []).filter((f) => f.id !== params.floorplanId)
+  byId(pw.floorplans ?? [], params.floorplanId)
+  pw.floorplans = (pw.floorplans ?? []).filter((f) => f.id !== params.floorplanId)
   return null
 })
 
@@ -742,13 +745,22 @@ registerPeopleMocks({
 
 // ── Adapter ──────────────────────────────────────────────────────────────────
 
-function toCsv(data: unknown): string {
-  const rows = Array.isArray(data) ? data : ((data as { rows?: unknown[] })?.rows ?? [])
-  if (rows.length === 0) return 'no data\n'
-  const keys = Object.keys(rows[0] as object)
-  const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
-  return [keys.join(','), ...rows.map((r) => keys.map((k) => esc((r as Record<string, unknown>)[k])).join(','))].join('\n')
+/** Rows + columns of a JSON answer for CSV / XLSX exports. */
+function table(data: unknown): { columns: string[]; rows: unknown[][] } {
+  const list = (Array.isArray(data) ? data : ((data as { rows?: unknown[] })?.rows ?? [])) as Record<string, unknown>[]
+  const columns = Array.from(new Set(list.flatMap((r) => Object.keys(r)))).filter((k) => !['photo_object_keys', 'selfie_object_key', 'photo_object_key'].includes(k))
+  return { columns, rows: list.map((r) => columns.map((k) => r[k])) }
 }
+
+/** Paged lists (D-045): default page size per path. */
+const PAGED: [RegExp, number, number][] = [
+  [/^\/incidents\/?$/, 1000, 1000],
+  [/^\/reports\/incidents\/?$/, 1000, 1000],
+  [/^\/sos\/?$/, 200, 500],
+  [/^\/defects\/?$/, 500, 1000],
+  [/^\/visitors\/?$/, 1000, 1000],
+]
+const EXPORT_MAX = { csv: 50_000, xlsx: 50_000, pdf: 2_000 }
 
 const adapter: AxiosAdapter = async (cfg: InternalAxiosRequestConfig) => {
   await new Promise((r) => setTimeout(r, 120 + Math.random() * 180)) // feel like a network
@@ -770,18 +782,43 @@ const adapter: AxiosAdapter = async (cfg: InternalAxiosRequestConfig) => {
         recordAudit(method, path, params, body)
         persist()
       }
-      if (query.format === 'csv' || query.format === 'xlsx') {
-        // Demo: XLSX downloads are served as CSV.
-        const blob = new Blob(['﻿' + toCsv(data)], { type: 'text/csv' })
-        return respond(200, blob, { 'content-disposition': `attachment; filename="demo${path.replace(/\//g, '-')}.csv"` })
+      if (data instanceof Blob) {
+        const file = (data as Blob & { __file?: string }).__file ?? `demo${path.replace(/\//g, '-')}`
+        return respond(200, data, { 'content-type': data.type, 'content-disposition': `attachment; filename="${file}"` })
       }
-      if (query.format === 'pdf') {
-        return respond(200, demoPdf(path), { 'content-disposition': `attachment; filename="demo${path.replace(/\//g, '-')}.pdf"` })
+      if (query.format && query.format !== 'json') {
+        // Exports (D-045): csv | xlsx on every report, pdf on the incident log only.
+        const format = query.format as keyof typeof EXPORT_MAX
+        const pdfOk = /^\/reports\/incidents\/?$/.test(path)
+        if (!(format in EXPORT_MAX) || (format === 'pdf' && !pdfOk)) throw bad('invalid_format', pdfOk ? 'format must be csv, xlsx or pdf' : 'format must be csv or xlsx')
+        const { columns, rows } = table(data)
+        if (rows.length > EXPORT_MAX[format]) {
+          throw bad('export_too_large', `the export has ${rows.length} rows; the limit for ${format} is ${EXPORT_MAX[format]} — narrow the date range or filters`)
+        }
+        const base = `demo${path.replace(/\//g, '-')}${query.from ? `-${query.from}` : query.month ? `-${query.month}` : ''}`
+        const title = path.split('/').filter(Boolean).join(' ')
+        const blob =
+          format === 'xlsx'
+            ? xlsxBlob(title, columns, rows, Object.entries(query).filter(([k, v]) => k !== 'format' && v) as [string, string][])
+            : format === 'pdf'
+              ? pdfBlob(`SecurePatrol - ${title}`, rows.map((r) => r.map((v) => (v == null ? '' : String(v))).slice(0, 6).join(' | ')))
+              : csvBlob(columns, rows)
+        return respond(200, blob, { 'content-type': blob.type, 'content-disposition': `attachment; filename="${base}.${format}"` })
       }
       if (data instanceof Paged) {
         return respond(200, data.rows, { 'x-total-count': String(data.total) })
       }
       if (Array.isArray(data)) {
+        const paged = PAGED.find(([re]) => re.test(path))
+        if (paged) {
+          const [, def, max] = paged
+          const limit = query.limit === undefined ? def : Number(query.limit)
+          const offset = query.offset === undefined ? 0 : Number(query.offset)
+          if (!Number.isInteger(limit) || limit < 1 || limit > max) throw bad('invalid_limit', `limit must be 1–${max}`)
+          if (!Number.isInteger(offset) || offset < 0) throw bad('invalid_offset', 'offset must be ≥ 0')
+          const page = data.slice(offset, offset + limit)
+          return respond(200, page, { 'x-total-count': String(data.length), ...(offset + page.length < data.length ? { 'x-truncated': 'true' } : {}) })
+        }
         return respond(200, data, { 'x-total-count': String(data.length) })
       }
       return respond(method === 'POST' && data !== null ? 201 : data === null ? 204 : 200, data)

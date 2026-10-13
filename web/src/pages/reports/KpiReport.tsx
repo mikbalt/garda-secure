@@ -49,6 +49,13 @@ export function KpiReport({ site, title }: { site: Site; title: string }) {
       numeric: true,
       cell: (r) => (r.sla_breaches > 0 ? <span className="font-medium text-orange-700">{r.sla_breaches}</span> : <span className="text-gray-500">0</span>),
     },
+    { key: 'sched', header: t('p2.rep.kpi.scheduled'), numeric: true, cell: (r) => r.scheduled_patrols ?? <span className="text-gray-500">—</span> },
+    {
+      key: 'schedPct',
+      header: t('p2.rep.kpi.schedulePct'),
+      numeric: true,
+      cell: (r) => (r.schedule_compliance_pct == null ? <span className="text-gray-500">—</span> : <PctCell value={r.schedule_compliance_pct} />),
+    },
   ]
 
   return (
@@ -56,7 +63,7 @@ export function KpiReport({ site, title }: { site: Site; title: string }) {
       site={site}
       title={title}
       period={from && to ? `${formatDay(from, lang, false)} – ${formatDay(to, lang, false)}` : ''}
-      csv={{ path: '/reports/guards/kpi', params: { site_id: site.id, from, to }, filename: `guard-kpi-${from}-${to}.csv`, disabled: !valid }}
+      csv={{ path: '/reports/guards/kpi', params: { site_id: site.id, from, to }, filename: `guard-kpi-${from}-${to}`, disabled: !valid }}
       filters={<RangePicker value={range} onChange={setRange} today={today} />}
       invalid={valid ? undefined : t('adm.rep.badRange', { n: MAX_DAYS })}
       stats={
@@ -89,6 +96,7 @@ export function KpiReport({ site, title }: { site: Site; title: string }) {
           {rows.length > 0 && (
             <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
               <span>{t('adm.rep.kpi.legend')}</span>
+              <span>{t('p2.rep.kpi.scheduleHint')}</span>
               <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-500" />≥ 90%</span>
               <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-amber-400" />75–90%</span>
               <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-red-500" />&lt; 75%</span>

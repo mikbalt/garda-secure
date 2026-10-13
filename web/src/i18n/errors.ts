@@ -10,6 +10,7 @@ import {
   type ApiErrorBody,
 } from '../api/client'
 import type { Lang } from '../lib/time'
+import { PATROL_ERROR_CODES, exportTooLargeText } from './errors.patrol'
 
 type Pair = { en: string; id: string }
 
@@ -201,6 +202,7 @@ export const ERROR_CODES: Record<string, Pair> = {
     id: 'URL API WhatsApp ini tidak diizinkan (bawaan: https://graph.facebook.com/).',
   },
   invalid_phone_number_id: { en: 'The phone number ID must be digits only.', id: 'Phone number ID hanya boleh berisi angka.' },
+  ...PATROL_ERROR_CODES,
 }
 
 /** Why a channel test failed (`reason` of 502 `delivery_failed`). */
@@ -318,6 +320,7 @@ export function errorText(err: unknown, lang: Lang, overrides: Overrides = {}): 
       const seconds = apiRetryAfter(err)
       return seconds !== undefined ? fill(ERROR_CODES.rate_limited[lang], { seconds: Math.max(1, seconds) }) : BY_STATUS[429][lang]
     }
+    if (code === 'export_too_large') return exportTooLargeText(b?.error ?? apiErrorMessage(err), lang)
     if (code === 'delivery_failed') {
       const reason = deliveryReasonText(b?.reason ?? apiErrorReason(err), lang)
       return reason ? `${ERROR_CODES.delivery_failed[lang]} ${reason}` : ERROR_CODES.delivery_failed[lang]

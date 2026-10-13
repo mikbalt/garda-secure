@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Pencil, Plus, QrCode, Route as RouteIcon, Timer } from 'lucide-react'
+import { Map as MapIcon, Pencil, Plus, QrCode, Route as RouteIcon, ShieldAlert, Timer } from 'lucide-react'
 import { apiGet } from '../../api/client'
 import { CardSkeleton } from '../../components/LoadingSkeleton'
 import { Badge } from '../../components/ui/Badge'
@@ -11,6 +11,8 @@ import { useI18n } from '../../i18n/context'
 import { fmtDuration } from './format'
 import { RouteEditor } from './RouteEditor'
 import { QrSheet } from './QrSheet'
+import { RegenerateQrDialog } from './RegenerateQr'
+import { FloorplansCard } from './plan/FloorplansCard'
 import type { PatrolRoute, Site } from '../../types'
 
 const PREVIEW = 5
@@ -22,6 +24,8 @@ function RouteCard({ route, canEdit, onEdit, onQr }: { route: PatrolRoute; canEd
   const min = Math.min(...slas)
   const max = Math.max(...slas)
   const total = slas.reduce((n, v) => n + v, 0)
+  const legacy = cps.filter((c) => c.qr_signed === false).length
+  const placed = cps.filter((c) => c.floorplan_id).length
   const slaText = slas.length === 0 ? t('ops.pat.slaNone') : min === max ? t('ops.pat.slaSingle', { a: min }) : t('ops.pat.slaRange', { a: min, b: max })
 
   return (
@@ -50,6 +54,23 @@ function RouteCard({ route, canEdit, onEdit, onQr }: { route: PatrolRoute; canEd
           {total > 0 && <p className="text-gray-500">{t('ops.pat.roundTime', { d: fmtDuration(total * 60_000, t) })}</p>}
         </div>
       </div>
+
+      {(legacy > 0 || placed > 0) && (
+        <div className="mx-5 mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+          {legacy > 0 && (
+            <span className="inline-flex items-center gap-1 font-medium text-amber-800">
+              <ShieldAlert className="h-3.5 w-3.5" aria-hidden="true" />
+              {t('p2.qr.legacyCount', { n: legacy })}
+            </span>
+          )}
+          {placed > 0 && (
+            <span className="inline-flex items-center gap-1 text-gray-600">
+              <MapIcon className="h-3.5 w-3.5 text-gray-500" aria-hidden="true" />
+              {t('p2.place.count', { a: placed, n: cps.length })}
+            </span>
+          )}
+        </div>
+      )}
 
       <ol className="mx-5 mb-4 mt-3 flex-1 space-y-1.5" aria-label={t('pat.checkpoints')}>
         {cps.slice(0, PREVIEW).map((c, i) => (
@@ -82,6 +103,7 @@ export function RoutesTab({ site, canEdit }: { site: Site; canEdit: boolean }) {
   const { t } = useI18n()
   const [editing, setEditing] = useState<PatrolRoute | 'new' | null>(null)
   const [qrFor, setQrFor] = useState<PatrolRoute | null>(null)
+  const [regenFor, setRegenFor] = useState<PatrolRoute | null>(null)
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['patrol-routes', site.id],
@@ -95,6 +117,7 @@ export function RoutesTab({ site, canEdit }: { site: Site; canEdit: boolean }) {
 
   return (
     <>
+      {!error && !isLoading && <FloorplansCard site={site} routes={data ?? []} canEdit={canEdit} />}
       {error ? (
         <ErrorState error={error} onRetry={() => refetch()} />
       ) : isLoading ? (
@@ -122,8 +145,42 @@ export function RoutesTab({ site, canEdit }: { site: Site; canEdit: boolean }) {
           </ul>
         </>
       )}
-      {editing && <RouteEditor site={site} route={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
-      {qrFor && <QrSheet route={qrFor} onClose={() => setQrFor(null)} />}
+      {editing && (
+        <RouteEditor
+          site={site}
+          route={editing === 'new' ? null : editing}
+          onClose={() => setEditing(null)}
+          onRegenerate={(r) => {
+            setEditing(null)
+            setRegenFor(r)
+          }}
+        />
+      )}
+      {qrFor && (
+        <QrSheet
+          route={qrFor}
+          onClose={() => setQrFor(null)}
+          onRegenerate={
+            canEdit
+              ? () => {
+                  setRegenFor(qrFor)
+                  setQrFor(null)
+                }
+              : undefined
+          }
+        />
+      )}
+      {regenFor && (
+        <RegenerateQrDialog
+          route={regenFor}
+          onClose={() => setRegenFor(null)}
+          onDone={(r) => {
+            setRegenFor(null)
+            // Reprint right away: the old codes no longer match.
+            setQrFor(r)
+          }}
+        />
+      )}
     </>
   )
 }

@@ -1,5 +1,6 @@
 // API types — mirror docs/api.md and backend/internal/{model,repository,service}.
 // Timestamps are RFC 3339 strings (UTC); dates are site-local "YYYY-MM-DD".
+import type { ComplianceCounts } from './patrol'
 
 import type { DeviceHealth } from './people'
 export * from './people'
@@ -208,6 +209,13 @@ export interface Checkpoint {
   order_index: number
   lat?: number | null
   lng?: number | null
+  /** Signed `SP1:` code (D-037); false = legacy custom code. */
+  qr_signed?: boolean
+  qr_version?: number
+  /** Floor-plan position (D-048): relative 0..1 from the top-left. */
+  floorplan_id?: string | null
+  plan_x?: number | null
+  plan_y?: number | null
 }
 
 export interface PatrolRoute {
@@ -227,6 +235,9 @@ export interface CheckpointInput {
   order_index: number
   lat?: number | null
   lng?: number | null
+  floorplan_id?: string
+  plan_x?: number
+  plan_y?: number
 }
 
 export interface RouteInput {
@@ -249,6 +260,8 @@ export interface PatrolSession {
   ended_at?: string
   status: SessionStatus
   created_at: string
+  /** Session flags (e.g. guard_unverified). */
+  flags?: string[]
 }
 
 export interface CheckpointProgress extends Checkpoint {
@@ -274,6 +287,8 @@ export interface SessionProgress {
 
 export interface LivePatrol {
   guard_name: string
+  /** Latest scan of the session. */
+  last_scan_at?: string | null
   progress: SessionProgress
 }
 
@@ -292,6 +307,12 @@ export interface SessionSummary {
   completion_pct: number
   /** Scans with plausibility flags. */
   flagged_scans?: number
+  /** Session flags (e.g. guard_unverified). */
+  flags?: string[]
+  /** Scheduled patrol the session satisfied (D-038); null = unscheduled. */
+  expectation_id?: string | null
+  due_at?: string | null
+  late_start?: boolean
 }
 
 // ── Incidents, SOS, defects, visitors ────────────────────────────────────────
@@ -317,6 +338,14 @@ export interface Incident {
   updated_at: string
   received_at?: string
   flags?: string[]
+  /** D-043: effective values; `original_*` hold the filed value of changed fields. */
+  amended?: boolean
+  original_type?: string
+  original_severity?: Severity
+  original_description?: string
+  original_location?: string
+  gps_lat?: number | null
+  gps_lng?: number | null
 }
 
 export interface IncidentAmendment {
@@ -438,6 +467,10 @@ export interface GuardKpiRow {
   patrol_completion_pct: number
   incidents_filed: number
   sla_breaches: number
+  /** Scheduled patrols due in the range that the guard's sessions satisfied (D-038). */
+  scheduled_patrols?: number
+  /** Share started within the grace period; null when none. */
+  schedule_compliance_pct?: number | null
 }
 
 export interface RowsReport<T> {
@@ -445,6 +478,8 @@ export interface RowsReport<T> {
   rows: T[]
   date?: string
   month?: string
+  /** Monthly recap: the site's schedule compliance totals of the month. */
+  patrol_compliance?: ComplianceCounts
 }
 
 // ── Administration ───────────────────────────────────────────────────────────
@@ -554,3 +589,5 @@ export interface AuditPage {
   offset: number
   has_more: boolean
 }
+
+export * from './patrol'

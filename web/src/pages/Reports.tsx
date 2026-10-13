@@ -1,5 +1,5 @@
 import { Link, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, ArrowRight, BarChart3, FileSpreadsheet, Printer, Users } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BarChart3, FileSpreadsheet, FileText, Users } from 'lucide-react'
 import { RequireSite } from '../components/RequireSite'
 import { PageHeader } from '../components/ui/States'
 import { useAuth } from '../hooks/useAuth'
@@ -10,7 +10,10 @@ import { MonthlyReport } from './reports/MonthlyReport'
 import { PatrolReport } from './reports/PatrolReport'
 import { IncidentReport } from './reports/IncidentReport'
 import { KpiReport } from './reports/KpiReport'
+import { ComplianceReport } from './reports/ComplianceReport'
 import type { Site } from '../types'
+
+const FORMAT_NAME = { xlsx: 'Excel', csv: 'CSV', pdf: 'PDF' } as const
 
 function ReportCard({ def }: { def: ReportDef }) {
   const { t } = useI18n()
@@ -34,14 +37,20 @@ function ReportCard({ def }: { def: ReportDef }) {
           {t(def.audience)}
         </span>
         <span className="inline-flex items-center gap-2 text-gray-500">
+          <span className="sr-only">{t('p2.exp.formats')}:</span>
           <span className="inline-flex items-center gap-1">
             <FileSpreadsheet className="h-3.5 w-3.5" aria-hidden="true" />
-            CSV
+            {def.formats
+              .filter((f) => f !== 'pdf')
+              .map((f) => FORMAT_NAME[f])
+              .join(' · ')}
           </span>
-          <span className="inline-flex items-center gap-1">
-            <Printer className="h-3.5 w-3.5" aria-hidden="true" />
-            PDF
-          </span>
+          {def.formats.includes('pdf') && (
+            <span className="inline-flex items-center gap-1">
+              <FileText className="h-3.5 w-3.5" aria-hidden="true" />
+              PDF
+            </span>
+          )}
         </span>
       </div>
     </Link>
@@ -86,6 +95,7 @@ function ReportView({ def, site }: { def: ReportDef; site: Site }) {
       {def.key === 'patrol' && <PatrolReport site={site} title={title} />}
       {def.key === 'incidents' && <IncidentReport site={site} title={title} />}
       {def.key === 'kpi' && <KpiReport site={site} title={title} />}
+      {def.key === 'compliance' && <ComplianceReport site={site} title={title} />}
     </>
   )
 }

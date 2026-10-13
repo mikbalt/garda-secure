@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
   ArrowRight,
+  CalendarX2,
   CheckCircle2,
   ClipboardCheck,
   Clock4,
@@ -26,7 +27,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useSetupProgress } from '../hooks/useSetupProgress'
 import { incidentTypeLabel, useI18n, type Key } from '../i18n/context'
 import { addDays, formatDay, formatTime, localTimeOf, todayIn } from '../lib/time'
-import type { DailyAttendance, DashboardSummary, Device, Incident, LivePatrol, Site } from '../types'
+import type { ComplianceReport, DailyAttendance, DashboardSummary, Device, Incident, LivePatrol, Site } from '../types'
 
 // recharts is ~100 KB gzip: keep it out of the landing chunk (WEB-9).
 const WeeklyChart = lazy(() => import('./dashboard/WeeklyChart'))
@@ -165,6 +166,13 @@ function Today({ site }: { site: Site }) {
     enabled: can('viewIncidents'),
     refetchInterval: 60_000,
   })
+  // Scheduled patrols not started today (D-038): one small report request.
+  const compliance = useQuery({
+    queryKey: ['report-compliance', site.id, today, today],
+    queryFn: () => apiGet<ComplianceReport>('/reports/patrol-compliance', { site_id: site.id, from: today, to: today }),
+    enabled: can('manageIncidents'),
+    refetchInterval: 120_000,
+  })
   const devices = useQuery({
     queryKey: ['devices'],
     queryFn: () => apiGet<Device[]>('/devices'),
@@ -188,6 +196,14 @@ function Today({ site }: { site: Site }) {
         to: '/patrol', cta: t('today.act.view'),
       })
     }
+  }
+  const missed = compliance.data?.totals?.missed ?? 0
+  if (missed > 0) {
+    const routes = Array.from(new Set((compliance.data?.rows ?? []).filter((r) => r.missed > 0).map((r) => r.route_name))).join(', ')
+    actions.push({
+      id: 'missed-patrols', tone: 'orange', icon: CalendarX2, title: t('p2.dash.missed', { n: missed }), hint: routes,
+      to: '/reports?tab=compliance', cta: t('today.act.view'),
+    })
   }
   if (s && s.absent_today > 0) {
     actions.push({ id: 'absent', tone: 'red', icon: UserX, title: t('today.act.absent', { n: s.absent_today }), to: '/attendance', cta: t('today.act.view') })

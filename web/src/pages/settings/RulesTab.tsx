@@ -1,7 +1,7 @@
 import { useId, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { BellOff, BellRing, Building2, Plus, X } from 'lucide-react'
+import { BellOff, BellRing, Building2, CheckCircle2, Plus, X, XCircle } from 'lucide-react'
 import apiClient, { apiGet } from '../../api/client'
 import { RequireSite } from '../../components/RequireSite'
 import { TableSkeleton } from '../../components/LoadingSkeleton'
@@ -17,19 +17,27 @@ import { useNewParam } from '../../hooks/useNewParam'
 import { useI18n, translateMaybe } from '../../i18n/context'
 import { errorText } from '../../i18n/errors'
 import {
-  CHANNEL_ICON,
-  CHANNEL_TONE,
   EVENT_META,
-  channelConfigured,
+  channelIcon,
+  channelTone,
   displayRecipient,
   normaliseRecipient,
   sortEvents,
   validRecipient,
 } from './channelMeta'
 import { ConfirmDialog, IconTile, SectionHeader, Switch } from './kit'
-import type { Channel, ChannelSettings, EventTypes, NotificationRule, Site } from '../../types'
+import type { Channel, ChannelInfo, EventTypes, NotificationRule, Site } from '../../types'
 
-const FALLBACK_EVENTS = ['sos', 'incident_high', 'absent', 'late_clock_in', 'sla_missed', 'defect_opened', 'monthly_recap']
+const FALLBACK_EVENTS = ['sos', 'incident_high', 'incident_filed', 'absent', 'late_clock_in', 'patrol_not_started', 'sla_missed', 'defect_opened', 'monthly_recap']
+
+/** Registered delivery channels and whether they are set up (GET /notifications/channels, D-047). */
+function useChannels() {
+  return useQuery({
+    queryKey: ['notification-channels'],
+    queryFn: () => apiGet<ChannelInfo[]>('/notifications/channels'),
+    staleTime: 60_000,
+  })
+}
 
 function useEventTypes() {
   return useQuery({
@@ -44,7 +52,7 @@ function useAddRule(site: Site, onDone: () => void) {
   const qc = useQueryClient()
   const toast = useToast()
   return useMutation({
-    mutationFn: (b: { event_type: string; channel: Channel; recipient: string }) => apiClient.post('/notifications/rules', { site_id: site.id, ...b }),
+    mutationFn: (b: { event_type: string; channel: string; recipient: string }) => apiClient.post('/notifications/rules', { site_id: site.id, ...b }),
     onSuccess: () => {
       toast.success(t('adm.rule.added'))
       qc.invalidateQueries({ queryKey: ['rules', site.id] })
@@ -53,13 +61,13 @@ function useAddRule(site: Site, onDone: () => void) {
   })
 }
 
-/** Segmented E-mail / WhatsApp picker. */
-export function ChannelPicker({ value, onChange, channels }: { value: Channel; onChange: (c: Channel) => void; channels: Channel[] }) {
+/** Segmented channel picker (E-mail / WhatsApp / channels added later). */
+export function ChannelPicker<C extends string = Channel>({ value, onChange, channels }: { value: C; onChange: (c: C) => void; channels: C[] }) {
   const { lang, t } = useI18n()
   return (
     <div role="radiogroup" aria-label={t('rule.channel')} className="inline-flex rounded-lg bg-gray-100 p-0.5">
       {channels.map((c) => {
-        const Icon = CHANNEL_ICON[c]
+        const Icon = channelIcon(c)
         const on = c === value
         return (
           <button
@@ -72,7 +80,7 @@ export function ChannelPicker({ value, onChange, channels }: { value: Channel; o
               on ? 'bg-white text-gray-900 shadow-card' : 'text-gray-600 hover:text-gray-900'
             }`}
           >
-            <Icon className={`h-4 w-4 ${on ? CHANNEL_TONE[c] : ''}`} aria-hidden="true" />
+            <Icon className={`h-4 w-4 ${on ? channelTone(c) : ''}`} aria-hidden="true" />
             {translateMaybe(lang, `channel.${c}`, c)}
           </button>
         )
@@ -81,14 +89,14 @@ export function ChannelPicker({ value, onChange, channels }: { value: Channel; o
   )
 }
 
-function recipientHint(t: ReturnType<typeof useI18n>['t'], ch: Channel) {
-  return ch === 'email' ? t('adm.rule.hintEmail') : t('adm.rule.hintWa')
+function recipientHint(t: ReturnType<typeof useI18n>['t'], ch: string) {
+  return ch === 'email' ? t('adm.rule.hintEmail') : ch === 'whatsapp' ? t('adm.rule.hintWa') : t('p2.ch.hintOther')
 }
 
 /** Inline "add recipient" form inside one event card. */
-function InlineAdd({ site, eventType, channels, onClose }: { site: Site; eventType: string; channels: Channel[]; onClose: () => void }) {
+function InlineAdd({ site, eventType, channels, onClose }: { site: Site; eventType: string; channels: string[]; onClose: () => void }) {
   const { t, lang } = useI18n()
-  const [channel, setChannel] = useState<Channel>(eventType === 'sos' && channels.includes('whatsapp') ? 'whatsapp' : 'email')
+  const [channel, setChannel] = useState<string>(eventType === 'sos' && channels.includes('whatsapp') ? 'whatsapp' : channels.includes('email') ? 'email' : (channels[0] ?? 'email'))
   const [recipient, setRecipient] = useState('')
   const [err, setErr] = useState('')
   const add = useAddRule(site, onClose)
@@ -114,9 +122,9 @@ function InlineAdd({ site, eventType, channels, onClose }: { site: Site; eventTy
           <Input
             id={inputId}
             autoFocus
-            type={channel === 'email' ? 'email' : 'tel'}
-            inputMode={channel === 'email' ? 'email' : 'tel'}
-            placeholder={channel === 'email' ? t('plat.phEmail') : t('plat.phWa')}
+            type={channel === 'email' ? 'email' : channel === 'whatsapp' ? 'tel' : 'text'}
+            inputMode={channel === 'email' ? 'email' : channel === 'whatsapp' ? 'tel' : 'text'}
+            placeholder={channel === 'email' ? t('plat.phEmail') : channel === 'whatsapp' ? t('plat.phWa') : undefined}
             value={recipient}
             onChange={(e) => setRecipient(e.target.value)}
             aria-invalid={err || add.error ? true : undefined}
@@ -142,10 +150,10 @@ function InlineAdd({ site, eventType, channels, onClose }: { site: Site; eventTy
 }
 
 /** Full "add recipient" dialog (header button and ?new=1 deep link). */
-function AddRuleModal({ site, events, channels, onClose }: { site: Site; events: string[]; channels: Channel[]; onClose: () => void }) {
+function AddRuleModal({ site, events, channels, onClose }: { site: Site; events: string[]; channels: string[]; onClose: () => void }) {
   const { t, lang } = useI18n()
   const [eventType, setEventType] = useState(events[0] ?? 'sos')
-  const [channel, setChannel] = useState<Channel>('whatsapp')
+  const [channel, setChannel] = useState<string>(channels.includes('whatsapp') ? 'whatsapp' : (channels[0] ?? 'email'))
   const [recipient, setRecipient] = useState('')
   const [err, setErr] = useState('')
   const add = useAddRule(site, onClose)
@@ -193,9 +201,9 @@ function AddRuleModal({ site, events, channels, onClose }: { site: Site; events:
         </div>
         <Field label={t('adm.rule.to')} required hint={recipientHint(t, channel)} error={err || undefined}>
           <Input
-            type={channel === 'email' ? 'email' : 'tel'}
-            inputMode={channel === 'email' ? 'email' : 'tel'}
-            placeholder={channel === 'email' ? t('plat.phEmail') : t('plat.phWa')}
+            type={channel === 'email' ? 'email' : channel === 'whatsapp' ? 'tel' : 'text'}
+            inputMode={channel === 'email' ? 'email' : channel === 'whatsapp' ? 'tel' : 'text'}
+            placeholder={channel === 'email' ? t('plat.phEmail') : channel === 'whatsapp' ? t('plat.phWa') : undefined}
             value={recipient}
             onChange={(e) => setRecipient(e.target.value)}
             autoComplete="off"
@@ -206,11 +214,11 @@ function AddRuleModal({ site, events, channels, onClose }: { site: Site; events:
   )
 }
 
-type ChipRule = Pick<NotificationRule, 'channel' | 'recipient' | 'enabled'>
+type ChipRule = Pick<NotificationRule, 'recipient' | 'enabled'> & { channel: string }
 
 export function RecipientChip({ rule, onToggle, onRemove, busy }: { rule: ChipRule; onToggle: () => void; onRemove: () => void; busy: boolean }) {
   const { t, lang } = useI18n()
-  const Icon = CHANNEL_ICON[rule.channel]
+  const Icon = channelIcon(rule.channel)
   const shown = displayRecipient(rule.channel, rule.recipient)
   const channelName = translateMaybe(lang, `channel.${rule.channel}`, rule.channel)
   return (
@@ -219,7 +227,7 @@ export function RecipientChip({ rule, onToggle, onRemove, busy }: { rule: ChipRu
         rule.enabled ? 'border-gray-200 bg-white text-gray-800 shadow-sm' : 'border-dashed border-gray-300 bg-gray-50 text-gray-600'
       }`}
     >
-      <Icon className={`h-4 w-4 shrink-0 ${rule.enabled ? CHANNEL_TONE[rule.channel] : 'text-gray-500'}`} aria-hidden="true" />
+      <Icon className={`h-4 w-4 shrink-0 ${rule.enabled ? channelTone(rule.channel) : 'text-gray-500'}`} aria-hidden="true" />
       <span className={`truncate tabular-nums ${rule.enabled ? '' : 'line-through'}`}>
         <span className="sr-only">{channelName}: </span>
         {shown}
@@ -260,8 +268,7 @@ function RulesForSite({ site }: { site: Site }) {
     queryFn: () => apiGet<NotificationRule[]>('/notifications/rules', { site_id: site.id }),
   })
   const { can } = useAuth()
-  // Channel settings are platform-admin only (D-032); realm admins skip the check.
-  const channelsQ = useQuery({ queryKey: ['channels'], queryFn: () => apiGet<ChannelSettings>('/settings/channels'), enabled: can('managePlatform') })
+  const channelsQ = useChannels()
 
   const toggle = useMutation({
     mutationFn: (r: NotificationRule) => apiClient.put(`/notifications/rules/${r.id}`, { enabled: !r.enabled }),
@@ -283,10 +290,9 @@ function RulesForSite({ site }: { site: Site }) {
 
   const rules = data ?? []
   const events = sortEvents(Array.from(new Set([...(types.data?.event_types ?? FALLBACK_EVENTS), ...rules.map((r) => r.event_type)])))
-  const channels: Channel[] = types.data?.channels?.length ? types.data.channels : ['email', 'whatsapp']
-  const unconfigured = channelsQ.data
-    ? channels.filter((c) => rules.some((r) => r.channel === c && r.enabled) && !channelConfigured(channelsQ.data, c))
-    : []
+  const channels: string[] = channelsQ.data?.length ? channelsQ.data.map((c) => c.name) : types.data?.channels?.length ? types.data.channels : ['email', 'whatsapp']
+  const configured = new Map((channelsQ.data ?? []).map((c) => [c.name, c.configured]))
+  const unconfigured = channels.filter((c) => configured.get(c) === false && rules.some((r) => r.channel === c && r.enabled))
   const covered = new Set(rules.filter((r) => r.enabled).map((r) => r.event_type)).size
 
   return (
@@ -305,10 +311,40 @@ function RulesForSite({ site }: { site: Site }) {
       {unconfigured.length > 0 && (
         <Notice tone="warn">
           <span className="font-medium">{t('adm.rule.channelMissing', { channels: unconfigured.map((c) => translateMaybe(lang, `channel.${c}`, c)).join(' & ') })}</span>{' '}
-          <Link to="/settings?tab=channels" className="font-semibold underline underline-offset-2 hover:text-amber-950">
-            {t('adm.rule.channelMissingCta')}
-          </Link>
+          {can('managePlatform') ? (
+            <Link to="/settings?tab=channels" className="font-semibold underline underline-offset-2 hover:text-amber-950">
+              {t('adm.rule.channelMissingCta')}
+            </Link>
+          ) : (
+            t('p2.ch.askOperator')
+          )}
         </Notice>
+      )}
+
+      {channelsQ.data && channelsQ.data.length > 0 && (
+        <ul className="mb-4 flex flex-wrap items-center gap-2 text-xs" aria-label={t('p2.ch.title')}>
+          <li className="font-medium text-gray-600">{t('p2.ch.title')}:</li>
+          {channelsQ.data.map((c) => {
+            const Icon = channelIcon(c.name)
+            return (
+              <li key={c.name} className="inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-gray-700 ring-1 ring-inset ring-gray-200">
+                <Icon className={`h-3.5 w-3.5 ${channelTone(c.name)}`} aria-hidden="true" />
+                <span className="font-medium">{translateMaybe(lang, `channel.${c.name}`, c.name.replace(/[_-]+/g, ' '))}</span>
+                {c.configured ? (
+                  <span className="inline-flex items-center gap-0.5 text-emerald-700">
+                    <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    {t('p2.ch.ready')}
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-0.5 text-amber-800">
+                    <XCircle className="h-3.5 w-3.5" aria-hidden="true" />
+                    {t('p2.ch.notSet')}
+                  </span>
+                )}
+              </li>
+            )
+          })}
+        </ul>
       )}
 
       {isLoading ? (

@@ -1,5 +1,8 @@
 import {
   CalendarRange,
+  CalendarX2,
+  FileWarning,
+  Send,
   Clock4,
   DatabaseBackup,
   HardDriveDownload,
@@ -20,6 +23,14 @@ import type { TintTone } from './kit'
 export const CHANNEL_ICON: Record<Channel, LucideIcon> = { email: Mail, whatsapp: MessageCircle }
 export const CHANNEL_TONE: Record<Channel, string> = { email: 'text-primary-600', whatsapp: 'text-emerald-600' }
 
+/** Icon of a delivery channel; channels added later in the backend registry (D-047) get a generic one. */
+export function channelIcon(ch: string): LucideIcon {
+  return (CHANNEL_ICON as Record<string, LucideIcon>)[ch] ?? Send
+}
+export function channelTone(ch: string): string {
+  return (CHANNEL_TONE as Record<string, string>)[ch] ?? 'text-gray-600'
+}
+
 export interface EventMeta {
   icon: LucideIcon
   tone: TintTone
@@ -31,8 +42,10 @@ export interface EventMeta {
 export const EVENT_ORDER = [
   'sos',
   'incident_high',
+  'incident_filed',
   'absent',
   'late_clock_in',
+  'patrol_not_started',
   'sla_missed',
   'defect_opened',
   'monthly_recap',
@@ -46,6 +59,8 @@ export const EVENT_ORDER = [
 export const EVENT_META: Record<string, EventMeta> = {
   sos: { icon: Siren, tone: 'red', title: 'adm.ev.sos', desc: 'adm.ev.sosDesc' },
   incident_high: { icon: ShieldAlert, tone: 'orange', title: 'adm.ev.incident', desc: 'adm.ev.incidentDesc' },
+  incident_filed: { icon: FileWarning, tone: 'amber', title: 'p2.ev.incidentFiled', desc: 'p2.ev.incidentFiledDesc' },
+  patrol_not_started: { icon: CalendarX2, tone: 'orange', title: 'p2.ev.notStarted', desc: 'p2.ev.notStartedDesc' },
   absent: { icon: UserX, tone: 'red', title: 'adm.ev.absent', desc: 'adm.ev.absentDesc' },
   late_clock_in: { icon: Clock4, tone: 'amber', title: 'adm.ev.late', desc: 'adm.ev.lateDesc' },
   sla_missed: { icon: TimerOff, tone: 'orange', title: 'adm.ev.sla', desc: 'adm.ev.slaDesc' },
@@ -76,20 +91,22 @@ export function channelConfigured(s: ChannelSettings | undefined, ch: Channel): 
 }
 
 /** Shows WhatsApp numbers with a leading "+". */
-export function displayRecipient(ch: Channel, r: string): string {
+export function displayRecipient(ch: string, r: string): string {
   return ch === 'whatsapp' && /^\d+$/.test(r) ? `+${r}` : r
 }
 
-export function validRecipient(ch: Channel, r: string): boolean {
+export function validRecipient(ch: string, r: string): boolean {
   const v = r.trim()
   if (ch === 'email') return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)
-  return /^\+?\d{8,15}$/.test(v.replace(/[\s-]/g, ''))
+  if (ch === 'whatsapp') return /^\+?\d{8,15}$/.test(v.replace(/[\s-]/g, ''))
+  // Unknown (newer) channel: the server validates the recipient.
+  return v.length > 0 && v.length <= 300
 }
 
 /** Normalises a WhatsApp number to digits only (international format). */
-export function normaliseRecipient(ch: Channel, r: string): string {
+export function normaliseRecipient(ch: string, r: string): string {
   const v = r.trim()
-  if (ch === 'email') return v
+  if (ch !== 'whatsapp') return v
   let d = v.replace(/[^\d]/g, '')
   if (d.startsWith('0')) d = `62${d.slice(1)}`
   return d
