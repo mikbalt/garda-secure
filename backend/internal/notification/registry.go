@@ -13,8 +13,7 @@ import (
 
 // ChannelSpec registers a delivery channel (audit F10). Rules, ops rules and
 // the test endpoint validate channel names against this registry instead of
-// a database CHECK, so a new channel (LINE, Telegram, ...) is one Go file
-// that calls RegisterChannel from init() plus its settings struct.
+// a database CHECK. The product channels are e-mail and WhatsApp only (D-050).
 type ChannelSpec struct {
 	Name string
 	// New builds the sender used by the worker and the test endpoint.

@@ -459,3 +459,10 @@ in PRD §9 (OQ-x). New entries go at the bottom with the next free number.
 - `POST /device/telemetry` (≤ 1/min) stores the latest beacon in
   `devices.health`, shown in `GET /devices`; gauge `sp_device_outbox_pending`.
   Incidents accept optional `gps_lat`/`gps_lng`, kept as evidence.
+
+### D-050 — Notification channels: e-mail and WhatsApp only
+- **Date:** 2026-10-13 · **Status:** Accepted (user decision; supersedes the
+  "LINE/Telegram in v2" parts of D-010 and D-047)
+- LINE and Telegram are dropped from the roadmap. The channel registry stays as
+  the internal validation mechanism (no DB CHECK), with exactly `email` and
+  `whatsapp`; unknown channels are rejected (`invalid_channel`).

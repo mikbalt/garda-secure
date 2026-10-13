@@ -89,7 +89,7 @@ The entire platform runs as a single Docker Compose stack — designed to be ope
 
 ### 4.6 Notifications
 
-- **FR-NOT-01** v1 notification channels: **Email (SMTP)** and **WhatsApp Business API**. LINE and Telegram are deferred to v2; the notification worker is architected to add channels without API changes.
+- **FR-NOT-01** Notification channels: **Email (SMTP)** and **WhatsApp Business API** only (decision 2026-10-13, D-050: LINE and Telegram are not planned).
 - **FR-NOT-02** Admin configures which event types go to which channel per site. SMTP credentials and WhatsApp API keys configured in system settings (not hardcoded).
 - **FR-NOT-03** Event triggers: SOS, missed checkpoint SLA, absent auto-flag, late clock-in, incident filed (High/Critical), defect opened.
 - **FR-NOT-04** Notification delivery failures are logged; admin can retry or view failure reason.
@@ -148,8 +148,8 @@ The entire platform runs as a single Docker Compose stack — designed to be ope
 │   Keycloak              │        │                                          │
 │   One realm per client  │◄──────►│  ┌──────────────────────────────────────┐ │
 │   • RBAC / OIDC         │        │  │  Notification Worker (Go goroutine) │ │
-│   • 2FA (TOTP)          │        │  │  SMTP / WhatsApp (v1)               │ │
-│   • Brute-force protect │        │  │  LINE / Telegram (v2)               │ │
+│   • 2FA (TOTP)          │        │  │  SMTP / WhatsApp                    │ │
+│   • Brute-force protect │        │  │                                      │ │
 └─────────────────────────┘        │  └──────────────────────────────────────┘ │
                                    │                                          │
                                    │  ┌──────────────────────────────────────┐ │
@@ -172,7 +172,7 @@ The entire platform runs as a single Docker Compose stack — designed to be ope
 | **Object storage** | MinIO | S3-compatible, on-premise; stores all photos and backup dumps; no data leaves the site |
 | **Identity & Auth** | Keycloak 24 | OIDC/OAuth2, RBAC, TOTP 2FA, brute-force protection — one realm per client, no custom auth code |
 | **Job queue / cache** | Redis | Notification queue, rate limiting, WebSocket presence |
-| **Notifications (v1)** | Go worker | SMTP + WhatsApp Business API; plugin architecture for LINE/Telegram in v2 |
+| **Notifications** | Go worker | SMTP + WhatsApp Business API only |
 | **Reverse proxy** | Nginx (or Caddy) | TLS termination, static file serving, route proxying |
 | **Orchestration** | Docker Compose | Single `docker compose up -d`; health-check dependency chain |
 | **Monitoring (optional v1)** | Grafana + Prometheus | Pre-built Go and PostgreSQL dashboards for single-operator visibility |
@@ -211,7 +211,7 @@ Redis  ────────────────────────�
 | # | Question | Decision |
 |---|---|---|
 | OQ-1 | Site and guard capacity? | **v1: 2 sites, 10 guards.** Architecture scales to 50 sites / 500 guards. |
-| OQ-2 | Notification channels? | **v1: SMTP + WhatsApp Business API only.** LINE and Telegram deferred to v2. API keys provided by operator. |
+| OQ-2 | Notification channels? | **SMTP + WhatsApp Business API only.** LINE and Telegram dropped (D-050). API keys provided by operator. |
 | OQ-3 | Payroll system integration? | **Descoped for v1.** HR uses the monthly recap report (FR-REP-05) as payroll reference. CSV export added if needed in v2. |
 | OQ-4 | SLA default for checkpoints? | **No system-wide default.** SLA is optional and set per-checkpoint in the route editor. Routes with no SLA produce no alerts. |
 | OQ-5 | Client site owner access model? | **Both:** read-only Keycloak login to web dashboard + automated monthly recap email. |
@@ -227,7 +227,7 @@ Redis  ────────────────────────�
 - Biometric authentication (fingerprint / face ID)
 - Live video streaming from patrol
 - Payroll system integration (monthly recap report is the handoff)
-- LINE / Telegram notifications (v2)
+- LINE / Telegram notifications (not planned — e-mail + WhatsApp only, D-050)
 - Additional UI languages beyond English + Bahasa Indonesia (i18n hooks in place)
 - Mobile push notifications via FCM/APNs
 - Kubernetes / multi-node HA deployment (Docker Compose single-node)

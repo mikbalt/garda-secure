@@ -36,8 +36,7 @@ func (e *StatusError) Error() string {
 	return fmt.Sprintf("API status %d: %s", e.Status, e.Detail)
 }
 
-// Channel delivers one message to one recipient. New channels (LINE,
-// Telegram in v2) implement this and register in Worker.channels.
+// Channel delivers one message to one recipient (e-mail, WhatsApp — D-050).
 type Channel interface {
 	Send(ctx context.Context, cfg settings.Channels, recipient, subject, body string) error
 }
