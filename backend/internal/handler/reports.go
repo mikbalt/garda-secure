@@ -74,36 +74,48 @@ func (h *Handler) reportMonthlyRecap(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
-	rows, err := repository.MonthlyRecap(c.Context(), h.DB, site.ID, from, to)
+	rows, err := repository.MonthlyRecap(c.Context(), h.DB, site.ID, loc, from, to)
 	if err != nil {
 		return h.fail(c, err)
 	}
+	totals := repository.RecapTotals(rows)
 	month := from.In(loc).Format("2006-01")
 	if format == "" {
 		compliance, err := repository.PatrolComplianceTotals(c.Context(), h.DB, site.ID, from, to)
 		if err != nil {
 			return h.fail(c, err)
 		}
-		return c.JSON(fiber.Map{"site_id": site.ID, "month": month, "rows": rows, "patrol_compliance": compliance})
+		return c.JSON(fiber.Map{"site_id": site.ID, "month": month, "rows": rows, "totals": totals, "patrol_compliance": compliance})
 	}
 	t := &export.Table{
 		Title: "Monthly attendance recap", Subtitle: site.Name + " · " + month, Generated: siteNow(site),
-		Filters: [][2]string{{"Site", site.Name}, {"Month", month}},
-		Columns: []export.Column{
-			{Name: "Guard", Kind: export.Text, Width: 1.4}, {Name: "Employee ID", Kind: export.Text},
-			{Name: "Shifts", Kind: export.Int}, {Name: "Present", Kind: export.Int}, {Name: "Late", Kind: export.Int},
-			{Name: "Absent", Kind: export.Int}, {Name: "Early out", Kind: export.Int}, {Name: "Pending", Kind: export.Int},
-			{Name: "Hours", Kind: export.Float}, {Name: "Patrols", Kind: export.Int},
-			{Name: "Patrol completion %", Kind: export.Float},
-		},
+		Filters: [][2]string{{"Site", site.Name}, {"Month", month}, {"Time zone", loc.String()},
+			{"Counted per", "guard-day (site time zone, day the shift starts)"}},
+		Columns: monthlyRecapColumns,
 	}
 	for _, r := range rows {
-		t.Rows = append(t.Rows, []any{
-			r.GuardName, r.EmployeeID, r.ScheduledShifts, r.Present, r.Late, r.Absent, r.EarlyOut, r.Pending,
-			r.TotalHours, r.PatrolSessions, r.PatrolCompletePct,
-		})
+		t.Rows = append(t.Rows, monthlyRecapCells(r.GuardName, r.EmployeeID, r.RecapCounts))
 	}
+	t.Rows = append(t.Rows, monthlyRecapCells("Total ("+strconv.Itoa(totals.Guards)+" guards)", nil, totals.RecapCounts))
 	return h.sendExport(c, format, "monthly-recap-"+month, t)
+}
+
+// monthlyRecapColumns: days first (payroll reference, FR-REP-05), then the
+// shift count for transparency.
+var monthlyRecapColumns = []export.Column{
+	{Name: "Guard", Kind: export.Text, Width: 1.4}, {Name: "Employee ID", Kind: export.Text},
+	{Name: "Scheduled days", Kind: export.Int}, {Name: "Days present", Kind: export.Int},
+	{Name: "Days late", Kind: export.Int}, {Name: "Days absent", Kind: export.Int},
+	{Name: "Days upcoming", Kind: export.Int}, {Name: "Early-out days", Kind: export.Int},
+	{Name: "Hours", Kind: export.Float}, {Name: "Scheduled shifts", Kind: export.Int},
+	{Name: "Patrols", Kind: export.Int}, {Name: "Patrol completion %", Kind: export.Float},
+}
+
+func monthlyRecapCells(name string, employeeID *string, c repository.RecapCounts) []any {
+	return []any{
+		name, employeeID, c.ScheduledDays, c.DaysPresent, c.DaysLate, c.DaysAbsent, c.DaysUpcoming,
+		c.EarlyOutDays, c.TotalHours, c.ScheduledShifts, c.PatrolSessions, c.PatrolCompletePct,
+	}
 }
 
 // GET /reports/patrol/sessions?site_id=&from=&to=&format= (FR-REP-02)
@@ -260,7 +272,7 @@ func (h *Handler) reportGuardKPI(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
-	rows, err := repository.GuardKPIs(c.Context(), h.DB, site.ID, from, to)
+	rows, err := repository.GuardKPIs(c.Context(), h.DB, site.ID, loc, from, to)
 	if err != nil {
 		return h.fail(c, err)
 	}

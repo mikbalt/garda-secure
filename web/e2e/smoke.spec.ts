@@ -26,7 +26,7 @@ const PAGES: Record<DemoRole, string[]> = {
     '/settings?tab=devices',
   ],
   supervisor: ['/', '/attendance', '/patrol', '/patrol?view=plan', '/incidents', '/incidents?tab=visitors', '/schedules', '/guards', '/reports', '/reports?tab=compliance'],
-  hr: ['/', '/attendance', '/schedules', '/guards', '/reports'],
+  hr: ['/', '/attendance', '/schedules', '/guards', '/reports', '/reports?tab=monthly'],
   'client-readonly': ['/', '/attendance', '/patrol', '/patrol?view=plan', '/incidents', '/reports', '/reports?tab=compliance'],
   'platform-admin': ['/settings?tab=channels', '/settings?tab=ops', '/settings?tab=opslog', '/settings?tab=backups'],
 }

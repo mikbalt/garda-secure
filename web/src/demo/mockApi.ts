@@ -20,6 +20,7 @@ import { getUserRoles } from '../keycloak'
 import { emptyWorld, iso, seedWorld, uid, wib, type World } from './world'
 import { demoHealth, demoMe, registerPeopleMocks, visibleSites, visitorReadAudit } from './mockPeople'
 import { csvBlob, pdfBlob, xlsxBlob } from './files'
+import { aggregateRecap, recapTotals } from '../lib/recap'
 import {
   compliance,
   expectations,
@@ -212,19 +213,17 @@ function dailyRows(siteId: string, range: [Date, Date]): DailyAttendanceRow[] {
     })
 }
 
+/** Monthly recap per guard-day in the site's time zone (FR-REP-05, see lib/recap). */
 function monthly(siteId: string, range: [Date, Date]): MonthlyRecapRow[] {
+  const daily = dailyRows(siteId, range)
+  const tz = w.sites.find((s) => s.id === siteId)?.timezone ?? 'Asia/Jakarta'
+  const counts = aggregateRecap(
+    daily.map((r) => ({ guard_id: r.guard_id, start: r.shift_start, status: r.status, early_out: r.early_out_minutes > 0, hours: r.hours_worked })),
+    tz,
+  )
   const rows = new Map<string, MonthlyRecapRow>()
-  for (const r of dailyRows(siteId, range)) {
-    const m = rows.get(r.guard_id) ?? {
-      guard_id: r.guard_id, guard_name: r.guard_name, employee_id: r.employee_id, scheduled_shifts: 0, present: 0, late: 0,
-      absent: 0, early_out: 0, pending: 0, total_hours: 0, patrol_sessions: 0, patrol_completion_pct: 0,
-    }
-    m.scheduled_shifts++
-    if (r.status === 'pending') m.pending++
-    else m[r.status]++
-    if (r.early_out_minutes > 0) m.early_out++
-    m.total_hours = Math.round((m.total_hours + r.hours_worked) * 10) / 10
-    rows.set(r.guard_id, m)
+  for (const r of daily) {
+    if (!rows.has(r.guard_id)) rows.set(r.guard_id, { guard_id: r.guard_id, guard_name: r.guard_name, employee_id: r.employee_id, ...counts.get(r.guard_id)! })
   }
   for (const s of w.sessions.filter((x) => x.site_id === siteId && inRange(x.started_at, range))) {
     const m = rows.get(s.guard_id)
@@ -532,10 +531,13 @@ on('GET', '/dashboard/summary', ({ query }) => {
   }
 })
 on('GET', '/reports/attendance/daily', ({ query }) => ({ site_id: query.site_id, date: query.date, rows: dailyRows(siteOf(query).id, dayRange(query.date)) }))
-on('GET', '/reports/attendance/monthly', ({ query }) => ({
-  site_id: query.site_id, month: query.month, rows: monthly(siteOf(query).id, monthRange(query.month)),
-  patrol_compliance: compliance(pw, siteOf(query).id, ...rangeMs(monthRange(query.month))).totals,
-}))
+on('GET', '/reports/attendance/monthly', ({ query }) => {
+  const rows = monthly(siteOf(query).id, monthRange(query.month))
+  return {
+    site_id: query.site_id, month: query.month, rows, totals: recapTotals(rows),
+    patrol_compliance: compliance(pw, siteOf(query).id, ...rangeMs(monthRange(query.month))).totals,
+  }
+})
 on('GET', '/reports/patrol-compliance', ({ query }) => ({ site_id: query.site_id, from: query.from, to: query.to, ...compliance(pw, siteOf(query).id, ...rangeMs(dateRange(query.from, query.to))) }))
 on('GET', '/reports/patrol/sessions', ({ query }) => ({
   site_id: query.site_id,

@@ -118,18 +118,72 @@ func TestEachIsolatedContinuesAfterFailures(t *testing.T) {
 	}
 }
 
-func TestRecapTextForWhatsApp(t *testing.T) {
-	site := &model.Site{ID: "s1", Name: "Gudang A"}
+// recapFixture: Budi works 20 days in 22 shifts; Sari has days still to come.
+func recapFixture() ([]repository.MonthlyRecapRow, repository.MonthlyRecapTotals) {
 	emp := "E1"
-	rows := []repository.MonthlyRecapRow{{GuardName: "Budi", EmployeeID: &emp, ScheduledShifts: 20, Present: 18,
-		Late: 1, Absent: 1, TotalHours: 160, PatrolCompletePct: 95}}
-	txt := recapText(site, "2026-10", rows, "https://sp.example")
-	for _, want := range []string{"Rekap absensi 2026-10", "Gudang A", "Budi", "hadir 18", "absen 1", "https://sp.example/reports?site=s1&month=2026-10"} {
-		if !strings.Contains(txt, want) {
-			t.Errorf("recap text lacks %q:\n%s", want, txt)
+	rows := []repository.MonthlyRecapRow{
+		{GuardName: "Budi", EmployeeID: &emp, RecapCounts: repository.RecapCounts{
+			ScheduledDays: 20, DaysPresent: 17, DaysLate: 2, DaysAbsent: 1, EarlyOutDays: 1,
+			ScheduledShifts: 22, Present: 19, Late: 2, Absent: 1, TotalHours: 160.5, PatrolSessions: 4, PatrolCompletePct: 95}},
+		{GuardName: "Sari <S>", RecapCounts: repository.RecapCounts{
+			ScheduledDays: 5, DaysPresent: 3, DaysUpcoming: 2, ScheduledShifts: 5, Present: 3, Pending: 2, TotalHours: 24}},
+	}
+	return rows, repository.RecapTotals(rows)
+}
+
+func TestRecapTextForWhatsApp(t *testing.T) {
+	rows, totals := recapFixture()
+	for _, c := range []struct {
+		lang string
+		want []string
+	}{
+		{"id", []string{"Rekap absensi 2026-10 — Gudang A (2 petugas)",
+			"- Budi (E1): 20 hari: hadir 17, terlambat 2, absen 1, pulang awal 1; 160,5 jam; patroli 95%",
+			"- Sari <S>: 5 hari: hadir 3, terlambat 0, absen 0, belum berjalan 2; 24,0 jam\n",
+			"Total: 25 hari: hadir 20, terlambat 2, absen 1, belum berjalan 2, pulang awal 1; 184,5 jam; patroli 95%",
+			"https://sp.example/reports?site=s1&month=2026-10"}},
+		{"en", []string{"Attendance recap 2026-10 — Gudang A (2 guards)",
+			"- Budi (E1): 20 days: present 17, late 2, absent 1, early out 1; 160.5 h; patrol 95%",
+			"Total: 25 days: present 20, late 2, absent 1, upcoming 2, early out 1; 184.5 h; patrol 95%"}},
+	} {
+		site := &model.Site{ID: "s1", Name: "Gudang A", ConfigJSON: []byte(`{"language":"` + c.lang + `"}`)}
+		txt := recapText(site, "2026-10", rows, totals, "https://sp.example")
+		for _, want := range c.want {
+			if !strings.Contains(txt, want) {
+				t.Errorf("%s recap text lacks %q:\n%s", c.lang, want, txt)
+			}
+		}
+		if strings.Contains(txt, "<td") || strings.Contains(txt, "shift") {
+			t.Errorf("%s recap text: %s", c.lang, txt)
 		}
 	}
-	if strings.Contains(txt, "<") {
-		t.Errorf("recap text contains HTML: %s", txt)
+}
+
+func TestRecapHTMLCountsDays(t *testing.T) {
+	rows, totals := recapFixture()
+	site := &model.Site{ID: "s1", Name: "Gudang A", ConfigJSON: []byte(`{"language":"en"}`)}
+	h := recapHTML(site, "2026-10", rows, totals, "https://sp.example")
+	for _, want := range []string{
+		"<th>Days</th><th>Present</th><th>Late</th><th>Absent</th><th>Upcoming</th><th>Early-out days</th><th>Hours</th><th>Shifts</th>",
+		"<td>Budi</td><td>E1</td><td>20</td><td>17</td><td>2</td><td>1</td><td>0</td><td>1</td><td>160.5</td><td>22</td><td>95.0</td>",
+		"<td>Sari &lt;S&gt;</td>",
+		`<tr style="font-weight:bold"><td>Total (2 guards)</td><td></td><td>25</td><td>20</td><td>2</td><td>1</td><td>2</td><td>1</td><td>184.5</td><td>27</td><td>95.0</td>`,
+		"Counted per day", "Open in SecurePatrol",
+	} {
+		if !strings.Contains(h, want) {
+			t.Errorf("recap HTML lacks %q:\n%s", want, h)
+		}
+	}
+	// Indonesian headers; no upcoming column when nothing is upcoming.
+	site.ConfigJSON = []byte(`{"language":"id"}`)
+	rows = rows[:1]
+	h = recapHTML(site, "2026-10", rows, repository.RecapTotals(rows), "")
+	for _, want := range []string{"<th>Petugas</th>", "<th>Hari</th><th>Hadir</th><th>Terlambat</th><th>Absen</th><th>Hari pulang awal</th>", "<td>160,5</td>", "Total (1 petugas)"} {
+		if !strings.Contains(h, want) {
+			t.Errorf("ID recap HTML lacks %q:\n%s", want, h)
+		}
+	}
+	if strings.Contains(h, "Belum berjalan") || strings.Contains(h, "<a ") {
+		t.Errorf("ID recap HTML: %s", h)
 	}
 }

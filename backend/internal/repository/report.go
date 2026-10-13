@@ -69,73 +69,6 @@ func SessionSummaries(ctx context.Context, db DBTX, siteID string, from, to time
 	})
 }
 
-// MonthlyRecapRow is the per-guard payroll reference for a period.
-type MonthlyRecapRow struct {
-	GuardID           string  `json:"guard_id"`
-	GuardName         string  `json:"guard_name"`
-	EmployeeID        *string `json:"employee_id,omitempty"`
-	ScheduledShifts   int     `json:"scheduled_shifts"`
-	Present           int     `json:"present"`
-	Late              int     `json:"late"`
-	Absent            int     `json:"absent"`
-	EarlyOut          int     `json:"early_out"`
-	Pending           int     `json:"pending"`
-	TotalHours        float64 `json:"total_hours"`
-	PatrolSessions    int     `json:"patrol_sessions"`
-	PatrolCompletePct float64 `json:"patrol_completion_pct"`
-}
-
-// MonthlyRecap aggregates attendance and patrol completion per guard for the
-// shifts of a site starting in [from, to).
-func MonthlyRecap(ctx context.Context, db DBTX, siteID string, from, to time.Time) ([]MonthlyRecapRow, error) {
-	rows, err := db.Query(ctx, `
-		WITH att AS (
-		  SELECT s.guard_id,
-		         COUNT(*)                                            AS scheduled,
-		         COUNT(*) FILTER (WHERE a.status = 'present')        AS present,
-		         COUNT(*) FILTER (WHERE a.status = 'late')           AS late,
-		         COUNT(*) FILTER (WHERE a.status = 'absent')         AS absent,
-		         COUNT(*) FILTER (WHERE a.early_out_minutes > 0)     AS early_out,
-		         COUNT(*) FILTER (WHERE a.id IS NULL)                AS pending,
-		         COALESCE(SUM(EXTRACT(EPOCH FROM (a.clock_out_at - a.clock_in_at))) / 3600, 0)::float8 AS hours
-		  FROM shifts s
-		  LEFT JOIN attendance_records a ON a.shift_id = s.id
-		  WHERE s.site_id = $1 AND s.start_time >= $2 AND s.start_time < $3
-		  GROUP BY s.guard_id
-		),
-		pat AS (
-		  SELECT ps.guard_id,
-		         COUNT(*) AS sessions,
-		         AVG(LEAST(1.0,
-		             (SELECT COUNT(DISTINCT cs.checkpoint_id) FROM checkpoint_scans cs WHERE cs.session_id = ps.id)::numeric
-		             / NULLIF(jsonb_array_length(COALESCE(ps.route_snapshot, r.checkpoints)), 0))) * 100 AS pct
-		  FROM patrol_sessions ps
-		  JOIN routes r ON r.id = ps.route_id
-		  WHERE ps.site_id = $1 AND ps.started_at >= $2 AND ps.started_at < $3
-		  GROUP BY ps.guard_id
-		)
-		SELECT g.id, g.name, g.employee_id,
-		       COALESCE(att.scheduled, 0), COALESCE(att.present, 0), COALESCE(att.late, 0),
-		       COALESCE(att.absent, 0), COALESCE(att.early_out, 0), COALESCE(att.pending, 0),
-		       COALESCE(att.hours, 0), COALESCE(pat.sessions, 0), COALESCE(pat.pct, 0)::float8
-		FROM guards g
-		LEFT JOIN att ON att.guard_id = g.id
-		LEFT JOIN pat ON pat.guard_id = g.id
-		WHERE att.guard_id IS NOT NULL OR pat.guard_id IS NOT NULL
-		ORDER BY g.name`, siteID, from, to)
-	if err != nil {
-		return nil, fmt.Errorf("MonthlyRecap: %w", err)
-	}
-	return collect(rows, func(r pgx.Rows) (MonthlyRecapRow, error) {
-		var m MonthlyRecapRow
-		err := r.Scan(&m.GuardID, &m.GuardName, &m.EmployeeID, &m.ScheduledShifts, &m.Present, &m.Late,
-			&m.Absent, &m.EarlyOut, &m.Pending, &m.TotalHours, &m.PatrolSessions, &m.PatrolCompletePct)
-		m.TotalHours = round1(m.TotalHours)
-		m.PatrolCompletePct = round1(m.PatrolCompletePct)
-		return m, err
-	})
-}
-
 // GuardKPIRow holds performance metrics for one guard over a period.
 type GuardKPIRow struct {
 	GuardID           string  `json:"guard_id"`
@@ -151,9 +84,10 @@ type GuardKPIRow struct {
 	ScheduleCompliancePct *float64 `json:"schedule_compliance_pct"`
 }
 
-// GuardKPIs computes per-guard KPIs for a site over [from, to).
-func GuardKPIs(ctx context.Context, db DBTX, siteID string, from, to time.Time) ([]GuardKPIRow, error) {
-	recap, err := MonthlyRecap(ctx, db, siteID, from, to)
+// GuardKPIs computes per-guard KPIs for a site over [from, to); attendance
+// rates are per shift. loc is the site's time zone.
+func GuardKPIs(ctx context.Context, db DBTX, siteID string, loc *time.Location, from, to time.Time) ([]GuardKPIRow, error) {
+	recap, err := MonthlyRecap(ctx, db, siteID, loc, from, to)
 	if err != nil {
 		return nil, err
 	}

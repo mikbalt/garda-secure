@@ -444,10 +444,20 @@ export interface DashboardSummary {
   incidents_by_severity: Partial<Record<Severity, number>>
 }
 
-export interface MonthlyRecapRow {
-  guard_id: string
-  guard_name: string
-  employee_id?: string
+/**
+ * Monthly recap counts (FR-REP-05). Attendance is counted per guard-day: a
+ * calendar day in the site's time zone, keyed by the day a shift starts.
+ * The shift-level counts are kept for transparency.
+ */
+export interface RecapCounts {
+  scheduled_days: number
+  days_present: number
+  days_late: number
+  days_absent: number
+  /** Days whose shifts are all still pending (future or ongoing). */
+  days_upcoming: number
+  /** Days with at least one early departure (independent of the day status). */
+  early_out_days: number
   scheduled_shifts: number
   present: number
   late: number
@@ -457,6 +467,16 @@ export interface MonthlyRecapRow {
   total_hours: number
   patrol_sessions: number
   patrol_completion_pct: number
+}
+
+export interface MonthlyRecapRow extends RecapCounts {
+  guard_id: string
+  guard_name: string
+  employee_id?: string
+}
+
+export interface MonthlyRecapTotals extends RecapCounts {
+  guards: number
 }
 
 export interface GuardKpiRow {
@@ -480,6 +500,8 @@ export interface RowsReport<T> {
   month?: string
   /** Monthly recap: the site's schedule compliance totals of the month. */
   patrol_compliance?: ComplianceCounts
+  /** Monthly recap: the rows summed over the site. */
+  totals?: MonthlyRecapTotals
 }
 
 // ── Administration ───────────────────────────────────────────────────────────
