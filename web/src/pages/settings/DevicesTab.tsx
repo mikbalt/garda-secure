@@ -15,7 +15,9 @@ import { errorText } from '../../i18n/errors'
 import { formatDateTime } from '../../lib/time'
 import { isOnline, relativeTime } from './format'
 import { ConfirmDialog, IconTile, SectionHeader } from './kit'
-import type { Device } from '../../types'
+import { DeviceAccounts } from './DeviceAccounts'
+import { DeviceHealthDrawer, HealthBadge } from './DeviceHealthDrawer'
+import type { Device, DeviceAccount } from '../../types'
 
 const byName = (a: Device, b: Device) => a.name.localeCompare(b.name)
 
@@ -92,12 +94,12 @@ function PendingRow({ device, onReject }: { device: Device; onReject: () => void
   })
   const selectId = `approve-site-${device.id}`
   return (
-    <li className="flex flex-wrap items-center gap-x-4 gap-y-3 px-4 py-3.5 sm:px-5">
+    <li id={`device-${device.id}`} className="flex scroll-mt-24 flex-wrap items-center gap-x-4 gap-y-3 px-4 py-3.5 sm:px-5">
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <IconTile icon={Tablet} tone="amber" size="sm" />
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-gray-900">{device.name}</p>
-          <p className="text-xs text-amber-800/80" title={formatDateTime(device.created_at, tz, lang)}>
+          <p className="text-xs text-amber-900" title={formatDateTime(device.created_at, tz, lang)}>
             {t('adm.dev.registered', { when: relativeTime(device.created_at, lang) })}
           </p>
         </div>
@@ -159,12 +161,15 @@ export function DevicesTab() {
   const onError = useErrorToast()
   const [editing, setEditing] = useState<Device | null>(null)
   const [revoking, setRevoking] = useState<Device | null>(null)
+  const [healthOf, setHealthOf] = useState<Device | null>(null)
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['devices'],
     queryFn: () => apiGet<Device[]>('/devices'),
     refetchInterval: 30_000,
   })
+  // Tablet accounts (shared cache with the accounts card) to name the account in the health drawer.
+  const accounts = useQuery({ queryKey: ['device-accounts'], queryFn: () => apiGet<DeviceAccount[]>('/device-accounts') })
 
   const revoke = useMutation({
     mutationFn: (d: Device) => apiClient.put(`/devices/${d.id}`, { name: d.name, site_id: d.site_id ?? null, status: 'revoked' }),
@@ -195,6 +200,7 @@ export function DevicesTab() {
         <div className="space-y-6">
           <EmptyState icon={Tablet} title={t('adm.dev.emptyTitle')} message={t('adm.dev.empty')} />
           <HowTo />
+          <DeviceAccounts />
         </div>
       ) : (
         <div className="space-y-6">
@@ -225,7 +231,7 @@ export function DevicesTab() {
                 {active.map((d) => {
                   const online = isOnline(d.last_seen_at, now)
                   return (
-                    <li key={d.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 sm:px-5">
+                    <li key={d.id} id={`device-${d.id}`} className="flex scroll-mt-24 flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 sm:px-5">
                       <div className="flex min-w-0 flex-1 items-center gap-3">
                         <IconTile icon={Tablet} tone={online ? 'green' : 'gray'} size="sm" />
                         <div className="min-w-0">
@@ -242,7 +248,8 @@ export function DevicesTab() {
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <HealthBadge device={d} onOpen={() => setHealthOf(d)} now={now} />
                         {online ? (
                           <Badge tone="green">
                             <Dot tone="green" pulse />
@@ -273,7 +280,7 @@ export function DevicesTab() {
             <Card title={t('adm.dev.revokedTitle', { n: revoked.length })} description={t('adm.dev.revokedDesc')} flush>
               <ul className="divide-y divide-gray-100">
                 {revoked.map((d) => (
-                  <li key={d.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 sm:px-5">
+                  <li key={d.id} id={`device-${d.id}`} className="flex scroll-mt-24 flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 sm:px-5">
                     <div className="flex min-w-0 flex-1 items-center gap-3 opacity-70">
                       <IconTile icon={Tablet} tone="gray" size="sm" />
                       <div className="min-w-0">
@@ -291,10 +298,20 @@ export function DevicesTab() {
             </Card>
           )}
 
+          <DeviceAccounts />
           <HowTo />
         </div>
       )}
 
+      {healthOf && (
+        <DeviceHealthDrawer
+          device={healthOf}
+          siteName={siteName(healthOf.site_id)}
+          tz={tz}
+          account={(accounts.data ?? []).find((a) => a.id === healthOf.keycloak_user_id)}
+          onClose={() => setHealthOf(null)}
+        />
+      )}
       {editing && <DeviceModal device={editing} onClose={() => setEditing(null)} />}
       <ConfirmDialog
         open={!!revoking}

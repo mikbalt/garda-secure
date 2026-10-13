@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { CalendarClock, CalendarX2, Flag, Info, Moon, Pencil, Search } from 'lucide-react'
+import { CalendarClock, CalendarX2, Flag, History, Info, Moon, Pencil, Search } from 'lucide-react'
 import { apiGet } from '../../api/client'
 import { DownloadCsvButton } from '../../components/DownloadButton'
 import { FlagBadges } from '../../components/FlagBadges'
@@ -19,6 +19,7 @@ import { addDays, formatNumber, formatTime, localDateOf } from '../../lib/time'
 import { FilterChips, PeriodStepper, PersonCell, type ChipItem } from '../guards/PeopleKit'
 import { formatLongDay } from '../guards/peopleUtil'
 import { OverrideModal } from './OverrideModal'
+import { HistoryDrawer } from './HistoryDrawer'
 import type { DailyAttendance, DailyAttendanceRow, Site } from '../../types'
 
 type Filter = 'all' | 'present' | 'late' | 'absent' | 'pending' | 'review' | 'flagged'
@@ -36,6 +37,8 @@ export function DailyTab({ site, date, today, onDateChange }: Props) {
   const tz = site.timezone
   const [filter, setFilter] = useState<Filter>('all')
   const [editing, setEditing] = useState<DailyAttendanceRow | null>(null)
+  const [historyOf, setHistoryOf] = useState<DailyAttendanceRow | null>(null)
+  const canHistory = can('viewAttendanceHistory')
   const canOverride = can('overrideAttendance')
 
   const { data, isLoading, error, refetch } = useQuery({
@@ -105,6 +108,12 @@ export function DailyTab({ site, date, today, onDateChange }: Props) {
             <span title={t('att.overridden', { reason: r.override_reason })}>{t('ppl.att.corrected')}</span>
             <span className="sr-only">{t('att.overridden', { reason: r.override_reason })}</span>
           </Badge>
+        )}
+        {r.override_reason && canHistory && (
+          <Button size="sm" variant="ghost" className="!h-6 !px-2" onClick={() => setHistoryOf(r)} aria-label={`${t('acc.hist.open')} — ${r.guard_name}`}>
+            <History className="h-3.5 w-3.5" aria-hidden="true" />
+            {t('acc.hist.open')}
+          </Button>
         )}
         {r.needs_review && (
           <Badge tone="purple">
@@ -282,6 +291,7 @@ export function DailyTab({ site, date, today, onDateChange }: Props) {
       </div>
       {body}
       {editing && <OverrideModal site={site} row={editing} onClose={() => setEditing(null)} />}
+      {historyOf && <HistoryDrawer site={site} row={historyOf} onClose={() => setHistoryOf(null)} />}
     </>
   )
 }

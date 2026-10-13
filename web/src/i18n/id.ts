@@ -3,6 +3,7 @@ import { peopleId } from './people.id'
 import { opsId } from './ops.id'
 import { adminId } from './admin.id'
 import { platformId } from './platform.id'
+import { usersId } from './users.id'
 import type { Dict } from './en'
 
 /** Kamus Bahasa Indonesia (bahasa bawaan). */
@@ -416,4 +417,5 @@ export const id: Dict = {
   ...opsId,
   ...adminId,
   ...platformId,
+  ...usersId,
 }

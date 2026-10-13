@@ -13,6 +13,49 @@ import type { Lang } from '../lib/time'
 
 type Pair = { en: string; id: string }
 
+/** Codes of /users and /device-accounts (docs/api.md, D-041). */
+const USER_ERROR_CODES: Record<string, Pair> = {
+  kc_unavailable: {
+    en: 'User management is unavailable right now: the login server (Keycloak) cannot be reached or is not set up for this organisation. Try again later or ask the operator.',
+    id: 'Manajemen pengguna sedang tidak tersedia: server login (Keycloak) tidak dapat dihubungi atau belum disiapkan untuk organisasi ini. Coba lagi nanti atau hubungi operator.',
+  },
+  user_not_found: { en: 'User not found.', id: 'Pengguna tidak ditemukan.' },
+  username_taken: { en: 'This username is already used.', id: 'Nama pengguna ini sudah dipakai.' },
+  email_taken: { en: 'This e-mail address is already used by another user.', id: 'Alamat e-mail ini sudah dipakai pengguna lain.' },
+  invalid_username: {
+    en: 'Username: 3–64 characters, only a–z, 0–9 and . _ @ - (not starting with "device-").',
+    id: 'Nama pengguna: 3–64 karakter, hanya a–z, 0–9 dan . _ @ - (tidak diawali "device-").',
+  },
+  invalid_email: { en: 'The e-mail address is not valid.', id: 'Alamat e-mail tidak valid.' },
+  email_required: { en: 'An e-mail address is needed to send an e-mail.', id: 'Alamat e-mail diperlukan untuk mengirim e-mail.' },
+  roles_required: { en: 'Choose at least one role.', id: 'Pilih minimal satu peran.' },
+  role_not_allowed: {
+    en: 'You may not assign this role, or change a platform operator account.',
+    id: 'Anda tidak boleh memberikan peran ini, atau mengubah akun operator platform.',
+  },
+  cannot_modify_self: {
+    en: 'You cannot do this to your own account (remove your admin role, disable it, change your locations, or reset your own password/authenticator here).',
+    id: 'Anda tidak dapat melakukan ini pada akun sendiri (mencabut peran admin, menonaktifkan, mengubah lokasi, atau mereset kata sandi/autentikator sendiri di sini).',
+  },
+  sites_required: {
+    en: 'You can only manage users limited to your own locations — choose at least one.',
+    id: 'Anda hanya dapat mengelola pengguna yang dibatasi ke lokasi Anda — pilih minimal satu.',
+  },
+  invalid_site: { en: 'One of the chosen locations does not belong to your organisation.', id: 'Salah satu lokasi yang dipilih bukan milik organisasi Anda.' },
+  password_policy: {
+    en: "The password does not meet the organisation's password rules. Choose a longer or stronger one, or leave it empty to generate one.",
+    id: 'Kata sandi tidak memenuhi aturan kata sandi organisasi. Pilih yang lebih panjang/kuat, atau kosongkan agar dibuat otomatis.',
+  },
+  invalid_user: { en: 'The login server rejected the change.', id: 'Server login menolak perubahan ini.' },
+  invite_failed: {
+    en: 'The invitation e-mail could not be sent. Set a temporary password instead.',
+    id: 'E-mail undangan tidak dapat dikirim. Atur kata sandi sementara sebagai gantinya.',
+  },
+  invalid_first: { en: 'Invalid page.', id: 'Halaman tidak valid.' },
+  invalid_max: { en: 'Invalid page size.', id: 'Ukuran halaman tidak valid.' },
+  invalid_enabled: { en: 'Invalid status filter.', id: 'Filter status tidak valid.' },
+}
+
 /**
  * Translations for every backend error code in docs/api.md (WEB-7).
  * Placeholders: {field}, {max}, {seconds}. Unknown codes fall back to a
@@ -47,6 +90,8 @@ export const ERROR_CODES: Record<string, Pair> = {
   other_site: { en: 'This record belongs to another site.', id: 'Data ini milik lokasi lain.' },
   timestamp_out_of_range: { en: 'The time is outside the allowed window.', id: 'Waktunya di luar rentang yang diizinkan.' },
   not_your_record: { en: 'This record belongs to someone else.', id: 'Data ini milik orang lain.' },
+  // ── users & tablet accounts (F1, D-041) ─────────────────────────────────
+  ...USER_ERROR_CODES,
   // ── sites ────────────────────────────────────────────────────────────────
   name_required: { en: 'A name is required.', id: 'Nama wajib diisi.' },
   invalid_name: { en: 'The name is not valid.', id: 'Nama tidak valid.' },
@@ -191,6 +236,11 @@ const FIELD_NAMES: Record<string, Pair> = {
   recipient: { en: 'Recipient', id: 'Penerima' },
   client_id: { en: 'Client ID', id: 'ID klien' },
   qr_code: { en: 'QR code', id: 'Kode QR' },
+  username: { en: 'Username', id: 'Nama pengguna' },
+  first_name: { en: 'First name', id: 'Nama depan' },
+  last_name: { en: 'Last name', id: 'Nama belakang' },
+  email: { en: 'E-mail', id: 'E-mail' },
+  temporary_password: { en: 'Temporary password', id: 'Kata sandi sementara' },
 }
 
 /** Messages by HTTP status for codes without a translation. */
@@ -248,7 +298,8 @@ export function errorText(err: unknown, lang: Lang, overrides: Overrides = {}): 
   const isAxios = axios.isAxiosError(err)
   if (code === undefined && status === 401) return ERROR_CODES.unauthorized[lang]
 
-  if (status !== undefined && status >= 500 && code !== 'delivery_failed') {
+  // 5xx answers are generic — except codes that tell the user what to do (503 kc_unavailable).
+  if (status !== undefined && status >= 500 && code !== 'delivery_failed' && code !== 'kc_unavailable') {
     const base = ERROR_CODES.internal[lang]
     const ref = requestIdText(err, lang) ?? (b?.request_id ? fill(reference[lang], { id: b.request_id }) : undefined)
     return ref ? `${base} ${ref}` : base

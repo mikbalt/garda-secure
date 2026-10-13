@@ -49,7 +49,7 @@ export const uxId: Record<keyof typeof uxEn, string> = {
   'setup.step.routes.cta': 'Buat rute',
   'setup.step.routes.status': '{n} rute · {m} titik',
   'setup.step.device.title': 'Hubungkan tablet pos jaga',
-  'setup.step.device.body': 'Login di tablet memakai akun perangkat, lalu setujui tablet tersebut di sini dan pilih lokasinya.',
+  'setup.step.device.body': 'Buat akun tablet di Pengaturan → Tablet, masuk di tablet dengan akun itu, lalu setujui tablet di sana dan pilih lokasinya.',
   'setup.step.device.cta': 'Setujui tablet',
   'setup.step.device.status': '{n} aktif · {m} menunggu persetujuan',
   'setup.step.notif.title': 'Atur peringatan',

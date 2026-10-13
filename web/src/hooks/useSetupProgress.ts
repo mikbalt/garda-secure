@@ -4,7 +4,7 @@ import { apiGet } from '../api/client'
 import { useSite } from '../context/site'
 import { useAuth } from './useAuth'
 import type { Key, Vars } from '../i18n/context'
-import type { Device, Guard, NotificationRule, PatrolRoute, ShiftTemplate } from '../types'
+import type { Device, DeviceAccount, Guard, NotificationRule, PatrolRoute, ShiftTemplate } from '../types'
 
 export type StepState = 'done' | 'partial' | 'todo'
 
@@ -34,6 +34,7 @@ export function useSetupProgress() {
   const templates = useQuery({ queryKey: ['shift-templates', siteId], queryFn: () => apiGet<ShiftTemplate[]>('/shift-templates', { site_id: siteId }), ...opts })
   const routes = useQuery({ queryKey: ['patrol-routes', siteId], queryFn: () => apiGet<PatrolRoute[]>('/patrol/routes', { site_id: siteId }), ...opts })
   const devices = useQuery({ queryKey: ['devices'], queryFn: () => apiGet<Device[]>('/devices'), ...opts })
+  const accounts = useQuery({ queryKey: ['device-accounts'], queryFn: () => apiGet<DeviceAccount[]>('/device-accounts'), ...opts })
   const rules = useQuery({ queryKey: ['rules', siteId], queryFn: () => apiGet<NotificationRule[]>('/notifications/rules', { site_id: siteId }), ...opts })
 
   const activeGuards = (guards.data ?? []).filter((g) => g.status === 'active')
@@ -41,6 +42,8 @@ export function useSetupProgress() {
   const checkpoints = (routes.data ?? []).reduce((n, r) => n + r.checkpoints.length, 0)
   const siteDevices = (devices.data ?? []).filter((d) => d.site_id === siteId && d.status === 'active').length
   const pendingDevices = (devices.data ?? []).filter((d) => d.status === 'pending').length
+  // A tablet signs in with a tablet account (Settings → Tablets) before it can be approved.
+  const tabletAccounts = (accounts.data ?? []).filter((a) => a.enabled).length
 
   const steps: SetupStep[] = [
     {
@@ -65,8 +68,10 @@ export function useSetupProgress() {
       status: routes.data?.length ? { key: 'setup.step.routes.status', vars: { n: routes.data.length, m: checkpoints } } : undefined,
     },
     {
-      key: 'device', icon: Tablet, title: 'setup.step.device.title', body: 'setup.step.device.body', cta: 'setup.step.device.cta',
-      to: '/settings?tab=devices', state: siteDevices > 0 ? 'done' : pendingDevices > 0 ? 'partial' : 'todo',
+      key: 'device', icon: Tablet, title: 'setup.step.device.title', body: 'setup.step.device.body',
+      cta: tabletAccounts === 0 && pendingDevices === 0 ? 'acc.setup.ctaAccount' : 'setup.step.device.cta',
+      to: tabletAccounts === 0 && pendingDevices === 0 ? '/settings?tab=devices&new=1' : '/settings?tab=devices',
+      state: siteDevices > 0 ? 'done' : pendingDevices > 0 || tabletAccounts > 0 ? 'partial' : 'todo',
       status: siteDevices + pendingDevices > 0 ? { key: 'setup.step.device.status', vars: { n: siteDevices, m: pendingDevices } } : undefined,
     },
     {

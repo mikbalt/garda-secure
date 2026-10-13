@@ -22,6 +22,7 @@ const Reports = lazy(() => import('./pages/Reports'))
 const Settings = lazy(() => import('./pages/Settings'))
 const Setup = lazy(() => import('./pages/Setup'))
 const Audit = lazy(() => import('./pages/Audit'))
+const Users = lazy(() => import('./pages/Users'))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -70,6 +71,7 @@ export function App() {
                     <Route path="/setup" element={page('viewSetup', <Setup />)} />
                     <Route path="/settings" element={page('viewSettings', <Settings />)} />
                     <Route path="/audit" element={page('viewAudit', <Audit />)} />
+                    <Route path="/users" element={page('manageUsers', <Users />)} />
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Route>
                 </Routes>

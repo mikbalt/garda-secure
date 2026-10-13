@@ -44,6 +44,21 @@ const DOCUMENTED = [
   'range_too_long',
   'invalid_range',
   'reason_required',
+  // users & tablet accounts (F1)
+  'kc_unavailable',
+  'username_taken',
+  'email_taken',
+  'role_not_allowed',
+  'cannot_modify_self',
+  'sites_required',
+  'user_not_found',
+  'invalid_username',
+  'invalid_email',
+  'email_required',
+  'roles_required',
+  'invalid_site',
+  'password_policy',
+  'invalid_name',
 ]
 
 describe('error code catalogue', () => {
@@ -90,6 +105,19 @@ describe('errorText', () => {
     expect(id).toContain('req-abc123')
     expect(id).toContain('Terjadi kesalahan di server')
     expect(errorText(apiError(503, { error: 'pq: connection refused' }), 'en')).not.toContain('pq:')
+  })
+
+  it('explains 503 kc_unavailable instead of a generic server error', () => {
+    const err = apiError(503, { error: 'user management is unavailable', code: 'kc_unavailable' })
+    expect(errorText(err, 'id')).toContain('Keycloak')
+    expect(errorText(err, 'id')).not.toContain('Terjadi kesalahan di server')
+    expect(errorText(err, 'en')).toMatch(/User management is unavailable/)
+  })
+
+  it('translates self-protection and site-scope refusals', () => {
+    expect(errorText(apiError(403, { code: 'cannot_modify_self' }), 'id')).toMatch(/akun sendiri/)
+    expect(errorText(apiError(403, { code: 'sites_required' }), 'en')).toMatch(/your own locations/)
+    expect(errorText(apiError(409, { code: 'username_taken', field: 'username' }), 'id')).toBe('Nama pengguna ini sudah dipakai.')
   })
 
   it('reads the request id from the X-Request-ID header too', () => {

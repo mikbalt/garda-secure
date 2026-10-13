@@ -35,6 +35,10 @@ const EXPECTED: Record<Capability, Role[]> = {
   reportIncidents: ['admin', 'supervisor', 'client-readonly'],
   reportKpi: ['admin', 'supervisor', 'hr'],
   manageSites: ['admin'],
+  manageUsers: ['admin'],
+  manageDeviceAccounts: ['admin'],
+  viewAttendanceHistory: ['admin', 'supervisor', 'hr'],
+  viewVisitorDetail: ['admin', 'supervisor'],
 }
 
 describe('capability matrix', () => {
@@ -62,6 +66,12 @@ describe('capability matrix', () => {
 
   it('keeps realm admins away from install-wide settings', () => {
     expect(can(['admin'], 'managePlatform')).toBe(false)
+  })
+
+  it('keeps user and tablet-account management with realm admins (F1)', () => {
+    expect(can(['platform-admin'], 'manageUsers')).toBe(false)
+    expect(can(['admin', 'platform-admin'], 'manageUsers')).toBe(true)
+    expect(can(['supervisor'], 'manageDeviceAccounts')).toBe(false)
   })
 })
 
