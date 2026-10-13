@@ -46,6 +46,7 @@
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
+      "fullScopeAllowed": false,
       "protocol": "openid-connect",
       "rootUrl": "",
       "baseUrl": "/",
@@ -84,7 +85,9 @@
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": false,
+      "fullScopeAllowed": false,
       "protocol": "openid-connect",
+      "defaultClientScopes": ["basic"],
       "optionalClientScopes": ["offline_access"],
       "protocolMappers": [
         {
@@ -103,6 +106,10 @@
         }
       ]
     }
+  ],
+  "scopeMappings": [
+    { "client": "securepatrol-web", "roles": ["platform-admin", "admin", "supervisor", "hr", "client-readonly"] },
+    { "client": "securepatrol-tablet", "roles": ["device"] }
   ],
   "eventsEnabled": true,
   "eventsExpiration": 2592000,

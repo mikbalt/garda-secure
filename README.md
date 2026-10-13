@@ -87,7 +87,7 @@ Deploy secrets, environment protection and rollback: [docs/runbook.md](docs/runb
 | Layer | Technology |
 |---|---|
 | API | Go 1.26 + Fiber v2 |
-| Auth | Keycloak 24 (OIDC, RBAC, enforced TOTP for staff roles) |
+| Auth | Keycloak 26 (OIDC, RBAC, enforced TOTP for staff roles); keycloak-js 26 in the web app |
 | Database | PostgreSQL 16 |
 | Object Storage | S3-compatible (Silo — maintained MinIO fork): photos, backups |
 | Cache / Queue | Redis 7 |

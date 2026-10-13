@@ -18,10 +18,17 @@
 #       manage-users, view-realm; its secret is written to
 #       infra/secrets/keycloak-admin-clients ("realm=secret", read by the API
 #       through KEYCLOAK_ADMIN_CLIENT_SECRETS_FILE; never printed) — F1
+#     - "Full scope allowed" off on securepatrol-web / -tablet / -admin-api
+#       (deprecated in Keycloak 26.8): tokens carry only the roles the API
+#       honours — web: admin, supervisor, hr, client-readonly, platform-admin;
+#       tablet: device (+ offline_access via its scope); admin-api: the four
+#       realm-management roles above. The tablet client keeps the default
+#       client scope `basic` (claim `sub`, required by the API).
 #   master realm: brute-force protection on.
 # Needs docker compose (keycloak running) and jq on the host.
 # Auth: KEYCLOAK_AUTOMATION_CLIENT_ID/SECRET (service account) when set, else
-# the KEYCLOAK_ADMIN user — see docs/runbook.md §2 (master realm OTP).
+# the bootstrap admin KC_BOOTSTRAP_ADMIN_USERNAME/PASSWORD — see
+# docs/runbook.md §2 (master realm OTP).
 set -eu
 . "$(dirname -- "$0")/lib.sh"
 
@@ -44,9 +51,9 @@ if [ -n "${KEYCLOAK_AUTOMATION_CLIENT_ID:-}" ]; then
     'read -r s; /opt/keycloak/bin/kcadm.sh config credentials --config '"$CFG"' --server http://127.0.0.1:8080/auth --realm master --client "$1" --secret "$s"' \
     sh "$KEYCLOAK_AUTOMATION_CLIENT_ID" >/dev/null
 else
-  # KEYCLOAK_ADMIN / KEYCLOAK_ADMIN_PASSWORD are already in the container env.
+  # KC_BOOTSTRAP_ADMIN_USERNAME / _PASSWORD are already in the container env.
   compose exec -T keycloak sh -c \
-    '/opt/keycloak/bin/kcadm.sh config credentials --config '"$CFG"' --server http://127.0.0.1:8080/auth --realm master --user "$KEYCLOAK_ADMIN" --password "$KEYCLOAK_ADMIN_PASSWORD"' >/dev/null
+    '/opt/keycloak/bin/kcadm.sh config credentials --config '"$CFG"' --server http://127.0.0.1:8080/auth --realm master --user "$KC_BOOTSTRAP_ADMIN_USERNAME" --password "$KC_BOOTSTRAP_ADMIN_PASSWORD"' >/dev/null
 fi
 trap 'compose exec -T keycloak rm -f "$CFG" >/dev/null 2>&1 || true' EXIT
 
@@ -106,6 +113,49 @@ configure_mfa() { # realm
 ADMIN_CLIENT=${KEYCLOAK_ADMIN_CLIENT_ID:-securepatrol-admin-api}
 SECRETS_DIR=$INFRA_DIR/secrets
 SECRETS_FILE=$SECRETS_DIR/keycloak-admin-clients
+# Roles each client's tokens may carry (the API ignores all others, D-032).
+WEB_ROLES="platform-admin admin supervisor hr client-readonly"
+TABLET_ROLES="device"
+ADMIN_API_ROLES="view-users query-users manage-users view-realm"
+
+# limit_scope REALM CLIENT_UUID CONTAINER ROLE... — switch "Full scope
+# allowed" off and map the roles into the client's scope. CONTAINER is
+# "realm" or the UUID of the client that owns the roles. Roles that do not
+# exist (yet) are skipped — run again after creating them; mappings added by
+# hand are kept.
+limit_scope() {
+  ls_r=$1 ls_id=$2 ls_container=$3
+  shift 3
+  ls_want=$(printf '%s\n' "$@" | jq -R . | jq -sc .)
+  if [ "$ls_container" = realm ]; then
+    ls_path="clients/$ls_id/scope-mappings/realm"
+    ls_all=$(kc get roles -r "$ls_r")
+  else
+    ls_path="clients/$ls_id/scope-mappings/clients/$ls_container"
+    ls_all=$(kc get "clients/$ls_container/roles" -r "$ls_r")
+  fi
+  ls_have=$(kc get "$ls_path" -r "$ls_r")
+  ls_add=$(jq -cn --argjson all "$ls_all" --argjson have "$ls_have" --argjson want "$ls_want" \
+    '[$all[] | select(.name as $n | any($want[]; . == $n) and (any($have[]; .name == $n) | not)) | {id, name}]')
+  if [ "$ls_add" != "[]" ]; then
+    printf '%s' "$ls_add" | kc create "$ls_path" -r "$ls_r" -f - >/dev/null
+  fi
+  kc update "clients/$ls_id" -r "$ls_r" -s fullScopeAllowed=false >/dev/null
+}
+
+# ensure_default_scope REALM CLIENT_UUID SCOPE — e.g. `basic` (claim sub),
+# which a client imported with an explicit scope list may lack.
+ensure_default_scope() {
+  if ! kc get "clients/$2/default-client-scopes" -r "$1" | jq -e --arg s "$3" 'any(.[]; .name == $s)' >/dev/null; then
+    eds_id=$(kc get client-scopes -r "$1" | jq -r --arg s "$3" 'first(.[] | select(.name == $s) | .id) // empty')
+    if [ -z "$eds_id" ]; then
+      warn "  client scope $3 does not exist in $1"
+      return 0
+    fi
+    kc update "clients/$2/default-client-scopes/$eds_id" -r "$1" -n -b '{}' >/dev/null
+    info "  default client scope $3 added"
+  fi
+}
 
 configure_sites() { # realm, web client id — allowed sites attribute + claim (F4)
   r=$1 cid=$2
@@ -145,6 +195,10 @@ configure_admin_client() { # realm — confidential client for the API's user ma
   sa=$(kc get "clients/$id/service-account-user" -r "$r" | jq -r '.username')
   kc add-roles -r "$r" --uusername "$sa" --cclientid realm-management \
     --rolename view-users --rolename query-users --rolename manage-users --rolename view-realm >/dev/null
+  rm_id=$(kc get clients -r "$r" -q clientId=realm-management --fields id | jq -r '.[0].id // empty')
+  [ -n "$rm_id" ] || die "client realm-management not found in $r"
+  # shellcheck disable=SC2086 # word splitting of the role list is intended
+  limit_scope "$r" "$id" "$rm_id" $ADMIN_API_ROLES
   secret=$(kc get "clients/$id/client-secret" -r "$r" | jq -r '.value // empty')
   if [ -z "$secret" ]; then
     secret=$(kc create "clients/$id/client-secret" -r "$r" -o | jq -r '.value // empty')
@@ -178,6 +232,19 @@ for r in $realms; do
   info "  OTP enforced for: $MFA_ROLES (via role $MFA_ROLE, flow $FLOW)"
   configure_sites "$r" "$cid"
   configure_admin_client "$r"
+  # shellcheck disable=SC2086 # word splitting of the role lists is intended
+  if [ -n "$cid" ]; then
+    limit_scope "$r" "$cid" realm $WEB_ROLES
+  fi
+  tid=$(kc get clients -r "$r" -q clientId=securepatrol-tablet --fields id | jq -r '.[0].id // empty')
+  if [ -n "$tid" ]; then
+    ensure_default_scope "$r" "$tid" basic
+    # shellcheck disable=SC2086
+    limit_scope "$r" "$tid" realm $TABLET_ROLES
+  else
+    warn "  client securepatrol-tablet not found in $r"
+  fi
+  info "  token role scope: web = $WEB_ROLES; tablet = $TABLET_ROLES; $ADMIN_CLIENT = $ADMIN_API_ROLES"
 done
 
 info "realm master: brute-force protection"

@@ -659,7 +659,7 @@ func (h *Handler) createDeviceAccount(c *fiber.Ctx) error {
 	ctx := c.Context()
 	username := "device-" + slug
 	// Device accounts log in with the password grant, which fails while a
-	// profile is incomplete (Keycloak 24 VERIFY_PROFILE): set names and a
+	// profile is incomplete (VERIFY_PROFILE, Keycloak 24+): set names and a
 	// non-deliverable e-mail (.invalid, RFC 2606).
 	u := kcadmin.User{
 		Username: username, FirstName: b.Name, LastName: "Tablet", Email: username + "@device.invalid",

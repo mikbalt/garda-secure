@@ -37,10 +37,12 @@ scrape_configs:
     static_configs:
       - targets: ['notification-worker:9091']
 
+  # Keycloak 26: management port 9000 (inherits the /auth relative path);
+  # not published on the host, not proxied by nginx.
   - job_name: keycloak
     metrics_path: /auth/metrics
     static_configs:
-      - targets: ['keycloak:8080']
+      - targets: ['keycloak:9000']
 
   - job_name: minio
     metrics_path: /minio/v2/metrics/cluster

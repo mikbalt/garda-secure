@@ -103,6 +103,26 @@ jobs:
           persist-credentials: false
       - name: Parse realm JSON
         run: for f in keycloak/realm-template.json keycloak/realms/*.json; do jq empty "$f"; done
+      - name: Realm clients match the Keycloak 26 token contract (D-032)
+        run: |
+          for f in keycloak/realm-template.json keycloak/realms/*.json; do
+            echo "$f"
+            jq -e '
+              def client($id): first(.clients[] | select(.clientId == $id));
+              (client("securepatrol-web") | .fullScopeAllowed == false and .publicClient and .directAccessGrantsEnabled == false
+                 and .attributes["pkce.code.challenge.method"] == "S256")
+              and (client("securepatrol-tablet") | .fullScopeAllowed == false and .publicClient and .directAccessGrantsEnabled
+                 and .standardFlowEnabled == false and (.defaultClientScopes | index("basic"))
+                 and (.optionalClientScopes | index("offline_access")))
+              and ([.clients[].protocolMappers[]? | select(.name == "realm roles (flat)") | .config["claim.name"]] == ["roles", "roles"])
+              and ([.scopeMappings[] | select(.client == "securepatrol-tablet") | .roles[]] == ["device"])
+              and ([.scopeMappings[] | select(.client == "securepatrol-web") | .roles[]] | sort
+                   == (["platform-admin", "admin", "supervisor", "hr", "client-readonly"] | sort))
+            ' "$f" >/dev/null
+          done
+      - name: Keycloak image is a pinned 26.x
+        run: |
+          grep -Eq '^ +image: quay\.io/keycloak/keycloak:26\.[0-9]+\.[0-9]+@sha256:[0-9a-f]{64}$' docker-compose.yml
 
   validate-nginx:
     name: Validate Nginx configs

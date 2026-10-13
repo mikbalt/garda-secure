@@ -64,15 +64,31 @@ jobs:
           sh scripts/keycloak-config.sh
           sh scripts/keycloak-config.sh
 
+      - name: Keycloak 26 — version, health/metrics only on the unpublished management port
+        run: |
+          docker compose exec -T keycloak /opt/keycloak/bin/kc.sh --version | tee /dev/stderr | grep -q '^Keycloak 26\.'
+          # /health and /metrics are not served on the main port (8080, host 127.0.0.1:8081) ...
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/auth/health/ready)" = 404
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/auth/metrics)" = 404
+          # ... but on 9000 inside the network, and 9000 is not published on the host.
+          docker compose exec -T keycloak sh -c 'exec 3<>/dev/tcp/127.0.0.1/9000 && printf "GET /auth/health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3 && cat <&3' \
+            | grep -q '"status": *"UP"'
+          if docker compose port keycloak 9000 >/dev/null 2>&1; then
+            echo "management port 9000 is published" >&2; exit 1
+          fi
+
       - name: Seed a tablet (device) user — CI only
         run: |
           echo "DEVICE_PW=Ci$(openssl rand -hex 12)A1" >> "$GITHUB_ENV"
-          docker compose exec -T keycloak sh -c '/opt/keycloak/bin/kcadm.sh config credentials --config /tmp/ci.config --server http://127.0.0.1:8080/auth --realm master --user "$KEYCLOAK_ADMIN" --password "$KEYCLOAK_ADMIN_PASSWORD"'
+          docker compose exec -T keycloak sh -c '/opt/keycloak/bin/kcadm.sh config credentials --config /tmp/ci.config --server http://127.0.0.1:8080/auth --realm master --user "$KC_BOOTSTRAP_ADMIN_USERNAME" --password "$KC_BOOTSTRAP_ADMIN_PASSWORD"'
 
-      - name: Create the device user
+      - name: Create the device user, check keycloak-config results
         run: |
           kc() { docker compose exec -T keycloak /opt/keycloak/bin/kcadm.sh "$@" --config /tmp/ci.config; }
-          kc create users -r "$REALM" -s username=tablet-ci -s enabled=true
+          # Like the API's device accounts (D-041): a complete profile, else
+          # VERIFY_PROFILE makes the password grant fail.
+          kc create users -r "$REALM" -s username=tablet-ci -s enabled=true -s firstName=CI -s lastName=Tablet \
+            -s email=tablet-ci@device.invalid -s emailVerified=true
           printf '%s\n' "$DEVICE_PW" | docker compose exec -T keycloak sh -c \
             'read -r pw; /opt/keycloak/bin/kcadm.sh set-password --config /tmp/ci.config -r "$1" --username tablet-ci --new-password "$pw"' sh "$REALM"
           kc add-roles -r "$REALM" --uusername tablet-ci --rolename device
@@ -81,6 +97,14 @@ jobs:
           kc get clients -r "$REALM" -q clientId=securepatrol-web --fields redirectUris \
             | jq -e '.[0].redirectUris == ["https://localhost/*"]'
           kc get roles/admin/composites -r "$REALM" | jq -e 'any(.[]; .name == "mfa-required")'
+          for c in securepatrol-web securepatrol-tablet securepatrol-admin-api; do
+            kc get clients -r "$REALM" -q "clientId=$c" --fields fullScopeAllowed | jq -e '.[0].fullScopeAllowed == false'
+          done
+          tid=$(kc get clients -r "$REALM" -q clientId=securepatrol-tablet --fields id | jq -r '.[0].id')
+          kc get "clients/$tid/default-client-scopes" -r "$REALM" | jq -e 'any(.[]; .name == "basic")'
+
+      - name: Keycloak smoke test (admin REST, tablet + web tokens and claims, OTP enrolment)
+        run: sh scripts/keycloak-smoke.sh "$REALM"
 
       - name: Public endpoints through nginx (TLS verified against the private CA)
         run: |
@@ -157,6 +181,17 @@ jobs:
           docker compose exec -T backup-offsite /usr/local/bin/entrypoint.sh run
           docker compose exec -T backup-offsite /usr/local/bin/entrypoint.sh snapshots
           docker compose exec -T backup-offsite cat /status/securepatrol_offsite.prom | grep -q 'sp_offsite_backup_last_result 1'
+
+      - name: Keycloak rollback path — restore its dump into an emptied schema (RESTORE_FRESH)
+        run: |
+          RESTORE_FRESH=1 RESTORE_CONFIRM=keycloak sh scripts/restore-db.sh keycloak backups/*-ci/keycloak.dump
+          docker compose up -d --wait --wait-timeout 300 keycloak
+          curl -fsS --cacert "$CACERT" "$BASE/auth/realms/$REALM/.well-known/openid-configuration" \
+            | jq -e --arg iss "$BASE/auth/realms/$REALM" '.issuer == $iss'
+          # The restored database still has the tablet account and its realm config.
+          curl -fsS --cacert "$CACERT" -d grant_type=password -d client_id=securepatrol-tablet -d username=tablet-ci \
+            --data-urlencode "password=$DEVICE_PW" -d scope=openid \
+            "$BASE/auth/realms/$REALM/protocol/openid-connect/token" | jq -e '.access_token | length > 0' >/dev/null
 
       - name: Diagnostics
         if: failure()

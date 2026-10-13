@@ -67,8 +67,10 @@ updates:
     commit-message:
       prefix: "chore(deps)"
 
-  # Images pinned in infra/docker-compose*.yml. Keycloak major upgrades need
-  # the migration in docs/runbook.md §2 — do not merge those blindly.
+  # Images pinned in infra/docker-compose*.yml. Every Keycloak update (26.x
+  # minors too) migrates its database one way on start and majors change
+  # config: follow docs/runbook.md §2 ("Upgrading Keycloak") — never merge
+  # those blindly.
   - package-ecosystem: docker-compose
     directory: /infra
     target-branch: init
