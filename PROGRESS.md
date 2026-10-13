@@ -9,7 +9,6 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
-| Wave 3 web — Users + tablet accounts, tablet health, site-scoping hints, override history, visitor detail | `muhamhad-pc1/claude-web-people` | 2026-10-12 | branch `agent/muhamhad-pc1/web-people` |
 | Wave 3 web — floor plans + live plan view, patrol schedules + compliance report, regenerate QR, XLSX/PDF, amended incidents, incident GPS, new events/channels, paging, /sos/active | `muhamhad-pc1/claude-web-patrol` | 2026-10-12 | branch `agent/muhamhad-pc1/web-patrol` |
 
 ## Migration numbers
@@ -83,3 +82,4 @@ Mobile (D-024) — open audit items, see docs/audit-2026-10.md
 | Wave 2 mobile — hardening MOB-2..MOB-11 (protected sign-out, lock-screen SOS, server time offset, outbox failure handling, encrypted local data, release signing + new app id, bundled CA, site time zone, EXIF strip) + guard-session and signed-QR client; 63 tests (D-039) | `muhamhad-pc1/claude-mobile` | 2026-10-12 | merge d916d4f |
 | Wave 2 web — WEB-1..10: deps (0 high), CSP-clean build, realm-wide SOS banner + sound, idle logout, a11y (axe clean), all error codes EN/ID, per-route error boundary, safe URLs, lazy charts, demo guard; UIs for platform-admin settings, ops alerts/log, audit log, plausibility flags; 100 unit + 82 e2e tests (D-040) | `muhamhad-pc1/claude-web` | 2026-10-12 | merge 9feb63b |
 | Wave 2 backend — users + device accounts via Keycloak admin API, per-site scoping, realm-wide `GET /sos/active`, `incident_filed`, effective amended values, override history, XLSX/PDF exports + paging, route snapshots, channel registry, floor plans + batched live view, retention + encrypted visitor IDs, tablet telemetry, incident GPS (D-041..D-049) | `muhamhad-pc1/claude-be-features` | 2026-10-12 | ab4c3aa |
+| Wave 3 web — Users & access (Keycloak users, roles, site scope, reset password/OTP), tablet accounts + health drawer, setup guide tablet step, scope hint, attendance override history, visitor detail (audited reveal); 135 unit + 97 e2e tests | `muhamhad-pc1/claude-web-people` | 2026-10-13 | merge f5811b7 |
