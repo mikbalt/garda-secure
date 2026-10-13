@@ -21,10 +21,12 @@ interface TableProps<T> {
   caption?: string
   onRetry?: () => void
   rowClassName?: (row: T) => string
+  /** Optional totals row (<tfoot>), keyed by column key. */
+  footer?: Partial<Record<string, ReactNode>>
 }
 
 /** Simple responsive data table with loading / error / empty states. */
-export function Table<T>({ columns, rows, rowKey, isLoading, error, empty, caption, onRetry, rowClassName }: TableProps<T>) {
+export function Table<T>({ columns, rows, rowKey, isLoading, error, empty, caption, onRetry, rowClassName, footer }: TableProps<T>) {
   if (isLoading) return <TableSkeleton cols={Math.min(columns.length, 6)} />
   if (error) return <ErrorState error={error} onRetry={onRetry} />
   if (!rows || rows.length === 0) return <EmptyState message={empty} />
@@ -67,6 +69,24 @@ export function Table<T>({ columns, rows, rowKey, isLoading, error, empty, capti
             </tr>
           ))}
         </tbody>
+        {footer && (
+          <tfoot className="border-t-2 border-gray-200 bg-gray-50/80 font-semibold text-gray-900">
+            <tr>
+              {columns.map((c, i) => {
+                const Cell = i === 0 ? 'th' : 'td'
+                return (
+                  <Cell
+                    key={c.key}
+                    {...(i === 0 ? { scope: 'row' } : {})}
+                    className={`px-4 py-3 align-middle ${c.numeric ? 'text-right tabular-nums' : 'text-left'} ${c.className ?? ''}`}
+                  >
+                    {footer[c.key]}
+                  </Cell>
+                )
+              })}
+            </tr>
+          </tfoot>
+        )}
       </table>
     </div>
   )

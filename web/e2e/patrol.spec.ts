@@ -72,6 +72,20 @@ test.describe('patrol & reports features (demo) @desktop', () => {
     expect(problems).toEqual([])
   })
 
+  test('monthly recap counts guard-days with a site total (F13)', async ({ page, problems }) => {
+    await openAs(page, 'hr', '/reports?tab=monthly')
+    await settle(page)
+    await expect(page.getByRole('heading', { level: 1, name: 'Rekap bulanan untuk penggajian' })).toBeVisible()
+    const table = page.getByRole('region', { name: 'Rekap bulanan untuk penggajian' })
+    await expect(table.getByRole('columnheader', { name: 'Hari', exact: true })).toBeVisible()
+    await expect(table.getByRole('columnheader', { name: 'Hari pulang awal' })).toBeVisible()
+    await expect(table.getByRole('rowheader', { name: /^Total \(\d+ petugas\)$/ })).toBeVisible()
+    await expect(page.getByText(/^Dihitung per hari menurut zona waktu lokasi/)).toBeVisible()
+    await expect(page.getByText('Hari terjadwal')).toBeVisible()
+    expect(await seriousA11yViolations(page)).toEqual([])
+    expect(problems).toEqual([])
+  })
+
   test('incidents: paging, amended values, GPS and PDF', async ({ page, problems }) => {
     await openAs(page, 'supervisor', '/incidents')
     await expect(page.getByText(/Menampilkan 50 dari \d+ insiden/)).toBeVisible()
