@@ -9,6 +9,8 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
+| Keycloak 24 → 26 upgrade (infra, keycloak-config.sh, realms, web keycloak-js, runbook) | `muhamhad-pc1/claude-kc26` | 2026-10-13 | branch `agent/muhamhad-pc1/keycloak-26` |
+| Monthly recap per day instead of per shift (F13): backend report + recap e-mail/WA + web | `muhamhad-pc1/claude-recap-days` | 2026-10-13 | branch `agent/muhamhad-pc1/recap-days`; migration 008 if needed |
 
 ## Migration numbers
 
@@ -21,7 +23,8 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 | 005 | be_security (audit append-only, received_at/flags, per-site employee_id) | `muhamhad-pc1/claude-be-sec` | pushed |
 | 006 | be_field (guard sessions, signed QR, patrol schedules) | `muhamhad-pc1/claude-be-field` | pushed |
 | 007 | be_features (overrides history, route snapshots, floor plans, channels, retention, telemetry, incident GPS) | `muhamhad-pc1/claude-be-features` | pushed |
-| 008 | *(next free)* | | |
+| 008 | recap_days (only if needed) | `muhamhad-pc1/claude-recap-days` | reserved |
+| 009 | *(next free)* | | |
 
 ## Milestones (PRD §11)
 
