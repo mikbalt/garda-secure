@@ -10,7 +10,6 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 | Task | Agent | Since | Notes |
 |---|---|---|---|
 | Keycloak 24 → 26 upgrade (infra, keycloak-config.sh, realms, web keycloak-js, runbook) | `muhamhad-pc1/claude-kc26` | 2026-10-13 | branch `agent/muhamhad-pc1/keycloak-26` |
-| Monthly recap per day instead of per shift (F13): backend report + recap e-mail/WA + web | `muhamhad-pc1/claude-recap-days` | 2026-10-13 | branch `agent/muhamhad-pc1/recap-days`; migration 008 if needed |
 
 ## Migration numbers
 
@@ -23,8 +22,7 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 | 005 | be_security (audit append-only, received_at/flags, per-site employee_id) | `muhamhad-pc1/claude-be-sec` | pushed |
 | 006 | be_field (guard sessions, signed QR, patrol schedules) | `muhamhad-pc1/claude-be-field` | pushed |
 | 007 | be_features (overrides history, route snapshots, floor plans, channels, retention, telemetry, incident GPS) | `muhamhad-pc1/claude-be-features` | pushed |
-| 008 | recap_days (only if needed) | `muhamhad-pc1/claude-recap-days` | reserved |
-| 009 | *(next free)* | | |
+| 008 | *(next free)* | | |
 
 ## Milestones (PRD §11)
 
@@ -86,3 +84,4 @@ Mobile (D-024) — open audit items, see docs/audit-2026-10.md
 | Wave 2 backend — users + device accounts via Keycloak admin API, per-site scoping, realm-wide `GET /sos/active`, `incident_filed`, effective amended values, override history, XLSX/PDF exports + paging, route snapshots, channel registry, floor plans + batched live view, retention + encrypted visitor IDs, tablet telemetry, incident GPS (D-041..D-049) | `muhamhad-pc1/claude-be-features` | 2026-10-12 | ab4c3aa |
 | Wave 3 web — Users & access (Keycloak users, roles, site scope, reset password/OTP), tablet accounts + health drawer, setup guide tablet step, scope hint, attendance override history, visitor detail (audited reveal); 135 unit + 97 e2e tests | `muhamhad-pc1/claude-web-people` | 2026-10-13 | merge f5811b7 |
 | Wave 3 web — floor plans + checkpoint placement, live patrol on the plan, patrol schedules editor, compliance report + KPI/monthly columns, regenerate QR, Excel/CSV/PDF downloads, amended incidents, incident GPS, `incident_filed`/`patrol_not_started` rules, channel list, paging, `/sos/active`; 156 unit + 119 e2e tests after merge | `muhamhad-pc1/claude-web-patrol` | 2026-10-13 | merge with web-people |
+| Monthly recap per guard-day (F13): backend report + totals, CSV/XLSX total row, recap e-mail/WA in site language, web table + totals (D-051) | `muhamhad-pc1/claude-recap-days` | 2026-10-13 | merge recap-days |

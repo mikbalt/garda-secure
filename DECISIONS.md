@@ -466,3 +466,17 @@ in PRD §9 (OQ-x). New entries go at the bottom with the next free number.
 - LINE and Telegram are dropped from the roadmap. The channel registry stays as
   the internal validation mechanism (no DB CHECK), with exactly `email` and
   `whatsapp`; unknown channels are rejected (`invalid_channel`).
+
+### D-051 — Monthly recap counts guard-days (F13, FR-REP-05)
+- **Date:** 2026-10-13 · **Status:** Accepted (user decision)
+- The recap (`/reports/attendance/monthly`, exports, `monthly_recap` e-mail and
+  WhatsApp) counts **guard-days**: a calendar day in the site's time zone, keyed
+  by the shift's scheduled start (an overnight shift counts on its start day and
+  month); all shifts of a guard on one day are one day.
+- Day status after overrides: absent if any shift is absent, else late if any
+  is late, else present; a day with only pending shifts is `upcoming`.
+  `early_out_days` = days with at least one early departure. A guard is counted
+  per site for the shifts scheduled there.
+- Per-shift fields keep their names (KPI rates stay per shift); responses add
+  per-site `totals`; exports end with a total row; e-mail/WhatsApp in the site's
+  language. Indonesian zones have no DST.
