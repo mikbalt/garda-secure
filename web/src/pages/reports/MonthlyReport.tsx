@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { CalendarClock, CalendarX2, Route as RouteIcon, Timer, UserCheck } from 'lucide-react'
+import { CalendarCheck2, CalendarClock, CalendarX2, Route as RouteIcon, Timer, UserCheck } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { apiGet } from '../../api/client'
 import { Table, type Column } from '../../components/ui/Table'
 import { useAuth } from '../../hooks/useAuth'
@@ -34,6 +35,7 @@ export function MonthlyReport({ site, title }: { site: Site; title: string }) {
   const sessions = sum((r) => r.patrol_sessions)
   const attendance = ratio(present + late, present + late + absent)
   const patrolAvg = average(rows.filter((r) => r.patrol_sessions > 0).map((r) => r.patrol_completion_pct))
+  const comp = data?.patrol_compliance
 
   const muted = (n: number, warn = false) => (n > 0 ? <span className={warn ? 'font-medium text-red-700' : ''}>{n}</span> : <span className="text-gray-500">0</span>)
 
@@ -64,7 +66,7 @@ export function MonthlyReport({ site, title }: { site: Site; title: string }) {
       site={site}
       title={title}
       period={valid ? formatMonth(month, lang) : month}
-      csv={{ path: '/reports/attendance/monthly', params: { site_id: site.id, month }, filename: `monthly-recap-${month}.csv`, disabled: !valid }}
+      csv={{ path: '/reports/attendance/monthly', params: { site_id: site.id, month }, filename: `monthly-recap-${month}`, disabled: !valid }}
       filters={<MonthPicker value={month} onChange={setMonth} current={current} />}
       stats={
         rows.length > 0 || isLoading ? (
@@ -105,6 +107,22 @@ export function MonthlyReport({ site, title }: { site: Site; title: string }) {
         />
       ) : (
         <>
+          {comp && comp.expected > 0 && (
+            <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-gray-200/80 bg-white px-4 py-3 text-sm shadow-card print:shadow-none">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-600 ring-1 ring-teal-100 print:hidden">
+                <CalendarCheck2 className="h-4 w-4" aria-hidden="true" />
+              </span>
+              <p className="min-w-0 flex-1 text-gray-700">
+                <span className="font-semibold text-gray-900">
+                  {t('p2.rep.mon.comp', { pct: comp.compliance_pct == null ? '—' : `${formatNumber(comp.compliance_pct, lang, 1)}%` })}
+                </span>{' '}
+                {t('p2.rep.mon.compSub', { ok: comp.started_on_time, late: comp.late, missed: comp.missed, n: comp.expected })}
+              </p>
+              <Link to="/reports?tab=compliance" className="no-print text-sm font-medium text-primary-700 hover:text-primary-800 hover:underline">
+                {t('p2.rep.mon.compLink')}
+              </Link>
+            </div>
+          )}
           <Table columns={columns} rows={rows} rowKey={(r) => r.guard_id} isLoading={isLoading} error={error} onRetry={() => refetch()} caption={title} />
           {rows.length > 0 && <p className="no-print mt-3 text-xs text-gray-500">{t('adm.rep.monthly.foot')}</p>}
         </>

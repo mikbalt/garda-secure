@@ -2,11 +2,12 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { CheckCircle2, MapPinOff, Route as RouteIcon, TimerOff } from 'lucide-react'
 import { apiGet } from '../../api/client'
-import { StatusBadge } from '../../components/ui/Badge'
+import { Badge, StatusBadge } from '../../components/ui/Badge'
+import { FlagBadges } from '../../components/FlagBadges'
 import { Table, type Column } from '../../components/ui/Table'
 import { useAuth } from '../../hooks/useAuth'
 import { useI18n } from '../../i18n/context'
-import { addDays, daysBetween, formatDateTime, formatDay, formatNumber, todayIn } from '../../lib/time'
+import { addDays, daysBetween, formatDateTime, formatDay, formatNumber, formatTime, todayIn } from '../../lib/time'
 import { average } from './format'
 import { PctCell, RangePicker, ReportEmpty, Stat, StatRow, type Range } from './ReportKit'
 import { ReportShell } from './ReportShell'
@@ -47,8 +48,34 @@ export function PatrolReport({ site, title }: { site: Site; title: string }) {
         <div className="min-w-[9rem]">
           <p className="font-medium text-gray-900">{r.route_name}</p>
           <p className="text-xs text-gray-500">{r.guard_name}</p>
+          {(r.flags?.length ?? 0) > 0 && (
+            <div className="mt-1">
+              <FlagBadges flags={r.flags} />
+            </div>
+          )}
         </div>
       ),
+    },
+    {
+      key: 'sched',
+      header: t('p2.rep.pat.scheduled'),
+      cell: (r) =>
+        r.due_at ? (
+          <div className="whitespace-nowrap">
+            <p className="tabular-nums text-gray-800">{formatTime(r.due_at, tz)}</p>
+            {r.late_start ? (
+              <Badge tone="yellow" dot>
+                {t('p2.rep.pat.lateStart')}
+              </Badge>
+            ) : (
+              <Badge tone="green" dot>
+                {t('p2.rep.pat.onTimeStart')}
+              </Badge>
+            )}
+          </div>
+        ) : (
+          <span className="text-xs text-gray-500">{t('p2.rep.pat.unscheduled')}</span>
+        ),
     },
     { key: 'started', header: t('pat.started'), cell: (r) => <span className="whitespace-nowrap tabular-nums">{formatDateTime(r.started_at, tz, lang)}</span> },
     { key: 'ended', header: t('pat.ended'), cell: (r) => <span className="whitespace-nowrap tabular-nums">{formatDateTime(r.ended_at, tz, lang)}</span> },
@@ -88,7 +115,7 @@ export function PatrolReport({ site, title }: { site: Site; title: string }) {
       site={site}
       title={title}
       period={from && to ? `${formatDay(from, lang, false)} – ${formatDay(to, lang, false)}` : ''}
-      csv={{ path: '/reports/patrol/sessions', params: { site_id: site.id, from, to }, filename: `patrol-sessions-${from}-${to}.csv`, disabled: !valid }}
+      csv={{ path: '/reports/patrol/sessions', params: { site_id: site.id, from, to }, filename: `patrol-sessions-${from}-${to}`, disabled: !valid }}
       filters={<RangePicker value={range} onChange={setRange} today={today} />}
       invalid={valid ? undefined : t('adm.rep.badRange', { n: MAX_DAYS })}
       stats={

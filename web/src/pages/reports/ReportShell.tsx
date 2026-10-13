@@ -2,7 +2,8 @@ import type { ReactNode } from 'react'
 import { Printer } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { Notice, Toolbar } from '../../components/ui/States'
-import { DownloadCsvButton } from '../../components/DownloadButton'
+import { ExportButton } from '../../components/DownloadButton'
+import type { ExportFormat } from '../../components/exportFormat'
 import { useI18n } from '../../i18n/context'
 import { formatDateTime } from '../../lib/time'
 import type { Site } from '../../types'
@@ -12,7 +13,8 @@ interface Props {
   title: string
   period: string
   filters: ReactNode
-  csv: { path: string; params: Record<string, string | number | undefined>; filename: string; disabled?: boolean }
+  /** Download of the report (D-045): Excel + CSV, the incident log also PDF. */
+  csv: { path: string; params: Record<string, string | number | undefined>; filename: string; disabled?: boolean; formats?: ExportFormat[] }
   /** Summary tiles above the table (a `StatRow`). */
   stats?: ReactNode
   /** Shown instead of stats + table when the filters are invalid. */
@@ -31,10 +33,10 @@ export function ReportShell({ site, title, period, filters, csv, stats, invalid,
       <Toolbar>
         {filters}
         <div className="flex w-full flex-wrap gap-2 sm:ml-auto sm:w-auto">
-          <DownloadCsvButton path={csv.path} params={csv.params} filename={csv.filename} label={t('adm.rep.csv')} disabled={csv.disabled || !!invalid} />
+          <ExportButton path={csv.path} params={csv.params} filename={csv.filename} formats={csv.formats} disabled={csv.disabled || !!invalid} />
           <Button variant="secondary" onClick={() => window.print()} disabled={!!invalid}>
             <Printer className="h-4 w-4" aria-hidden="true" />
-            {t('adm.rep.print')}
+            {t('p2.exp.print')}
           </Button>
         </div>
       </Toolbar>

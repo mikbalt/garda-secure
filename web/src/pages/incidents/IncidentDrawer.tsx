@@ -1,7 +1,9 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FilePen, FileText, ImageOff, Plus } from 'lucide-react'
-import apiClient, { apiGet } from '../../api/client'
+import { Copy, FileDown, FilePen, FileText, ImageOff, Plus } from 'lucide-react'
+import apiClient, { apiGet, downloadFile } from '../../api/client'
+import { AmendedBadge } from '../../components/AmendedBadge'
+import { AMENDABLE, amendedFields, gpsText } from '../../lib/incidents'
 import { TableSkeleton } from '../../components/LoadingSkeleton'
 import { FlagBadges } from '../../components/FlagBadges'
 import { canOpenInTab, mediaUrl } from '../../lib/media'
@@ -10,7 +12,7 @@ import { Button } from '../../components/ui/Button'
 import { Field, FormError, Input, Select, Textarea } from '../../components/ui/Form'
 import { Modal } from '../../components/ui/Modal'
 import { ErrorState } from '../../components/ui/States'
-import { useErrorToast, useToast } from '../../components/toast/context'
+import { useDownloadErrorToast, useErrorToast, useToast } from '../../components/toast/context'
 import { useAuth } from '../../hooks/useAuth'
 import { incidentTypeLabel, translateMaybe, useI18n } from '../../i18n/context'
 import { errorText } from '../../i18n/errors'
@@ -18,7 +20,89 @@ import { formatDateTime } from '../../lib/time'
 import { relTime, useNow } from '../patrol/format'
 import { Avatar, Segmented } from '../patrol/kit'
 import { KNOWN_TYPES, SEVERITIES, WORKFLOW, sevBar } from './constants'
-import type { IncidentDetail, Photo, Severity, Site, WorkflowStatus } from '../../types'
+import type { Incident, IncidentDetail, Photo, Severity, Site, WorkflowStatus } from '../../types'
+
+/** Copies text to the clipboard (falls back silently where the API is missing). */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function PdfButton({ id }: { id: string }) {
+  const { t } = useI18n()
+  const onError = useDownloadErrorToast()
+  const [busy, setBusy] = useState(false)
+  return (
+    <Button
+      size="sm"
+      variant="secondary"
+      loading={busy}
+      onClick={async () => {
+        setBusy(true)
+        try {
+          await downloadFile(`/incidents/${id}/pdf`, {}, `incident-${id}.pdf`)
+        } catch (err) {
+          await onError(err)
+        } finally {
+          setBusy(false)
+        }
+      }}
+    >
+      {!busy && <FileDown className="h-3.5 w-3.5" aria-hidden="true" />}
+      {t('p2.inc.pdf')}
+    </Button>
+  )
+}
+
+/** Original (filed) vs current value of every amended field (D-043). */
+function Changes({ inc }: { inc: Incident }) {
+  const { t, lang } = useI18n()
+  const fields = amendedFields(inc)
+  if (!inc.amended || fields.length === 0) return null
+  const show = (field: string, v: unknown) => {
+    const s = v == null || v === '' ? '—' : String(v)
+    if (field === 'severity') return translateMaybe(lang, `severity.${s}`, s)
+    if (field === 'type') return incidentTypeLabel(lang, s)
+    return s
+  }
+  return (
+    <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50/50 p-3.5">
+      <p className="text-sm font-semibold text-gray-900">{t('p2.inc.changedTitle')}</p>
+      <p className="mt-0.5 text-xs text-gray-600">{t('p2.inc.changedHint')}</p>
+      <table className="mt-2 w-full text-sm">
+        <caption className="sr-only">{t('p2.inc.changedTitle')}</caption>
+        <thead>
+          <tr className="text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+            <th scope="col" className="py-1 pr-3">
+              {t('p2.inc.field')}
+            </th>
+            <th scope="col" className="py-1 pr-3">
+              {t('p2.inc.filed')}
+            </th>
+            <th scope="col" className="py-1">
+              {t('p2.inc.current')}
+            </th>
+          </tr>
+        </thead>
+        <tbody className="align-top">
+          {fields.map((f) => (
+            <tr key={f} className="border-t border-violet-100">
+              <th scope="row" className="py-1.5 pr-3 text-left font-medium text-gray-600">
+                {t(AMENDABLE.find((a) => a.field === f)!.label)}
+              </th>
+              <td className="py-1.5 pr-3 text-gray-600 line-through decoration-gray-400">{show(f, (inc as unknown as Record<string, unknown>)[`original_${f}`])}</td>
+              <td className="py-1.5 font-medium text-gray-900">{show(f, (inc as unknown as Record<string, unknown>)[f])}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
 
 function SectionTitle({ id, children, action }: { id: string; children: string; action?: ReactNode }) {
   return (
@@ -178,6 +262,7 @@ export function IncidentDrawer({ site, id, onClose }: { site: Site; id: string; 
   })
 
   const inc = data?.incident
+  const gps = inc ? gpsText(inc.gps_lat, inc.gps_lng) : null
   const fieldLabel = (k: string) =>
     ({ type: t('inc.category'), severity: t('severity.label'), description: t('common.description'), location: t('common.location') })[k] ?? k
   const fieldValue = (k: string, v: string) => (k === 'severity' ? translateMaybe(lang, `severity.${v}`, v) : k === 'type' ? incidentTypeLabel(lang, v) : v)
@@ -196,7 +281,11 @@ export function IncidentDrawer({ site, id, onClose }: { site: Site; id: string; 
             <div className="flex flex-wrap items-center gap-2">
               <SeverityBadge severity={inc.severity} />
               <StatusBadge status={inc.status} />
+              {inc.amended && <AmendedBadge incident={inc} />}
               <FlagBadges flags={inc.flags} />
+              <div className="ml-auto">
+                <PdfButton id={inc.id} />
+              </div>
             </div>
             <p className="mt-2 text-lg font-semibold tracking-tight text-gray-900">{incidentTypeLabel(lang, inc.type)}</p>
             <p className="text-sm text-gray-500">
@@ -242,7 +331,30 @@ export function IncidentDrawer({ site, id, onClose }: { site: Site; id: string; 
                 <dt className="text-xs font-medium text-gray-500">{t('ops.inc.receivedAt')}</dt>
                 <dd className="mt-0.5 text-gray-900">{formatDateTime(inc.created_at, tz, lang)}</dd>
               </div>
+              <div className="sm:col-span-2">
+                <dt className="text-xs font-medium text-gray-500">{t('p2.inc.gps')}</dt>
+                <dd className="mt-0.5 flex flex-wrap items-center gap-2 text-gray-900">
+                  {gps ? (
+                    <>
+                      <span className="font-mono text-sm tabular-nums">{gps}</span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 !px-2"
+                        onClick={async () => (await copyText(gps)) ? toast.success(t('p2.inc.gpsCopied')) : toast.error(t('p2.inc.gpsCopyFailed'))}
+                        title={t('p2.inc.gpsCopy')}
+                      >
+                        <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                        {t('p2.inc.copy')}
+                      </Button>
+                    </>
+                  ) : (
+                    <span className="text-gray-600">{t('p2.inc.noGps')}</span>
+                  )}
+                </dd>
+              </div>
             </dl>
+            <Changes inc={inc} />
           </section>
 
           <section aria-labelledby="inc-photos">

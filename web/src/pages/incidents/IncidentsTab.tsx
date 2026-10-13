@@ -1,7 +1,10 @@
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery } from '@tanstack/react-query'
 import { Camera, ChevronRight, Clock4, MapPin, ShieldAlert, SlidersHorizontal, UserRound, X } from 'lucide-react'
-import { apiGet } from '../../api/client'
+import { apiGetPage, flattenPages, nextOffset } from '../../api/paging'
+import { AmendedBadge } from '../../components/AmendedBadge'
+import { ExportButton } from '../../components/DownloadButton'
+import { PageFooter } from '../../components/PageInfo'
 import { TableSkeleton } from '../../components/LoadingSkeleton'
 import { FlagIndicator } from '../../components/FlagIndicator'
 import { SeverityBadge, StatusBadge } from '../../components/ui/Badge'
@@ -17,6 +20,8 @@ import { defaultIncidentFilter, type IncidentFilterValue } from './incidentFilte
 import type { Incident, Site } from '../../types'
 
 const MAX_DAYS = 366
+/** Incidents per page (the API allows up to 1000). */
+export const INCIDENT_PAGE = 50
 
 function IncidentRow({ inc, tz, onOpen }: { inc: Incident; tz: string; onOpen: () => void }) {
   const { t, lang } = useI18n()
@@ -33,6 +38,7 @@ function IncidentRow({ inc, tz, onOpen }: { inc: Incident; tz: string; onOpen: (
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm font-semibold text-gray-900">{incidentTypeLabel(lang, inc.type)}</p>
             <SeverityBadge severity={inc.severity} />
+            {inc.amended && <AmendedBadge incident={inc} />}
             {(inc.flags?.length ?? 0) > 0 && <FlagIndicator flags={inc.flags!} />}
           </div>
           {inc.description && <p className="mt-0.5 line-clamp-1 text-sm text-gray-600">{inc.description}</p>}
@@ -61,13 +67,16 @@ export function IncidentsTab({ site }: { site: Site }) {
   const valid = !!filter.from && !!filter.to && filter.from <= filter.to && daysBetween(filter.from, filter.to) <= MAX_DAYS
   const set = (patch: Partial<IncidentFilterValue>) => setFilter((f) => ({ ...f, ...patch }))
 
-  const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['incidents', site.id, filter],
-    queryFn: () => apiGet<Incident[]>('/incidents', { site_id: site.id, ...filter }),
+  const { data, isLoading, error, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
+    queryKey: ['incidents', site.id, 'paged', filter],
+    queryFn: ({ pageParam }) => apiGetPage<Incident>('/incidents', { site_id: site.id, ...filter, limit: INCIDENT_PAGE, offset: pageParam }),
+    initialPageParam: 0,
+    getNextPageParam: nextOffset,
     enabled: valid,
   })
 
-  const list = useMemo(() => data ?? [], [data])
+  const paged = useMemo(() => flattenPages(data?.pages), [data])
+  const list = paged.rows
   const types = useMemo(() => Array.from(new Set([...KNOWN_TYPES, ...list.map((i) => i.type), ...(filter.type ? [filter.type] : [])])), [list, filter.type])
   const groups = useMemo(() => {
     const m = new Map<string, Incident[]>()
@@ -87,6 +96,15 @@ export function IncidentsTab({ site }: { site: Site }) {
     <>
       <Toolbar>
         <DateRangeFilter from={filter.from} to={filter.to} tz={tz} onChange={(r) => set(r)} />
+        <div className="order-last sm:order-none sm:ml-auto">
+          <ExportButton
+            path="/reports/incidents"
+            params={{ site_id: site.id, ...filter }}
+            filename={`incidents-${filter.from}-${filter.to}`}
+            formats={['xlsx', 'csv', 'pdf']}
+            disabled={!valid}
+          />
+        </div>
         <Button
           variant="secondary"
           size="sm"
@@ -154,7 +172,7 @@ export function IncidentsTab({ site }: { site: Site }) {
       ) : (
         <>
           <p className="mb-3 text-sm text-gray-600" aria-live="polite">
-            {t('ops.inc.summary', { n: list.length, o: openCount })}
+            {paged.total > list.length ? t('p2.page.showingIncidents', { n: list.length, total: paged.total }) : t('ops.inc.summary', { n: list.length, o: openCount })}
           </p>
           <div className="overflow-hidden rounded-2xl border border-gray-200/80 bg-white shadow-card">
             {groups.map(([day, items]) => (
@@ -170,6 +188,13 @@ export function IncidentsTab({ site }: { site: Site }) {
               </section>
             ))}
           </div>
+          <PageFooter
+            shown={list.length}
+            total={paged.total}
+            truncated={paged.truncated}
+            onMore={hasNextPage ? () => void fetchNextPage() : undefined}
+            loadingMore={isFetchingNextPage}
+          />
         </>
       )}
       {openId && <IncidentDrawer site={site} id={openId} onClose={() => setOpenId(null)} />}

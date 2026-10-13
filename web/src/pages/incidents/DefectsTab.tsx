@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowRight, Check, MapPin, RotateCcw, Wrench } from 'lucide-react'
-import apiClient, { apiGet } from '../../api/client'
+import apiClient from '../../api/client'
+import { apiGetPage } from '../../api/paging'
+import { PageFooter } from '../../components/PageInfo'
 import { MediaPhotoButton } from '../../components/MediaPhoto'
 import { CardSkeleton } from '../../components/LoadingSkeleton'
 import { Dot, type Tone } from '../../components/ui/Badge'
@@ -15,6 +17,8 @@ import type { DefectReport, Site, WorkflowStatus } from '../../types'
 
 const colTone: Record<WorkflowStatus, Tone> = { open: 'orange', in_progress: 'blue', resolved: 'green' }
 const RESOLVED_PREVIEW = 6
+/** The API maximum per request; more is unusual for one site's board. */
+const LIMIT = 1000
 
 interface Move {
   to: WorkflowStatus
@@ -91,8 +95,8 @@ export function DefectsTab({ site }: { site: Site }) {
   const [showAllResolved, setShowAllResolved] = useState(false)
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['defects', site.id, ''],
-    queryFn: () => apiGet<DefectReport[]>('/defects', { site_id: site.id }),
+    queryKey: ['defects', site.id, 'board'],
+    queryFn: () => apiGetPage<DefectReport>('/defects', { site_id: site.id, limit: LIMIT }),
   })
 
   const update = useMutation({
@@ -115,7 +119,7 @@ export function DefectsTab({ site }: { site: Site }) {
       </div>
     )
 
-  const all = data ?? []
+  const all = data?.rows ?? []
   if (all.length === 0) return <EmptyState icon={Wrench} title={t('ops.def.emptyTitle')} message={t('ops.def.emptyBody')} />
 
   return (
@@ -158,6 +162,7 @@ export function DefectsTab({ site }: { site: Site }) {
           )
         })}
       </div>
+      {data && <PageFooter shown={all.length} total={data.total} truncated={data.truncated} />}
     </>
   )
 }

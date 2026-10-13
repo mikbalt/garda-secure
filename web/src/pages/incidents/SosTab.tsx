@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, MapPin, Siren } from 'lucide-react'
-import apiClient, { apiGet } from '../../api/client'
+import apiClient from '../../api/client'
+import { apiGetPage, flattenPages, nextOffset } from '../../api/paging'
 import { FlagBadges } from '../../components/FlagBadges'
 import { TableSkeleton } from '../../components/LoadingSkeleton'
 import { Button } from '../../components/ui/Button'
@@ -15,9 +16,10 @@ import type { Site, SosAlert } from '../../types'
 
 type Filter = 'all' | 'unack'
 
-/** History shown (WEB-10): the API returns the latest 200 alerts; older ones are reports' job. */
+/** History shown (WEB-10): the last 30 days; the API pages by 200 (`X-Total-Count`). */
 const WINDOW_DAYS = 30
 const PAGE = 20
+const SERVER_PAGE = 200
 
 export function SosTab({ site }: { site: Site }) {
   const { t, lang } = useI18n()
@@ -29,9 +31,11 @@ export function SosTab({ site }: { site: Site }) {
   const [filter, setFilter] = useState<Filter>('all')
   const [shown, setShown] = useState(PAGE)
 
-  const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['sos', site.id, 'all'],
-    queryFn: () => apiGet<SosAlert[]>('/sos', { site_id: site.id }),
+  const { data, isLoading, error, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
+    queryKey: ['sos', site.id, 'history'],
+    queryFn: ({ pageParam }) => apiGetPage<SosAlert>('/sos', { site_id: site.id, limit: SERVER_PAGE, offset: pageParam }),
+    initialPageParam: 0,
+    getNextPageParam: nextOffset,
     // The banner already polls open alerts every 10 s; the history can be calmer.
     refetchInterval: 30_000,
   })
@@ -51,7 +55,11 @@ export function SosTab({ site }: { site: Site }) {
 
   const since = now - WINDOW_DAYS * 86_400_000
   // Open alerts always count, however old; handled ones only within the window.
-  const all = (data ?? []).filter((s) => !s.acknowledged_at || Date.parse(s.fired_at) >= since)
+  const loaded = flattenPages(data?.pages).rows
+  const all = loaded.filter((s) => !s.acknowledged_at || Date.parse(s.fired_at) >= since)
+  // Older pages only matter while the oldest loaded alert is still inside the window.
+  const oldest = loaded[loaded.length - 1]
+  const canLoadOlder = !!hasNextPage && !!oldest && Date.parse(oldest.fired_at) >= since
   const unackCount = all.filter((s) => !s.acknowledged_at).length
   const filtered = filter === 'unack' ? all.filter((s) => !s.acknowledged_at) : all
   const rows = filtered.slice(0, shown)
@@ -142,12 +150,20 @@ export function SosTab({ site }: { site: Site }) {
           })}
         </ul>
       )}
-      {filtered.length > rows.length && (
+      {filtered.length > rows.length ? (
         <div className="mt-4 flex justify-center">
           <Button variant="secondary" onClick={() => setShown((n) => n + PAGE)}>
             {t('common.showMore', { n: filtered.length - rows.length })}
           </Button>
         </div>
+      ) : (
+        canLoadOlder && (
+          <div className="mt-4 flex justify-center">
+            <Button variant="secondary" loading={isFetchingNextPage} onClick={() => void fetchNextPage().then(() => setShown((n) => n + PAGE))}>
+              {t('p2.page.older')}
+            </Button>
+          </div>
+        )
       )}
     </>
   )

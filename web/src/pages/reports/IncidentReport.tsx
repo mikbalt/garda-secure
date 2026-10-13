@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { CheckCircle2, CircleDot, ShieldAlert, ShieldCheck, Siren } from 'lucide-react'
-import { apiGet } from '../../api/client'
+import { apiGetPage } from '../../api/paging'
+import { AmendedBadge } from '../../components/AmendedBadge'
 import { SeverityBadge, StatusBadge } from '../../components/ui/Badge'
+import { Notice } from '../../components/ui/States'
 import { Field, Select } from '../../components/ui/Form'
 import { Table, type Column } from '../../components/ui/Table'
 import { incidentTypeLabel, useI18n } from '../../i18n/context'
@@ -15,7 +17,10 @@ const MAX_DAYS = 366
 const SEVERITIES = ['low', 'medium', 'high', 'critical'] as const
 const STATUSES = ['open', 'in_progress', 'resolved'] as const
 
-/** Incident log (FR-REP-03) — printable for "Save as PDF". */
+/** JSON rows shown on screen (the API maximum); downloads always contain every row. */
+const SCREEN_LIMIT = 1000
+
+/** Incident log (FR-REP-03): effective (amended) values, Excel / CSV / PDF download. */
 export function IncidentReport({ site, title }: { site: Site; title: string }) {
   const { t, lang } = useI18n()
   const tz = site.timezone
@@ -30,10 +35,10 @@ export function IncidentReport({ site, title }: { site: Site; title: string }) {
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['report-incidents', site.id, params],
-    queryFn: () => apiGet<Incident[]>('/reports/incidents', params),
+    queryFn: () => apiGetPage<Incident>('/reports/incidents', { ...params, limit: SCREEN_LIMIT }),
     enabled: valid,
   })
-  const rows = useMemo(() => data ?? [], [data])
+  const rows = useMemo(() => data?.rows ?? [], [data])
 
   // Categories seen so far (kept while a category filter narrows the list).
   const [seenTypes, setSeenTypes] = useState<string[]>([])
@@ -56,7 +61,10 @@ export function IncidentReport({ site, title }: { site: Site; title: string }) {
       header: t('inc.category'),
       cell: (r) => (
         <div className="min-w-[8rem]">
-          <p className="font-medium text-gray-900">{incidentTypeLabel(lang, r.type)}</p>
+          <p className="flex flex-wrap items-center gap-1.5 font-medium text-gray-900">
+            {incidentTypeLabel(lang, r.type)}
+            {r.amended && <AmendedBadge incident={r} />}
+          </p>
           {r.location && <p className="text-xs text-gray-500">{r.location}</p>}
         </div>
       ),
@@ -73,7 +81,7 @@ export function IncidentReport({ site, title }: { site: Site; title: string }) {
       site={site}
       title={title}
       period={from && to ? `${formatDay(from, lang, false)} – ${formatDay(to, lang, false)}` : ''}
-      csv={{ path: '/reports/incidents', params, filename: `incidents-${from}-${to}.csv`, disabled: !valid }}
+      csv={{ path: '/reports/incidents', params, filename: `incidents-${from}-${to}`, disabled: !valid, formats: ['xlsx', 'csv', 'pdf'] }}
       invalid={valid ? undefined : t('adm.rep.badRange', { n: MAX_DAYS })}
       filters={
         <>
@@ -113,7 +121,7 @@ export function IncidentReport({ site, title }: { site: Site; title: string }) {
       stats={
         rows.length > 0 || isLoading ? (
           <StatRow loading={isLoading}>
-            <Stat icon={ShieldAlert} tone="blue" label={t('adm.rep.stat.incidents')} value={rows.length} sub={t('adm.rep.stat.inPeriod')} />
+            <Stat icon={ShieldAlert} tone="blue" label={t('adm.rep.stat.incidents')} value={data?.total ?? rows.length} sub={t('adm.rep.stat.inPeriod')} />
             <Stat icon={Siren} tone="red" label={t('adm.rep.stat.highCritical')} value={high} sub={t('adm.rep.stat.highSub')} />
             <Stat icon={CircleDot} tone="orange" label={t('adm.rep.stat.unresolved')} value={unresolved} sub={t('adm.rep.stat.unresolvedSub')} />
             <Stat icon={CheckCircle2} tone="green" label={t('status.resolved')} value={resolved} sub={t('adm.rep.stat.resolvedSub')} />
@@ -128,7 +136,10 @@ export function IncidentReport({ site, title }: { site: Site; title: string }) {
           message={t('adm.rep.incidents.empty')}
         />
       ) : (
-        <Table columns={columns} rows={rows} rowKey={(r) => r.id} isLoading={isLoading} error={error} onRetry={() => refetch()} caption={title} />
+        <>
+          {data?.truncated && <Notice tone="warn">{t('p2.page.reportTruncated', { n: rows.length, total: data.total })}</Notice>}
+          <Table columns={columns} rows={rows} rowKey={(r) => r.id} isLoading={isLoading} error={error} onRetry={() => refetch()} caption={title} />
+        </>
       )}
     </ReportShell>
   )
