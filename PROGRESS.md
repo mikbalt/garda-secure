@@ -9,7 +9,6 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
-| Wave 3 web — floor plans + live plan view, patrol schedules + compliance report, regenerate QR, XLSX/PDF, amended incidents, incident GPS, new events/channels, paging, /sos/active | `muhamhad-pc1/claude-web-patrol` | 2026-10-12 | branch `agent/muhamhad-pc1/web-patrol` |
 
 ## Migration numbers
 
@@ -30,8 +29,8 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 |---|---|
 | M1 Infra & Auth | 🟢 backend + config done; ⚠️ full Docker stack not yet smoke-tested (no Docker on the dev PC) |
 | M2 Core Attendance | 🟢 backend + web done |
-| M3 Patrol | 🟢 backend + web done (live view by polling) |
-| M4 Incident & Field Reports | 🟢 backend done; ⚪ mobile deferred |
+| M3 Patrol | 🟢 backend + web + mobile: schedules, signed QR, live view on site floor plans (polling, D-014) |
+| M4 Incident & Field Reports | 🟢 backend + web + mobile (D-024) |
 | M5 Web Dashboard & Reports | 🟢 redesigned (D-022): setup guide, Today dashboard, all pages; verified in demo mode (all roles, desktop + 390 px); ⚠️ not yet exercised against a running stack |
 | M6 Notifications & Email | 🟢 backend done (rules, log, retry, SMTP/WhatsApp, monthly recap); needs real SMTP/WA test |
 | M7 Hardening & Go-Live | 🟡 audit 2026-10 (docs/audit-2026-10.md): wave 1 merged (backend reliability + security, infra/ops/CI); wave 2 in progress; ⚠️ full stack still never booted — ci-e2e-stack.yml does it on GitHub |
@@ -83,3 +82,4 @@ Mobile (D-024) — open audit items, see docs/audit-2026-10.md
 | Wave 2 web — WEB-1..10: deps (0 high), CSP-clean build, realm-wide SOS banner + sound, idle logout, a11y (axe clean), all error codes EN/ID, per-route error boundary, safe URLs, lazy charts, demo guard; UIs for platform-admin settings, ops alerts/log, audit log, plausibility flags; 100 unit + 82 e2e tests (D-040) | `muhamhad-pc1/claude-web` | 2026-10-12 | merge 9feb63b |
 | Wave 2 backend — users + device accounts via Keycloak admin API, per-site scoping, realm-wide `GET /sos/active`, `incident_filed`, effective amended values, override history, XLSX/PDF exports + paging, route snapshots, channel registry, floor plans + batched live view, retention + encrypted visitor IDs, tablet telemetry, incident GPS (D-041..D-049) | `muhamhad-pc1/claude-be-features` | 2026-10-12 | ab4c3aa |
 | Wave 3 web — Users & access (Keycloak users, roles, site scope, reset password/OTP), tablet accounts + health drawer, setup guide tablet step, scope hint, attendance override history, visitor detail (audited reveal); 135 unit + 97 e2e tests | `muhamhad-pc1/claude-web-people` | 2026-10-13 | merge f5811b7 |
+| Wave 3 web — floor plans + checkpoint placement, live patrol on the plan, patrol schedules editor, compliance report + KPI/monthly columns, regenerate QR, Excel/CSV/PDF downloads, amended incidents, incident GPS, `incident_filed`/`patrol_not_started` rules, channel list, paging, `/sos/active`; 156 unit + 119 e2e tests after merge | `muhamhad-pc1/claude-web-patrol` | 2026-10-13 | merge with web-people |
