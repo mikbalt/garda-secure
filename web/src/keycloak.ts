@@ -39,13 +39,19 @@ export function initKeycloak(realm: string): Promise<boolean> {
   const instance = new Keycloak({ url: config.keycloakUrl, realm, clientId: config.keycloakClientId })
   keycloak = instance
   // CSP (WEB-2): no session-check iframe and no silent check-sso, so keycloak-js
-  // creates no iframes at all (frame-src 'self' would allow a same-origin one);
-  // token calls go to KEYCLOAK_URL, which must be same-origin (connect-src 'self').
+  // creates no iframes at all, not even its third-party-cookie check (frame-src
+  // 'self' would allow a same-origin one). The config object (url + realm)
+  // means no discovery fetch; token calls go to KEYCLOAK_URL, which must be
+  // same-origin (connect-src 'self'). keycloak-js 26 computes PKCE with Web
+  // Crypto, so it needs a secure context (HTTPS or localhost).
   const promise = instance
     .init({ onLoad: 'login-required', checkLoginIframe: false, pkceMethod: 'S256' })
     .then((authenticated) => {
       instance.onTokenExpired = () => {
-        instance.updateToken(30).catch(() => instance.login())
+        instance
+          .updateToken(30)
+          .catch(() => instance.login())
+          .catch(redirectFailed)
       }
       return authenticated
     })
@@ -59,6 +65,11 @@ export function initKeycloak(realm: string): Promise<boolean> {
 
 function kc(): Keycloak | null {
   return keycloak
+}
+
+/** login()/logout() only redirect; since keycloak-js 26 they are async. */
+function redirectFailed(err: unknown): void {
+  console.error('Keycloak redirect failed', err)
 }
 
 /** Returns a fresh access token, refreshing it when it expires within 30 s. */
@@ -75,7 +86,7 @@ export async function freshToken(): Promise<string | undefined> {
 }
 
 export function login(): void {
-  kc()?.login()
+  kc()?.login().catch(redirectFailed)
 }
 
 /** Demo mode: the role chosen in the demo bar (default admin). */
@@ -104,7 +115,7 @@ export function getRealm(): string {
 
 export function logout(): void {
   if (config.demo) return window.location.reload()
-  kc()?.logout({ redirectUri: window.location.origin + '/' })
+  kc()?.logout({ redirectUri: window.location.origin + '/' }).catch(redirectFailed)
 }
 
 /** Logs out and forgets the chosen organisation so the picker shows again. */
