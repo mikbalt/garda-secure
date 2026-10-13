@@ -74,7 +74,9 @@ and `scripts/restore-db.sh keycloak …/keycloak.dump`; finally `make up`.
 
 ## 2. Keycloak: users, roles, MFA
 
-Admin console: `https://<SERVER_HOST>/auth/admin/` (user `KEYCLOAK_ADMIN`) — reachable
+Admin console: `https://<SERVER_HOST>/auth/admin/` (bootstrap user
+`KC_BOOTSTRAP_ADMIN_USERNAME`, later your personal admin — see *Master realm
+hardening*) — reachable
 only from `ADMIN_ALLOW_CIDRS` (default: private LAN ranges + localhost; INF-N2). From
 elsewhere use an SSH tunnel: `ssh -L 8081:127.0.0.1:8081 server`, then
 `http://localhost:8081/auth/admin/` (the console redirects to the public URL for login;
@@ -135,7 +137,18 @@ Credentials → delete the OTP credential*; the user enrols again at the next lo
 Realm JSON files are imported **only when the realm does not exist yet**. Everything
 that must also reach existing realms is applied by `scripts/keycloak-config.sh`
 (idempotent; `make up` and every deploy run it): web-client redirect URIs from
-`PUBLIC_URL`, the MFA flow/roles, brute-force protection (client realms + master).
+`PUBLIC_URL`, the MFA flow/roles, brute-force protection (client realms + master),
+the `sites` user-profile attribute + mapper, the `securepatrol-admin-api` client, and
+the **token role scope**: *Full scope allowed* is off on `securepatrol-web`,
+`securepatrol-tablet` and `securepatrol-admin-api` (the switch is deprecated since
+Keycloak 26.8, which logs a warning for every token of a client that still has it), so
+web tokens carry only `admin`, `supervisor`, `hr`, `client-readonly`,
+`platform-admin`, tablet tokens only `device` (+ `offline_access`), and the admin
+client only its four `realm-management` roles. A realm role the app should see in
+tokens must be added to the client's *Client scopes → Dedicated scope → Scope* tab
+(the script does it for the roles above once they exist — re-run it after creating
+`platform-admin`). The tablet client also keeps the default client scope `basic`
+(claim `sub`, required by the API).
 Run it by hand after changing `SERVER_HOST`, `KEYCLOAK_DEV_REDIRECTS` or a realm list:
 `make keycloak-config` (or `sh scripts/keycloak-config.sh <realm>`). Other realm
 changes (token lifetimes, password policy, new realm roles) are made in the console or
@@ -171,7 +184,8 @@ user pages answer 503 `kc_unavailable`.
 * **Tablet accounts** (*Tablet accounts* page): `device-<name>` users with only
   the `device` role and a random 24-character password shown once — type it on
   the tablet's first login. Their e-mail is `<username>@device.invalid`
-  (Keycloak 24 refuses the password grant while a profile is incomplete).
+  (Keycloak's VERIFY_PROFILE refuses the password grant while a profile is
+  incomplete).
   Disable the account *and* revoke the device in *Devices* when a tablet is lost.
 
 ### Site scoping (F4, D-035)
@@ -194,10 +208,20 @@ The master realm is the Keycloak super-admin; it is never used by the app.
    roles → Assign role* `admin` → *Credentials*: copy the secret into `.env`
    (`KEYCLOAK_AUTOMATION_CLIENT_ID=securepatrol-automation`,
    `KEYCLOAK_AUTOMATION_CLIENT_SECRET=…`), run `make keycloak-config` to verify.
-3. **OTP for the master admin:** *Users → admin → Required user actions → Configure
-   OTP*, log out and in again, scan the QR code. Keep a second, sealed break-glass admin
-   with OTP. Change the bootstrap `KEYCLOAK_ADMIN_PASSWORD` in the console too (the env
-   value is only used when the master realm is first created).
+3. **Personal admin with OTP:** Keycloak 26 creates the bootstrap user
+   (`KC_BOOTSTRAP_ADMIN_USERNAME`) as a *temporary* admin (console banner) and only on
+   the very first start. Create a personal admin in the master realm (*Users → Add
+   user*, role `admin`, *Required user actions → Configure OTP*), log in with it, scan
+   the QR code, keep a second, sealed break-glass admin with OTP, then delete the
+   temporary bootstrap admin. Installations upgraded from Keycloak 24 keep their old
+   `admin` user (not marked temporary): give it OTP or replace it the same way. The
+   `KC_BOOTSTRAP_ADMIN_*` values in `.env` are then no longer valid logins; that is
+   fine once the automation client (step 2) is configured.
+4. **Lost all admin access:** stop Keycloak and create a new temporary admin with the
+   same configuration as the service:
+   `docker compose stop keycloak && docker compose run --rm keycloak bootstrap-admin user --username tmp-admin --password:env KC_BOOTSTRAP_ADMIN_PASSWORD --no-prompt && docker compose up -d keycloak`
+   (or `bootstrap-admin service --client-id tmp-automation --client-secret:env …`), log
+   in, repair, delete it again.
 
 ### Adding a client company (new realm)
 
@@ -209,27 +233,77 @@ realm to `KEYCLOAK_REALMS` and `WEB_KEYCLOAK_REALMS` in `.env`, then `make up`
 (Keycloak imports new realm files on start, existing realms are untouched;
 `keycloak-config` then sets redirect URIs and enforces MFA).
 
-### Keycloak 24 settings and the 26 upgrade (INF-D8)
+### Keycloak 26 settings (INF-D8, D-034)
 
-Keycloak runs `start` (production mode) on plain HTTP behind nginx under `/auth`:
-`KC_PROXY_HEADERS=xforwarded`, `KC_HOSTNAME_URL`/`KC_HOSTNAME_ADMIN_URL` =
-`KEYCLOAK_PUBLIC_URL` (the token issuer), `KC_HOSTNAME_STRICT=true`,
-`KC_HOSTNAME_STRICT_BACKCHANNEL=false` (the API fetches keys via `http://keycloak:8080`).
-Keycloak 24 serves `/auth/health` and `/auth/metrics` on the main port; nginx blocks
-both publicly.
+Keycloak (`quay.io/keycloak/keycloak:26.x`, pinned by tag and digest) runs `start`
+(production mode) on plain HTTP behind nginx under `/auth`:
 
-Keycloak 24 no longer receives fixes. Migration to 26.x (separate change, test on a
-copy first — §5 restore drill):
-1. Back up the Keycloak DB (`make backup-db`).
-2. Image `quay.io/keycloak/keycloak:26.x`; replace `KC_HOSTNAME_URL`/`KC_HOSTNAME_ADMIN_URL`
-   with `KC_HOSTNAME=${KEYCLOAK_PUBLIC_URL}` (hostname v2), drop
-   `KC_HOSTNAME_STRICT_BACKCHANNEL` (use `KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true`);
-   `KEYCLOAK_ADMIN*` become `KC_BOOTSTRAP_ADMIN_USERNAME/PASSWORD`.
-3. Health and metrics move to the management port 9000: healthcheck
-   `http://127.0.0.1:9000/auth/health/ready`, Prometheus target `keycloak:9000`
-   (path `/auth/metrics`), and the nginx `/auth/metrics|health` blocks become moot.
-4. Keycloak migrates its schema on first start; check `make keycloak-config`, a web
-   login with OTP and a tablet token afterwards.
+| Setting | Value | Why |
+|---|---|---|
+| `KC_HOSTNAME` | `KEYCLOAK_PUBLIC_URL` (`https://<SERVER_HOST>/auth`) | Hostname v2, full URL. It is the token issuer for **every** request — also for the API's back-channel calls to `http://keycloak:8080/auth` (JWKS, admin client). `KC_HOSTNAME_BACKCHANNEL_DYNAMIC` stays off; the admin console uses the same URL. |
+| `KC_HTTP_ENABLED` / `KC_HTTP_RELATIVE_PATH` | `true` / `/auth` | TLS ends at nginx; nginx proxies `/auth/` unchanged. |
+| `KC_PROXY_HEADERS` | `xforwarded` | nginx overwrites `X-Forwarded-For/Proto/Host/Port` and drops a client-supplied `X-Forwarded-Prefix`. |
+| `KC_PROXY_TRUSTED_ADDRESSES` | `SP_DOCKER_SUBNET`, `127.0.0.1` | Forwarded headers count only from the stack network (nginx). |
+| `KC_HEALTH_ENABLED` / `KC_METRICS_ENABLED` | `true` | Served on the **management port 9000**, path `/auth/health/ready`, `/auth/metrics` (the management port inherits `/auth`). Port 9000 is neither published nor proxied; the container healthcheck and Prometheus (`keycloak:9000`) use it. Port 8080 answers 404 for both. |
+| `KC_BOOTSTRAP_ADMIN_USERNAME` / `_PASSWORD` | `.env` | Temporary master admin, created only on the very first start (Keycloak 24: `KEYCLOAK_ADMIN*`; preflight rejects the old names). |
+
+Keycloak opens its ports while it is still migrating or importing; only
+`/health/ready` says it serves requests (the healthcheck uses it, `start_period` 3 min).
+The stock image re-augments itself for the build options (`KC_DB`, health, metrics)
+on every start (~30 s); no custom image is built.
+
+Token contract the API, web app and tablets rely on (checked by
+`scripts/keycloak-smoke.sh` in CI): access tokens with `typ: Bearer`, `azp` = the
+client, `sub` (client scope `basic`), realm roles in the flat claim `roles` (client
+mapper *realm roles (flat)*, limited by the client's role scope — §2 above), the web
+claim `sites`, issuer `KEYCLOAK_PUBLIC_URL/realms/<realm>`. Tablets use the password
+grant with `scope=openid offline_access` (direct access grants only on
+`securepatrol-tablet`); Keycloak 26 answers wrong credentials with HTTP 400 (24: 401)
+— the tablet app treats both as "bad credentials". Offline refresh tokens now carry an
+`exp` (= offline session idle, 30 days).
+
+### Upgrading Keycloak (24 → 26, and every later 26.x release)
+
+Every Keycloak release migrates its database schema **automatically and one way** on
+its first start; an older Keycloak cannot open a migrated database. Test on a copy
+first (§5 restore drill on a spare machine with a production dump), then:
+
+1. **Announce a short logins freeze** (5–10 min). Tablet offline tokens survive
+   (offline sessions live in the database); from 24, web users have to log in again
+   (Keycloak 24 kept online sessions in memory — from 26 on they are persisted and
+   survive later upgrades). Tablets keep working offline anyway.
+2. **Back up:** `make backup-db` (the deploy script does it too: `pre-<version>-…`).
+   Note the folder — it holds `keycloak.dump`, the rollback point.
+3. **`.env` (24 → 26 only):** rename the bootstrap admin variables —
+   `sed -i 's/^KEYCLOAK_ADMIN=/KC_BOOTSTRAP_ADMIN_USERNAME=/; s/^KEYCLOAK_ADMIN_PASSWORD=/KC_BOOTSTRAP_ADMIN_PASSWORD=/' .env`
+   (`make preflight` fails until this is done). Nothing else in `.env` changes.
+4. **Deploy** the release that contains the new image (`scripts/deploy.sh vX.Y.Z` or
+   `make up`). The first start takes longer (schema migration; with very large
+   session tables Keycloak may log `CREATE INDEX` statements and create them in the
+   background). `docker compose logs -f keycloak` shows the progress; the deploy
+   waits until the healthcheck is green and then runs `make keycloak-config`, which
+   switches *Full scope allowed* off, adds the role scope mappings and the tablet's
+   `basic` scope.
+5. **Check:**
+   * `sh scripts/keycloak-smoke.sh <realm>` for every realm — discovery issuer, the
+     API's admin client, a tablet password grant + offline refresh, a web login with
+     PKCE incl. the `sites` claim, and the OTP prompt for staff (it creates temporary
+     users and deletes them again);
+   * a real web login with OTP, *Administration → Users* lists users, one tablet
+     syncs (no re-login needed);
+   * Grafana / Prometheus: target `keycloak` up (`keycloak:9000`);
+   * `docker compose logs keycloak | grep -i -E 'warn|error'` — no warnings about
+     unknown options or *Full scope allowed*.
+6. **Rollback** (only if the checks fail and cannot be fixed forward) — the old image
+   plus the pre-upgrade dump, never the old image on the migrated database:
+   1. `git checkout --detach refs/tags/<previous>` (its compose file has the old image);
+      for 24 rename the two `.env` variables back to `KEYCLOAK_ADMIN*`;
+   2. `RESTORE_FRESH=1 RESTORE_CONFIRM=keycloak sh scripts/restore-db.sh keycloak backups/<time>-pre-…/keycloak.dump`
+      (stops Keycloak, empties the schema so no table of the newer version survives,
+      restores in one transaction, starts the old image);
+   3. `scripts/deploy.sh <previous>` (or `make up`), then `make keycloak-config`.
+
+   Password changes, OTP enrolments, new users and sessions since the upgrade are lost.
 
 PostgreSQL majors (16 → 17) likewise need a planned dump/restore migration, and the
 API image's `pg_dump` (`postgresql16-client`) must be upgraded with the server.
@@ -449,6 +523,11 @@ sh scripts/restore-db.sh app backups/restore.dump        # asks for confirmation
 ```
 `restore-db.sh` stops the services using that database (api + worker, or Keycloak),
 restores it as the owning role (`--clean --single-transaction`) and starts them again.
+A dump taken **before an upgrade** (Keycloak 26 → 24, or an app version with newer
+migrations) goes back with `RESTORE_FRESH=1`: the schema is emptied in the same
+transaction, so no table of the newer version survives — and start the matching older
+image (§2 *Upgrading Keycloak*, §7). A Keycloak dump is always opened by the same or a
+newer Keycloak (newer ones migrate it again on start), never by an older one.
 Practise the restore on a spare machine at least once before go-live (drill below).
 
 ### Full restore drill (disaster recovery, ≤ 4 h)
@@ -614,11 +693,16 @@ Health and metrics endpoints of the app:
 | `GET /metrics` | API `:8080`, internal only | Prometheus: HTTP metrics + Go/process |
 | `GET /health` | worker `WORKER_HTTP_ADDR` (`:9091`), internal only | 200 only if the notification dispatcher and the scheduler ticked within 60 s (container healthcheck) |
 | `GET /metrics` | worker `:9091`, internal only | Prometheus: notification, job and backup metrics |
+| `GET /auth/health/ready` (`/live`, `/started`) | Keycloak management port `:9000`, internal only | Keycloak serves requests (database reachable, start-up/migration done); container healthcheck |
+| `GET /auth/metrics` | Keycloak `:9000`, internal only | Prometheus: JVM, HTTP, database pool, cache metrics |
 
-nginx answers 404 for `/metrics`, `/api/metrics`, `/auth/metrics` and `/auth/health`,
-so metrics are never reachable from outside.
+Keycloak 26 serves health and metrics only on its management port 9000, which is not
+published on the host and not proxied; its main port 8080 answers 404 for both. nginx
+answers 404 for `/metrics`, `/api/metrics`, `/auth/metrics` and `/auth/health` anyway,
+so metrics are never reachable from outside. By hand:
+`docker compose exec keycloak sh -c 'exec 3<>/dev/tcp/127.0.0.1/9000 && printf "GET /auth/health/ready HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n" >&3 && cat <&3'`.
 
-Scraped: api `:8080/metrics`, worker `:9091/metrics`, Keycloak, MinIO, node-exporter
+Scraped: api `:8080/metrics`, worker `:9091/metrics`, Keycloak `:9000/auth/metrics`, MinIO, node-exporter
 (host, incl. the off-site textfile metrics), cAdvisor (containers), postgres/redis
 exporters, blackbox probes of `https://SERVER_HOST` and `:9443` (TLS chain + expiry).
 Alert rules: `infra/prometheus/alerts.yml`; e-mail via `ALERT_EMAIL_TO` + `ALERT_SMTP_*`
@@ -665,8 +749,10 @@ the disk; `DiskAlmostFull` fires at 85 %.
   tag (we already push images to GHCR), or migrate to another S3 server (Garage,
   SeaweedFS, Ceph RGW) — the API only needs S3 GET/PUT, presigned GET and versioning;
   migrate data with `mc mirror`.
-* **Images** are pinned to minor/patch tags; Dependabot proposes updates (Keycloak and
-  Postgres majors are ignored — they need a planned migration, §2).
+* **Images** are pinned to minor/patch tags (Silo, mc and Keycloak also by digest);
+  Dependabot proposes updates (Keycloak and Postgres majors are ignored — they need a
+  planned migration, §2). Keycloak minor/patch updates migrate its database too: deploy
+  them with the §2 *Upgrading Keycloak* steps (backup, smoke test).
 * **Container hardening:** `no-new-privileges` everywhere; api/worker/web read-only
   with tmpfs and no capabilities (api/worker run as a non-root user); edge nginx
   read-only; exporters read-only without capabilities; memory limits on Keycloak,
@@ -765,6 +851,11 @@ stuck (see §3).
 | `make up` stops in preflight | Fix the FAIL lines; `make preflight` re-checks. |
 | Web login loops / "invalid token" | `KEYCLOAK_PUBLIC_URL` = `https://SERVER_HOST/auth` (the URL in the browser + `/auth`) and the realm in `KEYCLOAK_REALMS`; `make keycloak-config`. |
 | "Invalid redirect uri" on login | `make keycloak-config` (redirect URIs follow `PUBLIC_URL`). |
+| Keycloak stays "starting"/unhealthy after an upgrade | `docker compose logs keycloak`: schema migration still running (large session tables), an unknown/removed option, or the database is from a **newer** Keycloak (restore the matching dump, §2). The healthcheck allows 3 min + 10 × 20 s. |
+| preflight: `KEYCLOAK_ADMIN … Keycloak 24 names` | Rename to `KC_BOOTSTRAP_ADMIN_USERNAME` / `KC_BOOTSTRAP_ADMIN_PASSWORD` (sed command in the message, §2). |
+| `make keycloak-config` fails at "logging in" | The bootstrap admin was replaced or got OTP: set `KEYCLOAK_AUTOMATION_CLIENT_ID/SECRET` (§2 *Master realm hardening*). |
+| Tablet login "bad credentials" although the password is right | Device account profile incomplete (needs first/last name and e-mail — accounts created in the web app have them) or a required action is pending: *Users → user → Details*. |
+| Web roles missing in the token / 403 after a new realm role | The client's role scope: `make keycloak-config`, or add the role under *Clients → securepatrol-web → Client scopes → Dedicated scope → Scope* (§2). |
 | Browser warns about the certificate | CA not installed on that device (§6), or `SERVER_HOST` differs from the address typed. |
 | Photos don't load | `MINIO_PUBLIC_ENDPOINT` = `SERVER_HOST:9443`, port 9443 reachable, CA trusted. |
 | 403 on `/auth/admin` | Your address is not in `ADMIN_ALLOW_CIDRS`; use the SSH tunnel (§2). |
