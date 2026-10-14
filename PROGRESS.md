@@ -9,7 +9,6 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
-| Rebrand SecurePatrol → GARDA (all user-visible names, app id `id.co.garda.tablet`, single icon source) | `muhamhad-pc1/claude-rebrand` | 2026-10-14 | branch `agent/muhamhad-pc1/rebrand-garda` |
 | Push notifications backend + web (Web Push VAPID, FCM sender, subscriptions, per-user preferences, `sos_unacknowledged`) | `muhamhad-pc1/claude-push` | 2026-10-14 | branch `agent/muhamhad-pc1/push-web`; migration 008 |
 | Push notifications tablet app (Firebase Cloud Messaging) | `muhamhad-pc1/claude-push-mobile` | 2026-10-14 | branch `agent/muhamhad-pc1/push-mobile` |
 
@@ -90,3 +89,4 @@ Mobile (D-024) — open audit items, see docs/audit-2026-10.md
 | Wave 3 web — floor plans + checkpoint placement, live patrol on the plan, patrol schedules editor, compliance report + KPI/monthly columns, regenerate QR, Excel/CSV/PDF downloads, amended incidents, incident GPS, `incident_filed`/`patrol_not_started` rules, channel list, paging, `/sos/active`; 156 unit + 119 e2e tests after merge | `muhamhad-pc1/claude-web-patrol` | 2026-10-13 | merge with web-people |
 | Monthly recap per guard-day (F13): backend report + totals, CSV/XLSX total row, recap e-mail/WA in site language, web table + totals (D-051) | `muhamhad-pc1/claude-recap-days` | 2026-10-13 | merge recap-days |
 | Keycloak 24.0.5 → 26.8.0: hostname v2, management port 9000, bootstrap admin vars, token contract (full scope off, `basic` scope), keycloak-js 26.2.4, `make keycloak-smoke`, `RESTORE_FRESH` rollback, CI stack checks, runbook upgrade procedure (D-052) | `muhamhad-pc1/claude-kc26` | 2026-10-13 | merge keycloak-26 |
+| Rebrand SecurePatrol → GARDA: all user-visible names (web, tablet, e-mail/WA, exports, Keycloak display names, alerts, docs, sales guide), app id `id.co.garda.tablet`, single icon source `branding/` + generator, PWA manifest (D-053) | `muhamhad-pc1/claude-rebrand` | 2026-10-14 | merge rebrand-garda |

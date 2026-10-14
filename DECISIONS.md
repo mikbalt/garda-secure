@@ -498,3 +498,17 @@ in PRD §9 (OQ-x). New entries go at the bottom with the next free number.
   `make keycloak-smoke`. Rollback = previous image + pre-upgrade dump restored
   with `RESTORE_FRESH=1`. Rehearse the 24→26 migration on a copy of the
   production Keycloak dump first. keycloak-js follows its own 26.x line.
+
+### D-053 — Product name GARDA (rebrand from SecurePatrol)
+- **Date:** 2026-10-14 · **Status:** Accepted (user decision)
+- The product is called **GARDA** (all caps, no tagline) everywhere users see
+  it: web, tablet app, e-mail/WhatsApp texts, exports, Keycloak display names
+  (`GARDA — <client>`), alerts, dashboards and docs. Tablet app id
+  `id.co.garda.tablet` (Android + iOS); nothing was deployed, so no migration.
+- Technical identifiers keep `securepatrol` (Go module/binary, Dart package,
+  Keycloak client and realm IDs, database/MinIO/Redis names, `sp_` metrics, `SP1:`
+  QR prefix, HKDF info strings, method channel, Docker images/network):
+  renaming them would break tokens, keys and data for no user benefit.
+- One icon source `branding/icon.svg`; `branding/generate.sh` produces every
+  web/PWA/launcher icon and the web and tablet brand marks render that icon. The
+  web app ships `/manifest.webmanifest` (needed for iOS web push).
