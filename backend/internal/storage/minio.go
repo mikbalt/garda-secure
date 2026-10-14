@@ -19,7 +19,7 @@ import (
 // (the public endpoint is usually not reachable from inside the stack).
 const region = "us-east-1"
 
-// Client wraps minio.Client with convenience methods for SecurePatrol.
+// Client wraps minio.Client with convenience methods for GARDA.
 type Client struct {
 	mc     *minio.Client // internal endpoint, used for all I/O
 	signer *minio.Client // public endpoint, used only to pre-sign URLs

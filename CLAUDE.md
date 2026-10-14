@@ -1,4 +1,4 @@
-# CLAUDE.md — SecurePatrol (garda-secure)
+# CLAUDE.md — GARDA (garda-secure)
 
 Guide for AI agents (and humans) working in this repo. Several agents may work
 **at the same time from different PCs**, so follow the coordination protocol

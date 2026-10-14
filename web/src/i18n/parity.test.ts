@@ -6,7 +6,7 @@ import { translate } from './context'
 const placeholders = (s: string) => Array.from(s.matchAll(/\{(\w+)\}/g), (m) => m[1]).sort()
 
 /** Strings that are legitimately the same in both languages (names, codes, loanwords). */
-const SAME_OK = /^(SecurePatrol|Demo|SOS|SOS — \{site\}|Supervisor|WhatsApp|E-mail|Email|CSV|PIN|QR|ID|OK|Status|Shift|Log|Backup|Server|Tablet|Patroli|Total|Template|Token|Host|Port|URL|API.*|.*:\s*\{.*\}|\{.*\}|[\d\s.,:/–-]+|0812 3456 7890|.*@.*)$/i
+const SAME_OK = /^(GARDA|Demo|SOS|SOS — \{site\}|Supervisor|WhatsApp|E-mail|Email|CSV|PIN|QR|ID|OK|Status|Shift|Log|Backup|Server|Tablet|Patroli|Total|Template|Token|Host|Port|URL|API.*|.*:\s*\{.*\}|\{.*\}|[\d\s.,:/–-]+|0812 3456 7890|.*@.*)$/i
 
 describe('i18n EN/ID parity', () => {
   it('has the same keys in both dictionaries', () => {

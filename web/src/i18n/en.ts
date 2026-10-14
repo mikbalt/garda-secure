@@ -9,7 +9,7 @@ import { patrol2En } from './patrol2.en'
 /** English dictionary. Keys are the source of truth for the `Key` type. */
 export const en = {
   // app / common
-  'app.name': 'SecurePatrol',
+  'app.name': 'GARDA',
   'app.loading': 'Loading…',
   'app.authError': 'Authentication error',
   'app.authErrorBody': 'Could not connect to the login server.',

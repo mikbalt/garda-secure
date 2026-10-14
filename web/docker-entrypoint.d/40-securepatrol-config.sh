@@ -1,5 +1,5 @@
 #!/bin/sh
-# Writes the runtime configuration of the SecurePatrol web app to /config.js.
+# Writes the runtime configuration of the GARDA web app to /config.js.
 # The official nginx image runs every executable script in /docker-entrypoint.d/
 # before starting nginx, so the same image works for every deployment.
 #

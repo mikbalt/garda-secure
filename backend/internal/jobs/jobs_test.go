@@ -168,7 +168,7 @@ func TestRecapHTMLCountsDays(t *testing.T) {
 		"<td>Budi</td><td>E1</td><td>20</td><td>17</td><td>2</td><td>1</td><td>0</td><td>1</td><td>160.5</td><td>22</td><td>95.0</td>",
 		"<td>Sari &lt;S&gt;</td>",
 		`<tr style="font-weight:bold"><td>Total (2 guards)</td><td></td><td>25</td><td>20</td><td>2</td><td>1</td><td>2</td><td>1</td><td>184.5</td><td>27</td><td>95.0</td>`,
-		"Counted per day", "Open in SecurePatrol",
+		"Counted per day", "Open in GARDA",
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("recap HTML lacks %q:\n%s", want, h)

@@ -78,7 +78,7 @@ export const platformId: Record<keyof typeof platformEn, string> = {
   'plat.infoDesc': 'Dikelola operator platform',
   'plat.infoIntro': 'Beberapa pengaturan berlaku untuk semua perusahaan klien di instalasi ini.',
   'plat.infoWho': 'Dikelola operator platform',
-  'plat.infoWhoBody': 'Hanya pengguna dengan peran "platform-admin" yang dapat mengubahnya. Hubungi operator SecurePatrol Anda bila ada yang perlu diubah.',
+  'plat.infoWhoBody': 'Hanya pengguna dengan peran "platform-admin" yang dapat mengubahnya. Hubungi operator GARDA Anda bila ada yang perlu diubah.',
   'plat.infoChannels': 'Akun e-mail (SMTP) dan WhatsApp untuk mengirim semua peringatan.',
   'plat.infoBackups': 'Pencadangan database harian dan salinannya di luar server.',
   'plat.infoOps': 'Peringatan ke operator saat pencadangan atau pengiriman SOS gagal.',

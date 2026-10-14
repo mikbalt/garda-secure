@@ -133,7 +133,7 @@ class _LockTopBar extends StatelessWidget {
         const SizedBox(width: 14),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(session.site?.name ?? 'SecurePatrol', style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
+            Text(session.site?.name ?? 'GARDA', style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
             Text(session.device?.name ?? '', style: const TextStyle(color: Colors.white54, fontSize: 13), overflow: TextOverflow.ellipsis),
           ]),
         ),

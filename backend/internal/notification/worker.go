@@ -115,7 +115,7 @@ func SendTest(ctx context.Context, st *settings.Store, channel, recipient string
 	}
 	sctx, cancel := context.WithTimeout(ctx, sendTimeout)
 	defer cancel()
-	return ch.Send(sctx, cfg, recipient, "SecurePatrol test", "Test notification from SecurePatrol / Notifikasi uji dari SecurePatrol.")
+	return ch.Send(sctx, cfg, recipient, "GARDA test", "Test notification from GARDA / Notifikasi uji dari GARDA.")
 }
 
 // Heartbeat reports when a dispatch loop last made progress.

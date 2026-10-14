@@ -1,4 +1,4 @@
-# SecurePatrol operations shortcuts (run from infra/). See docs/runbook.md.
+# GARDA operations shortcuts (run from infra/). See docs/runbook.md.
 # COMPOSE_FILE in .env selects the full stack, so plain `docker compose` works.
 COMPOSE       = docker compose
 COMPOSE_INFRA = $(COMPOSE) -f docker-compose.yml

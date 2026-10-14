@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../../theme/app_theme.dart';
 
-/// App logo: shield in a brand-blue rounded square (same as the web app).
+/// App logo: the GARDA app icon in a rounded square (same as the web app).
+/// The image is generated from branding/icon.svg (branding/generate.sh).
 class BrandMark extends StatelessWidget {
   const BrandMark({super.key, this.size = 44});
+
+  static const asset = 'assets/brand/icon.png';
 
   final double size;
 
@@ -14,10 +17,12 @@ class BrandMark extends StatelessWidget {
         height: size,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(size * 0.3),
+          // Shown until the image is decoded (and if it is missing).
           gradient: const LinearGradient(colors: [AppColors.primary400, AppColors.primary700], begin: Alignment.topLeft, end: Alignment.bottomRight),
           boxShadow: [BoxShadow(color: AppColors.primary.withOpacity(0.35), blurRadius: 16, offset: const Offset(0, 6))],
         ),
-        child: Icon(Icons.verified_user_rounded, color: Colors.white, size: size * 0.55),
+        clipBehavior: Clip.antiAlias,
+        child: Image.asset(asset, width: size, height: size, fit: BoxFit.cover, filterQuality: FilterQuality.medium, excludeFromSemantics: true),
       );
 }
 

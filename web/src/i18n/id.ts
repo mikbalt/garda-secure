@@ -9,7 +9,7 @@ import type { Dict } from './en'
 
 /** Kamus Bahasa Indonesia (bahasa bawaan). */
 export const id: Dict = {
-  'app.name': 'SecurePatrol',
+  'app.name': 'GARDA',
   'app.loading': 'Memuat…',
   'app.authError': 'Kesalahan autentikasi',
   'app.authErrorBody': 'Tidak dapat terhubung ke server login.',

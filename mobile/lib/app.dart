@@ -17,8 +17,8 @@ import 'theme/app_theme.dart';
 
 final rootNavigator = GlobalKey<NavigatorState>();
 
-class SecurePatrolApp extends StatelessWidget {
-  const SecurePatrolApp({super.key});
+class GardaApp extends StatelessWidget {
+  const GardaApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +28,7 @@ class SecurePatrolApp extends StatelessWidget {
       onPointerDown: (_) => session.touch(),
       behavior: HitTestBehavior.translucent,
       child: MaterialApp(
-        title: 'SecurePatrol',
+        title: 'GARDA',
         navigatorKey: rootNavigator,
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light(),

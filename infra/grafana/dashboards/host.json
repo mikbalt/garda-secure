@@ -1,6 +1,6 @@
 {
   "uid": "sp-host",
-  "title": "SecurePatrol — Host & containers",
+  "title": "GARDA — Host & containers",
   "description": "Server resources, containers, PostgreSQL, Redis",
   "tags": [
     "securepatrol",

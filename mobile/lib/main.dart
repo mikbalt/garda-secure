@@ -83,7 +83,7 @@ Future<void> _main() async {
       ChangeNotifierProvider<Outbox>.value(value: outbox),
       ChangeNotifierProvider<FieldActions>.value(value: actions),
     ],
-    child: const SecurePatrolApp(),
+    child: const GardaApp(),
   ));
 
   await session.boot();

@@ -184,7 +184,7 @@ configure_admin_client() { # realm — confidential client for the API's user ma
   if [ -z "$id" ]; then
     kc create clients -r "$r" -s "clientId=$ADMIN_CLIENT" -s enabled=true -s publicClient=false \
       -s serviceAccountsEnabled=true -s standardFlowEnabled=false -s implicitFlowEnabled=false \
-      -s directAccessGrantsEnabled=false -s 'description=SecurePatrol API: user and tablet-account management' >/dev/null
+      -s directAccessGrantsEnabled=false -s 'description=GARDA API: user and tablet-account management' >/dev/null
     id=$(kc get clients -r "$r" -q "clientId=$ADMIN_CLIENT" --fields id | jq -r '.[0].id // empty')
     info "  client $ADMIN_CLIENT created"
   else
@@ -213,6 +213,34 @@ configure_admin_client() { # realm — confidential client for the API's user ma
   info "  $ADMIN_CLIENT: service account roles set, secret stored in secrets/keycloak-admin-clients"
 }
 
+# sync_brand REALM — the product is GARDA (formerly SecurePatrol): rename the
+# login-page display name ("SecurePatrol Client 1" -> "GARDA — Client 1") and
+# the client names of realms imported before the rebrand. Names that do not
+# start with "SecurePatrol" (set by the operator) are left alone.
+sync_brand() {
+  r=$1
+  sb_dn=$(kc get "realms/$r" --fields displayName | jq -r '.displayName // empty')
+  case "$sb_dn" in
+    SecurePatrol*)
+      sb_rest=$(printf '%s' "${sb_dn#SecurePatrol}" | sed 's/^[[:space:]:-]*//')
+      sb_display="GARDA${sb_rest:+ — $sb_rest}"
+      kc update "realms/$r" -s "displayName=$sb_display" >/dev/null
+      info "  display name: $sb_display"
+      ;;
+  esac
+  for sb_client in securepatrol-web securepatrol-tablet; do
+    sb_json=$(kc get clients -r "$r" -q "clientId=$sb_client" --fields id,name | jq -c '.[0] // empty')
+    sb_name=$(printf '%s' "$sb_json" | jq -r '.name // empty')
+    case "$sb_name" in
+      SecurePatrol*)
+        sb_id=$(printf '%s' "$sb_json" | jq -r '.id')
+        kc update "clients/$sb_id" -r "$r" -s "name=GARDA${sb_name#SecurePatrol}" >/dev/null
+        info "  $sb_client name: GARDA${sb_name#SecurePatrol}"
+        ;;
+    esac
+  done
+}
+
 if [ $# -gt 0 ]; then realms=$*; else realms=$(printf '%s' "$KEYCLOAK_REALMS" | tr ',' ' '); fi
 for r in $realms; do
   info "realm $r"
@@ -220,6 +248,7 @@ for r in $realms; do
     warn "realm $r does not exist in Keycloak (import infra/keycloak/realms/$r.json or create it) — skipped"
     continue
   fi
+  sync_brand "$r"
   cid=$(kc get clients -r "$r" -q clientId=securepatrol-web --fields id | jq -r '.[0].id // empty')
   if [ -n "$cid" ]; then
     kc update "clients/$cid" -r "$r" -s "redirectUris=$redirects" -s 'webOrigins=["+"]' \

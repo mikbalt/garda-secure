@@ -158,7 +158,7 @@ export const usersEn = {
   'acc.dev.createdTitle': 'Tablet account for {name}',
   'acc.dev.password': 'Tablet password',
   'acc.dev.howSignIn': 'How to sign in on the tablet',
-  'acc.dev.howStep1': 'Open the SecurePatrol app and enter the server address and organisation code below.',
+  'acc.dev.howStep1': 'Open the GARDA app and enter the server address and organisation code below.',
   'acc.dev.howStep2': 'Sign in with the username and the password above.',
   'acc.dev.howStep3': 'The tablet then appears in "Waiting for approval" above — approve it and choose its location.',
   'acc.dev.serverAddress': 'Server address',

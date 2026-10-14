@@ -21,7 +21,7 @@ const MaxJSONBodyBytes = 64 << 10
 // error handler that never leaks internal error text.
 func AppConfig(cfg *config.Config, log zerolog.Logger) fiber.Config {
 	return fiber.Config{
-		AppName:      "SecurePatrol API v1",
+		AppName:      "GARDA API v1",
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 60 * time.Second,
 		IdleTimeout:  120 * time.Second,

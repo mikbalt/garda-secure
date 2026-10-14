@@ -36,7 +36,7 @@ class S {
   static const allEn = <String, String>{...en, ...patrolStringsEn, ...reportStringsEn, ...securityStringsEn};
 
   static const id = <String, String>{
-    'app.name': 'SecurePatrol',
+    'app.name': 'GARDA',
     'common.cancel': 'Batal',
     'common.save': 'Simpan',
     'common.send': 'Kirim',
@@ -60,7 +60,7 @@ class S {
 
     // setup
     'setup.title': 'Hubungkan tablet ke server',
-    'setup.subtitle': 'Isi alamat server SecurePatrol dan kode organisasi dari administrator Anda. Langkah ini hanya sekali.',
+    'setup.subtitle': 'Isi alamat server GARDA dan kode organisasi dari administrator Anda. Langkah ini hanya sekali.',
     'setup.server': 'Alamat server',
     'setup.serverHint': 'contoh: patrol.perusahaan.co.id',
     'setup.realm': 'Kode organisasi',
@@ -262,7 +262,7 @@ class S {
   };
 
   static const en = <String, String>{
-    'app.name': 'SecurePatrol',
+    'app.name': 'GARDA',
     'common.cancel': 'Cancel',
     'common.save': 'Save',
     'common.send': 'Send',
@@ -285,7 +285,7 @@ class S {
     'common.description': 'Description',
 
     'setup.title': 'Connect this tablet to the server',
-    'setup.subtitle': 'Enter the SecurePatrol server address and the organisation code from your administrator. You only do this once.',
+    'setup.subtitle': 'Enter the GARDA server address and the organisation code from your administrator. You only do this once.',
     'setup.server': 'Server address',
     'setup.serverHint': 'e.g. patrol.company.com',
     'setup.realm': 'Organisation code',

@@ -328,7 +328,7 @@ export function seedWorld(): World {
     { id: uid(), object_key: 'postgres/securepatrol-daily.dump', size_bytes: 18_400_000, status: 'succeeded', trigger: 'scheduled', created_at: iso(wib(0, 2)), started_at: iso(wib(0, 2)), finished_at: iso(minutes(wib(0, 2), 1)), keycloak_object_key: 'postgres/keycloak-daily.dump', keycloak_size_bytes: 2_300_000 },
     { id: uid(), object_key: 'postgres/securepatrol-prev.dump', size_bytes: 18_100_000, status: 'succeeded', trigger: 'scheduled', created_at: iso(wib(-1, 2)), started_at: iso(wib(-1, 2)), finished_at: iso(minutes(wib(-1, 2), 1)) },
   )
-  w.channels.whatsapp = { api_url: 'https://graph.facebook.com/v18.0', token: '********', phone_number_id: '109876543210', template_name: 'securepatrol_alert', template_lang: 'id' }
+  w.channels.whatsapp = { api_url: 'https://graph.facebook.com/v18.0', token: '********', phone_number_id: '109876543210', template_name: 'garda_alert', template_lang: 'id' }
 
   // Install-wide ops alerts (platform-admin).
   w.opsRules.push(

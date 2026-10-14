@@ -1,4 +1,4 @@
-# SecurePatrol API v1
+# GARDA API v1
 
 Base path: `/api/v1` (behind nginx: `https://<host>/api/v1`). All endpoints need
 `Authorization: Bearer <Keycloak access token>` — an **access** token (`typ`

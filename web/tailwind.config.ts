@@ -2,7 +2,7 @@ import type { Config } from 'tailwindcss'
 import colors from 'tailwindcss/colors'
 
 /**
- * SecurePatrol design tokens.
+ * GARDA design tokens.
  * - `gray` is remapped to Tailwind's cooler `slate` so every page shares one
  *   neutral scale.
  * - `primary` is the brand blue (actions, focus, selection).

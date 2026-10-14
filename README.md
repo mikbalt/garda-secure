@@ -1,7 +1,11 @@
-# SecurePatrol
+# GARDA
 
 Enterprise-grade security patrol and attendance management system, self-hosted
 on one on-premise server (data stays on site — NFR-02).
+
+The product was formerly called SecurePatrol; technical identifiers (Go module,
+`securepatrol` binary, Keycloak client/realm IDs, database names) keep that name.
+App icon and favicons come from one file: see [branding/README.md](branding/README.md).
 
 ## Monorepo Structure
 
@@ -11,6 +15,7 @@ garda-secure/
 ├── web/            # React 18 + Vite + TypeScript — admin/HR/client dashboard
 ├── mobile/         # Flutter — shared site tablet app (D-024)
 ├── infra/          # Docker Compose stack, nginx, Keycloak, monitoring, backups, ops scripts
+├── branding/       # App icon source (icon.svg) + generator for web/tablet icons
 └── docs/           # API contract, operations runbook, audits
 ```
 

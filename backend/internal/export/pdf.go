@@ -45,8 +45,8 @@ func NewDoc(title string, landscape bool, generated time.Time) *Doc {
 	p.AddUTF8FontFromBytes(family, "", fontRegular)
 	p.AddUTF8FontFromBytes(family, "B", fontBold)
 	p.SetTitle(clean(title), true)
-	p.SetCreator("SecurePatrol", true)
-	p.SetProducer("SecurePatrol", true)
+	p.SetCreator("GARDA", true)
+	p.SetProducer("GARDA", true)
 	if !generated.IsZero() {
 		p.SetCreationDate(generated)
 	}
