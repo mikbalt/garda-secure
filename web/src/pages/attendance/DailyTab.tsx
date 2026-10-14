@@ -209,6 +209,8 @@ export function DailyTab({ site, date, today, onDateChange }: Props) {
       key: 'actions',
       header: <span className="sr-only">{t('common.actions')}</span>,
       className: 'text-right',
+      // Pinned: at laptop widths (1366 px) the table scrolls and the button was cut off.
+      stickyEnd: true,
       cell: (r) => (
         <Button size="sm" variant="secondary" onClick={() => setEditing(r)} aria-label={`${t('att.override')} — ${r.guard_name}`}>
           <Pencil className="h-3.5 w-3.5" aria-hidden="true" />

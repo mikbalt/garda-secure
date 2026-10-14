@@ -35,7 +35,7 @@ and what to do next.
 | `PageHeader` | `icon`, `title`, `subtitle` (purpose), `actions` (primary CTA right). |
 | `Card` | Sections. `title`, `description`, `icon`, `actions`; `flush` for edge-to-edge lists/tables. |
 | `Toolbar` | Filter bar (white card). Put filters + "Export" here. |
-| `Table` | Data tables (`columns`, `rows`, loading/error/empty built in). |
+| `Table` | Data tables (`columns`, `rows`, loading/error/empty built in). Give a row-action column `stickyEnd` so it stays pinned (visible) while a wide table scrolls. |
 | `Tabs` + `TabPanel` | Pill tabs under the header; keep the tab in `?tab=` (`useTabParam`). Give both the same `idBase`; wrap the active content in `TabPanel` (or `MaybeTabPanel` when the tab list is conditional). |
 | `Modal` | Forms (`variant="center"`) and detail panels (`variant="drawer"`). |
 | `Button` / `buttonClass()` | `primary`, `secondary`, `soft`, `ghost`, `danger`; sizes `sm`/`md`/`lg`. Use `buttonClass()` from `ui/styles` to style a `<Link>`. |
