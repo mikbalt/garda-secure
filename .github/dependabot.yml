@@ -1,58 +1,68 @@
-# Dependency updates (INF-C4). PRs target the integration branch `init`.
-# Minor/patch updates are grouped per ecosystem to keep the PR count low for a
-# one-person team; majors arrive as separate PRs.
+# Dependency updates (INF-C4), tuned for a one-person team (docs/maintenance.md):
+# - once a month, ONE grouped PR per ecosystem with minor/patch updates only;
+# - major versions are never proposed here: they are planned upgrades done on
+#   purpose (list in docs/maintenance.md), because they can break the build;
+# - components that need a manual procedure are excluded (see comments).
+# All PRs target the integration branch `init`.
 version: 2
 updates:
   - package-ecosystem: gomod
     directory: /backend
     target-branch: init
-    schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 5
+    schedule: { interval: monthly }
+    open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       go-minor:
         update-types: [minor, patch]
-    commit-message:
-      prefix: "chore(deps)"
+    commit-message: { prefix: "chore(deps)" }
 
   - package-ecosystem: npm
     directory: /web
     target-branch: init
-    schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 5
+    schedule: { interval: monthly }
+    open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+      # Keycloak's JS adapter follows the Keycloak server upgrade (runbook §2).
+      - dependency-name: "keycloak-js"
     groups:
       npm-minor:
         update-types: [minor, patch]
-    commit-message:
-      prefix: "chore(deps)"
+    commit-message: { prefix: "chore(deps)" }
 
   - package-ecosystem: pub
     directory: /mobile
     target-branch: init
-    schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 5
+    schedule: { interval: monthly }
+    open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+      # Pinned by the Flutter SDK (flutter_test / flutter_localizations): they
+      # move only with a Flutter upgrade, otherwise `pub get` fails.
+      - dependency-name: "path"
+      - dependency-name: "intl"
+      # Firebase/notifications are pinned to versions that build with
+      # Flutter 3.24 + AGP 8.1 (D-057); upgrade together with Flutter.
+      - dependency-name: "firebase_*"
+      - dependency-name: "flutter_local_notifications"
     groups:
       pub-minor:
         update-types: [minor, patch]
-    commit-message:
-      prefix: "chore(deps)"
+    commit-message: { prefix: "chore(deps)" }
 
   - package-ecosystem: github-actions
     directory: /
     target-branch: init
-    schedule:
-      interval: weekly
-      day: monday
+    schedule: { interval: monthly }
     groups:
       actions:
         patterns: ["*"]
-    commit-message:
-      prefix: "ci(deps)"
+    commit-message: { prefix: "ci(deps)" }
 
   # Base images of our own Dockerfiles.
   - package-ecosystem: docker
@@ -61,26 +71,33 @@ updates:
       - /web
       - /infra/backup-offsite
     target-branch: init
-    schedule:
-      interval: weekly
-      day: monday
-    commit-message:
-      prefix: "chore(deps)"
+    schedule: { interval: monthly }
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+      # nginx: odd minors (1.31, 1.33, …) are "mainline"; we stay on stable.
+      - dependency-name: "nginx"
+        update-types: ["version-update:semver-minor"]
+    groups:
+      base-images:
+        patterns: ["*"]
+    commit-message: { prefix: "chore(deps)" }
 
-  # Images pinned in infra/docker-compose*.yml. Every Keycloak update (26.x
-  # minors too) migrates its database one way on start and majors change
-  # config: follow docs/runbook.md §2 ("Upgrading Keycloak") — never merge
-  # those blindly.
+  # Images pinned in infra/docker-compose*.yml.
   - package-ecosystem: docker-compose
     directory: /infra
     target-branch: init
-    schedule:
-      interval: weekly
-      day: monday
+    schedule: { interval: monthly }
     ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "nginx"
+        update-types: ["version-update:semver-minor"]
+      # Every Keycloak update migrates its database one way: only with the
+      # procedure in docs/runbook.md §2 ("Upgrading Keycloak").
       - dependency-name: "quay.io/keycloak/keycloak"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "postgres"
-        update-types: ["version-update:semver-major"]
-    commit-message:
-      prefix: "chore(deps)"
+      - dependency-name: "keycloak/keycloak"
+    groups:
+      stack-images:
+        patterns: ["*"]
+    commit-message: { prefix: "chore(deps)" }

@@ -42,6 +42,8 @@ test.describe('push notifications (demo)', () => {
 
     await page.getByRole('button', { name: 'Kirim tes' }).click()
     await expect(page.getByText('Tes dikirim ke 3 perangkat.').first()).toBeVisible()
+    // The button is dimmed while the request runs; axe must see its final colours.
+    await expect(page.getByRole('button', { name: 'Kirim tes' })).toBeEnabled()
 
     await quiet(page)
     expect(await seriousA11yViolations(page)).toEqual([])
