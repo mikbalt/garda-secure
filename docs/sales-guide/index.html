@@ -156,6 +156,29 @@ dialog.zoom p { color: #e8edf7; font-size: 14px; margin: 8px 4px 0; text-align: 
 dialog.zoom button { position: absolute; top: 8px; right: 8px; border: 0; border-radius: 99px; width: 36px; height: 36px; background: rgba(255,255,255,.92); color: #0f1a2e; font-size: 20px; cursor: pointer; }
 
 footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13.5px; }
+
+/* Print / PDF (npm run guide:pdf): light palette, no rail, keep figures whole. */
+@page { size: A4; margin: 14mm 13mm 16mm; }
+@media print {
+  :root, :root[data-theme="dark"] {
+    --bg: #ffffff; --surface: #ffffff; --ink: #0f1a2e; --muted: #475268; --line: #d5dbe6;
+    --accent: #2453d6; --accent-soft: #edf2fd; --sos: #c81e3a; --sos-soft: #fdecef;
+    --warn: #8a5100; --warn-soft: #fdf3e1; --shadow: none; color-scheme: light;
+  }
+  body { padding: 0; font-size: 11pt; }
+  .page { display: block; max-width: none; padding: 0; }
+  .toc, dialog.zoom, .screen-only { display: none !important; }
+  header.hero { break-after: avoid; }
+  section { padding-top: 18pt; }
+  section + section { break-before: page; }
+  h2, h3, h4 { break-after: avoid; }
+  figure.shot, .value, .check, .say, .careful, .sosnote, details, tr { break-inside: avoid; }
+  figure.shot button { box-shadow: none; }
+  ol.steps > li { break-inside: auto; }
+  .pitch { background: #0f1a2e !important; color: #ffffff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .toc .mark, ol.steps > li::before { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  a { color: inherit; text-decoration: none; }
+}
 </style>
 
 <div class="page">
@@ -188,7 +211,7 @@ footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line);
       <div class="meta">
         <span><span class="dot" aria-hidden="true"></span>Versi Oktober 2026</span>
         <span>Gambar diambil dari <b>mode demo</b> (data contoh PT Logistik Nusantara)</span>
-        <span>Klik gambar untuk memperbesar</span>
+        <span class="screen-only">Klik gambar untuk memperbesar</span>
       </div>
     </header>
 
