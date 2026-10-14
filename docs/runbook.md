@@ -468,6 +468,82 @@ Operator alerts come from two independent paths — configure both before go-liv
   notifications failing, backups, disk, certificates — e-mailed via `ALERT_*` in
   `.env`; it also works when the app's own channels are broken.
 
+### Push notifications
+
+GARDA can push alerts to **browsers** of dashboard users (Web Push with VAPID
+keys — Chrome, Edge, Firefox, Safari incl. iPhone/iPad when GARDA is added to
+the Home Screen) and to the **tablet app** (Firebase Cloud Messaging). Both
+are optional and independent; `GET /api/v1/push/config` shows what is on. Push
+is best effort and comes **on top of** the e-mail/WhatsApp rules — keep SOS
+rules configured (an SOS without them still raises `ops_sos_undelivered`).
+Users turn push on per browser and choose events in their profile menu →
+*Notifications*; the event list and defaults are in `docs/api.md`
+(*Push notifications*).
+
+**Browser push (VAPID).** `make env` (`scripts/gen-env.sh`) generates the key
+pair and sets `WEBPUSH_SUBJECT=https://<SERVER_HOST>`. For an existing `.env`:
+
+```bash
+docker compose run --rm --no-deps api vapid-keys   # prints both lines
+# add them to infra/.env, plus a contact the push services may use:
+#   WEBPUSH_SUBJECT=mailto:ops@your-company.co.id   (or https://<SERVER_HOST>)
+make preflight && make up                          # api + worker restart
+```
+
+`make preflight` checks that the public key belongs to the private key and
+that the subject is `mailto:` or `https://`. Keep the pair forever: a new pair
+silently ends every browser subscription (users must turn push on again).
+Browser endpoints must be on a known push service (FCM, Mozilla, Apple,
+Windows); a corporate push proxy can be added with `WEBPUSH_ALLOWED_HOSTS`.
+The server needs outbound HTTPS to the push services (`fcm.googleapis.com`,
+`*.push.services.mozilla.com`, `*.push.apple.com`, `*.notify.windows.com`,
+`android.googleapis.com`); they are public hosts, the SSRF guard only blocks
+private addresses. The web app must be served over HTTPS (it is) for browsers
+to allow push.
+
+**Tablet push (Firebase).** One-time, by the operator:
+
+1. In the [Firebase console](https://console.firebase.google.com) create a
+   project (e.g. `garda-prod`) and add the Android app with the tablet app's
+   package name (the mobile team's `google-services.json` comes from here).
+2. *Project settings → Service accounts → Generate new private key* — a JSON
+   file for an account with the role *Firebase Cloud Messaging API Admin*
+   (the default Firebase Admin SDK account works). Make sure the *Firebase
+   Cloud Messaging API (V1)* is enabled in Google Cloud.
+3. Copy it to the server: `install -m 644 key.json infra/secrets/fcm-service-account.json`
+   (the directory is 0700; the container user needs read access). Never commit it.
+4. `make preflight && make up` (api + worker read the file at start). The API
+   log line `push notifications ... fcm=true` confirms it.
+
+An empty file (created by preflight) means FCM is off; an invalid file is
+reported by preflight and logged by the API ("FCM disabled"). To rotate the
+key: generate a new one, replace the file, restart, then delete the old key
+in Firebase. Tablets register their token themselves (`PUT /device/push-token`)
+and lose it when revoked; *Settings → Tablets* shows "Push on" per tablet.
+
+**SOS reminders.** `sos_unacknowledged` fires `SOS_ESCALATE_AFTER` (3 min)
+after an SOS that nobody acknowledged, then every `SOS_ESCALATE_EVERY` (5 min),
+3 times at most — by push and to any e-mail/WhatsApp rule for that event
+(Settings → Notification rules, card "SOS not acknowledged").
+
+**Privacy (UU PDP).** Web push payloads are encrypted end to end (RFC 8291):
+the push service (Google, Mozilla, Apple, Microsoft) only sees metadata — the
+endpoint, size, time, TTL and urgency, not the text. **FCM messages to tablets
+pass Google's servers in readable form** (title/body with guard and site
+names); mention Google as a processor in the privacy notice, or keep tablet
+push off. Subscriptions store only the endpoint, keys and a device label;
+push deliveries are deleted 30 days after they finished. Users who have not
+signed in for `PUSH_AUDIENCE_MAX_AGE` (30 days) stop receiving pushes; an
+admin disabling a user in *Users* removes their subscriptions at once.
+
+**Troubleshooting.** No browser notification: the user's *Notifications* page
+shows the state (blocked by the browser, not supported, iOS needs Home Screen)
+and *Send test*; each device shows its last delivery and last error. A push
+service answering 404/410 deletes the subscription (the browser unsubscribed
+or the user cleared site data) — the user turns it on again. Metrics:
+`sp_push_sent_total{kind,event,result}` on the worker (and the API for test
+pushes); push failures never trigger the e-mail/WhatsApp alert rules.
+
 ## 5. Backups and restore (NFR-07, INF-B1–B6)
 
 **Targets:** RPO **24 h** (at most one day of data lost), RTO **4 h** (service back on
@@ -717,7 +793,9 @@ Metric contract with the backend (alert rules and dashboards depend on it):
   `sp_sos_unacknowledged`, `sp_worker_heartbeat_timestamp_seconds`,
   `sp_job_runs_total{job,result=success|error|skipped}`,
   `sp_job_last_success_timestamp_seconds{job}`,
-  `sp_backup_last_success_timestamp_seconds` (0 = no successful backup yet).
+  `sp_backup_last_success_timestamp_seconds` (0 = no successful backup yet),
+  `sp_push_sent_total{kind=webpush|fcm,event,result=sent|retry|failed|gone}`
+  (push is not counted in `sp_notifications_total`; the API exports it for test pushes).
 - Off-site job (node-exporter textfile): `sp_offsite_backup_last_result`,
   `sp_offsite_backup_last_success_timestamp_seconds`, `sp_offsite_check_last_result`,
   `sp_offsite_check_last_success_timestamp_seconds`.
