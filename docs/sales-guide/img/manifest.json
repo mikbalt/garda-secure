@@ -267,7 +267,7 @@
     "file": "web-phone-menu.png",
     "role": "admin",
     "what": "Phone width (390x844) with the navigation drawer open over the dashboard.",
-    "notable": ["drawer 'SecurePatrol · PT Logistik Nusantara' with close X", "sections Operasional (Patroli, Insiden, Kehadiran), Personel (Jadwal, Petugas), Analisis (Laporan), Administrasi (Panduan setup, Pengaturan, Pengguna & akses, Log audit)", "'Lanjutkan setup 5/6' widget", "user 'demo.admin · Administrator'"]
+    "notable": ["drawer 'GARDA · PT Logistik Nusantara' with close X", "sections Operasional (Patroli, Insiden, Kehadiran), Personel (Jadwal, Petugas), Analisis (Laporan), Administrasi (Panduan setup, Pengaturan, Pengguna & akses, Log audit)", "'Lanjutkan setup 5/6' widget", "user 'demo.admin · Administrator'"]
   },
   {
     "file": "tab-setup.png",

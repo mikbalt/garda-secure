@@ -1,6 +1,10 @@
-# SecurePatrol — Operations Runbook
+# GARDA — Operations Runbook
 
 For the single operator running the on-premise stack (PRD NFR-01, NFR-07, NFR-09).
+The product was renamed from SecurePatrol to GARDA; internal identifiers (Go module,
+binary `securepatrol`, Docker network/images, database and MinIO names, Keycloak
+realm and client IDs such as `securepatrol-web`, metric prefix `sp_`) still use
+`securepatrol` on purpose and are not renamed.
 All commands run on the server from `infra/` unless noted. Audit IDs (INF-…, BE-…)
 refer to [docs/audit-2026-10.md](audit-2026-10.md).
 
@@ -375,7 +379,7 @@ expected / on time / late / missed per route and day.
 
 ### Kiosk / MDM setup (dedicated device)
 
-A post tablet should run SecurePatrol and nothing else. Preferred: **Android
+A post tablet should run GARDA and nothing else. Preferred: **Android
 Enterprise dedicated device** (a.k.a. COSU) through an EMM — e.g. Google Android
 Management API, Microsoft Intune "Android Enterprise dedicated devices", Samsung
 Knox Manage, Scalefusion, Hexnode, ManageEngine MDM. Steps:
@@ -390,7 +394,7 @@ Knox Manage, Scalefusion, Hexnode, ManageEngine MDM. Steps:
    key stays the same — keep the release keystore safe (CI secrets).
    *Upgrading from the pre-hardening build (package `id.co.securepatrol.securepatrol`):
    it is a different app; let its outbox empty first, then uninstall it.*
-3. **Lock-task (kiosk) mode:** single-app kiosk with SecurePatrol as the only
+3. **Lock-task (kiosk) mode:** single-app kiosk with GARDA as the only
    allowed app (Android Management API: `kioskCustomLauncherEnabled` off,
    `applications[].installType: KIOSK`; Intune: *Single app, full screen*). Allow the
    status bar only for system notifications if your EMM offers it; keep the camera
@@ -414,7 +418,7 @@ Knox Manage, Scalefusion, Hexnode, ManageEngine MDM. Steps:
 
 **No EMM (small sites): screen pinning fallback.** *Settings → Security → App
 pinning* (or *Pin windows*) → on, "Ask for PIN before unpinning" → on with a device
-PIN only the supervisor knows; open SecurePatrol → Overview → app icon → *Pin*.
+PIN only the supervisor knows; open GARDA → Overview → app icon → *Pin*.
 Also: remove other apps or hide them, disable developer options, set a device PIN
 (the app stays usable while pinned), and turn on auto date/time. This prevents
 casual use but is weaker than lock-task mode (anyone with the device PIN can unpin).
@@ -439,7 +443,7 @@ Guard rails (protect the stored secrets from being sent elsewhere):
 
 WhatsApp Business Cloud API only delivers business-initiated messages through an
 **approved template**. Create one in Meta Business Manager with a single body
-variable, e.g. `SecurePatrol: {{1}}`, and set its name/language in Settings.
+variable, e.g. `GARDA: {{1}}`, and set its name/language in Settings.
 
 *Settings → Notification rules*: per site, which events go to which e-mail/phone.
 *Settings → Notification log*: failed deliveries show the error and can be retried
@@ -583,7 +587,7 @@ to `SERVER_HOST` + localhost, so it cannot be used to impersonate other websites
 server certificate (`cert.pem`/`key.pem`, 825 days, SAN = `SERVER_HOST` + localhost).
 
 Install the CA once per device (file `nginx/certs/securepatrol-ca.crt`):
-* **Android tablets:** the SecurePatrol app does **not** trust user-installed CAs
+* **Android tablets:** the GARDA app does **not** trust user-installed CAs
   (Dart's TLS ignores the Android store, and user CAs would allow interception). Bundle
   the CA into the APK instead: GitHub secret `SECUREPATROL_CA_PEM` = contents of
   `securepatrol-ca.crt` (the release job writes it to `mobile/assets/certs/`), or copy it
@@ -680,7 +684,7 @@ machine-specific settings belong in `.env`.
 
 Grafana `http://127.0.0.1:3001`, Prometheus `:9090`, Alertmanager `:9093` — bound to
 localhost; use `ssh -L 3001:127.0.0.1:3001 -L 9090:127.0.0.1:9090 server`.
-Dashboards (folder *SecurePatrol*, provisioned from `infra/grafana/dashboards`, edit
+Dashboards (folder *GARDA*, provisioned from `infra/grafana/dashboards`, edit
 by exporting JSON and committing): **Overview** (SOS, worker heartbeat, notifications,
 API), **Jobs, backups, certificates**, **Host & containers**.
 

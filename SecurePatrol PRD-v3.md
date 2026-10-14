@@ -1,5 +1,5 @@
 # Product Requirements Document
-## SecurePatrol — Enterprise Security Patrol & Attendance Management System
+## GARDA — Enterprise Security Patrol & Attendance Management System
 
 **Version:** 1.2 Draft  
 **Date:** 2026-09-30  
@@ -9,7 +9,7 @@
 
 ## 1. Executive Summary
 
-SecurePatrol is a self-hosted, enterprise-grade platform for managing security guard patrols, daily attendance, incident reporting, and operational oversight across multiple client sites. Field staff use an Android/iOS tablet app; administrators, supervisors, HR, and site owners use a responsive web dashboard. The system operates offline-capable on tablets and syncs to the on-premise server when connectivity is restored.
+GARDA is a self-hosted, enterprise-grade platform for managing security guard patrols, daily attendance, incident reporting, and operational oversight across multiple client sites. Field staff use an Android/iOS tablet app; administrators, supervisors, HR, and site owners use a responsive web dashboard. The system operates offline-capable on tablets and syncs to the on-premise server when connectivity is restored.
 
 The entire platform runs as a single Docker Compose stack — designed to be operated by one person without deep DevOps expertise.
 
