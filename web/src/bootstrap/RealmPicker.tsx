@@ -1,4 +1,5 @@
-import { ArrowRight, Building2, ClipboardCheck, Loader2, Route, ShieldCheck, Siren } from 'lucide-react'
+import { ArrowRight, Building2, ClipboardCheck, Loader2, Route, Siren } from 'lucide-react'
+import { BrandMark } from '../components/BrandMark'
 import { config } from '../config'
 import { useI18n, type Key } from '../i18n/context'
 import type { Lang } from '../lib/time'
@@ -21,15 +22,6 @@ function LangToggle({ dark = false }: { dark?: boolean }) {
           {l}
         </button>
       ))}
-    </div>
-  )
-}
-
-export function BrandMark({ size = 'md' }: { size?: 'md' | 'lg' }) {
-  const box = size === 'lg' ? 'h-12 w-12 rounded-2xl' : 'h-9 w-9 rounded-xl'
-  return (
-    <div className={`flex items-center justify-center bg-gradient-to-br from-primary-400 to-primary-700 shadow-lg shadow-primary-900/40 ring-1 ring-white/20 ${box}`}>
-      <ShieldCheck className={size === 'lg' ? 'h-6 w-6 text-white' : 'h-5 w-5 text-white'} aria-hidden="true" />
     </div>
   )
 }

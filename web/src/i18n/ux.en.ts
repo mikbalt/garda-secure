@@ -60,7 +60,7 @@ export const uxEn = {
   'setup.step.notif.status': '{n} alert rules',
 
   // welcome (no locations yet)
-  'welcome.title': 'Welcome to SecurePatrol',
+  'welcome.title': 'Welcome to GARDA',
   'welcome.body': 'Your organisation has no locations yet. Start by creating the first one — the setup guide then walks you through until the first patrol runs.',
   'welcome.cta': 'Create the first location',
   'welcome.stepsTitle': 'What you will set up',

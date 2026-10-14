@@ -50,7 +50,7 @@ const WA_FIELDS: FieldDef[] = [
   { key: 'token', label: 'ch.token', hint: 'adm.ch.hint.secret', secret: true, wide: true },
   { key: 'phone_number_id', label: 'ch.phoneNumberId', hint: 'adm.ch.hint.phoneId' },
   { key: 'template_lang', label: 'ch.templateLang', hint: 'adm.ch.hint.lang', placeholder: 'id' },
-  { key: 'template_name', label: 'ch.templateName', hint: 'adm.ch.hint.template', placeholder: 'securepatrol_alert', wide: true },
+  { key: 'template_name', label: 'ch.templateName', hint: 'adm.ch.hint.template', placeholder: 'garda_alert', wide: true },
 ]
 
 function TestModal({ channel, onClose }: { channel: Channel; onClose: () => void }) {

@@ -803,7 +803,7 @@ const adapter: AxiosAdapter = async (cfg: InternalAxiosRequestConfig) => {
           format === 'xlsx'
             ? xlsxBlob(title, columns, rows, Object.entries(query).filter(([k, v]) => k !== 'format' && v) as [string, string][])
             : format === 'pdf'
-              ? pdfBlob(`SecurePatrol - ${title}`, rows.map((r) => r.map((v) => (v == null ? '' : String(v))).slice(0, 6).join(' | ')))
+              ? pdfBlob(`GARDA - ${title}`, rows.map((r) => r.map((v) => (v == null ? '' : String(v))).slice(0, 6).join(' | ')))
               : csvBlob(columns, rows)
         return respond(200, blob, { 'content-type': blob.type, 'content-disposition': `attachment; filename="${base}.${format}"` })
       }

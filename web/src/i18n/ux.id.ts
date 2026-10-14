@@ -57,7 +57,7 @@ export const uxId: Record<keyof typeof uxEn, string> = {
   'setup.step.notif.cta': 'Atur peringatan',
   'setup.step.notif.status': '{n} aturan peringatan',
 
-  'welcome.title': 'Selamat datang di SecurePatrol',
+  'welcome.title': 'Selamat datang di GARDA',
   'welcome.body': 'Organisasi Anda belum memiliki lokasi. Mulai dengan membuat lokasi pertama — panduan setup akan menemani Anda sampai patroli pertama berjalan.',
   'welcome.cta': 'Buat lokasi pertama',
   'welcome.stepsTitle': 'Yang akan Anda siapkan',

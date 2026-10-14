@@ -95,7 +95,7 @@ export function xlsxBlob(title: string, columns: string[], rows: unknown[][], in
     .map((r, i) => `<row r="${i + 1}">${r.map((v, j) => cell(`${colName(j)}${i + 1}`, v, i === 0)).join('')}</row>`)
     .join('')
   const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetData>${sheetRows}</sheetData></worksheet>`
-  const infoRows = [['Title', title], ...info, ['Generated', new Date().toISOString()], ['Note', 'SecurePatrol demo data']]
+  const infoRows = [['Title', title], ...info, ['Generated', new Date().toISOString()], ['Note', 'GARDA demo data']]
     .map((r, i) => `<row r="${i + 1}">${r.map((v, j) => cell(`${colName(j)}${i + 1}`, v, j === 0)).join('')}</row>`)
     .join('')
   const infoSheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${infoRows}</sheetData></worksheet>`

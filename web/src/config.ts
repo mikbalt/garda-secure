@@ -99,7 +99,7 @@ export function loadConfig(rt: RuntimeConfig, env: Record<string, unknown>): App
         ? envRealms
         : legacyRealm
           ? [{ id: legacyRealm, label: legacyRealm }]
-          : [{ id: 'securepatrol', label: 'SecurePatrol' }]
+          : [{ id: 'securepatrol', label: 'GARDA' }]
   const { demo, refused } = resolveDemo(rt, env.VITE_DEMO)
 
   return {
@@ -116,5 +116,5 @@ export function loadConfig(rt: RuntimeConfig, env: Record<string, unknown>): App
 export const config: AppConfig = loadConfig((typeof window !== 'undefined' && window.__SP_CONFIG__) || {}, import.meta.env)
 
 if (config.demoRefused) {
-  console.warn('SecurePatrol: DEMO=true ignored — a real API/Keycloak URL is configured (set DEMO_FORCE=true to override).')
+  console.warn('GARDA: DEMO=true ignored — a real API/Keycloak URL is configured (set DEMO_FORCE=true to override).')
 }

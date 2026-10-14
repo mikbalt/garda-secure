@@ -156,7 +156,7 @@ export const usersId: Record<keyof typeof usersEn, string> = {
   'acc.dev.createdTitle': 'Akun tablet untuk {name}',
   'acc.dev.password': 'Kata sandi tablet',
   'acc.dev.howSignIn': 'Cara masuk di tablet',
-  'acc.dev.howStep1': 'Buka aplikasi SecurePatrol, lalu isi alamat server dan kode organisasi di bawah.',
+  'acc.dev.howStep1': 'Buka aplikasi GARDA, lalu isi alamat server dan kode organisasi di bawah.',
   'acc.dev.howStep2': 'Masuk dengan nama pengguna dan kata sandi di atas.',
   'acc.dev.howStep3': 'Tablet lalu muncul di "Menunggu persetujuan" di atas — setujui dan pilih lokasinya.',
   'acc.dev.serverAddress': 'Alamat server',

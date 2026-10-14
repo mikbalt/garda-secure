@@ -1,4 +1,4 @@
-# SecurePatrol web — design & UX guide
+# GARDA web — design & UX guide
 
 Read this before changing any page. The goal: an operations console that a
 security company's admin, supervisor, HR officer or client understands
@@ -68,7 +68,9 @@ logout dialog.
   where `text-gray-300/400` are the readable greys. Coloured text on tinted
   backgrounds uses the `-700`/`-800` shade (e.g. `text-amber-800` on
   `bg-amber-50`).
-- Brand: `primary-*` (blue). Shell: `ink-*` (navy).
+- Brand: product name **GARDA** (all caps, `app.name`; no tagline). Primary `primary-*` (blue). Shell: `ink-*` (navy).
+- App mark: `<BrandMark>` (`components/BrandMark.tsx`) renders `public/favicon.svg`, a copy of
+  `branding/icon.svg` — never draw the logo by hand; replace the icon via `branding/generate.sh`.
 - Type: Inter. Page title `text-2xl font-semibold tracking-tight`; card title
   15 px semibold; body `text-sm text-gray-600`; meta `text-xs text-gray-500` (never lighter).
 - Numbers: `tabular-nums`.

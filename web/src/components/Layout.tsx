@@ -17,11 +17,11 @@ import {
   Settings2,
   ShieldAlert,
   UserCog,
-  ShieldCheck,
   Users,
   X,
   type LucideIcon,
 } from 'lucide-react'
+import { BrandMark } from './BrandMark'
 import { useAuth } from '../hooks/useAuth'
 import { useSetupProgress } from '../hooks/useSetupProgress'
 import { useMe } from '../hooks/useMe'
@@ -96,9 +96,7 @@ function Brand() {
   const { user } = useAuth()
   return (
     <div className="flex min-w-0 flex-1 items-center gap-3 px-5 pb-5 pt-6">
-      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary-400 to-primary-700 shadow-lg shadow-primary-900/40 ring-1 ring-white/20">
-        <ShieldCheck className="h-5 w-5 text-white" aria-hidden="true" />
-      </div>
+      <BrandMark />
       <div className="min-w-0">
         <p className="text-[15px] font-semibold leading-5 tracking-tight text-white">{t('app.name')}</p>
         <p className="truncate text-xs text-gray-300">{user.realmLabel}</p>

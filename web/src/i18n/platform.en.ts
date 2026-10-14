@@ -79,7 +79,7 @@ export const platformEn = {
   'plat.infoDesc': 'Managed by the platform operator',
   'plat.infoIntro': 'Some settings apply to every client company on this installation.',
   'plat.infoWho': 'Managed by the platform operator',
-  'plat.infoWhoBody': 'Only users with the "platform-admin" role can change these. Contact your SecurePatrol operator if something needs to change.',
+  'plat.infoWhoBody': 'Only users with the "platform-admin" role can change these. Contact your GARDA operator if something needs to change.',
   'plat.infoChannels': 'E-mail (SMTP) and WhatsApp accounts used to send every alert.',
   'plat.infoBackups': 'Daily database backups and their off-site copies.',
   'plat.infoOps': 'Alerts to the operator when backups or SOS delivery fail.',
