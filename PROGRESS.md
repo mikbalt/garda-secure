@@ -9,6 +9,9 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
+| Rebrand SecurePatrol → GARDA (all user-visible names, app id `id.co.garda.tablet`, single icon source) | `muhamhad-pc1/claude-rebrand` | 2026-10-14 | branch `agent/muhamhad-pc1/rebrand-garda` |
+| Push notifications backend + web (Web Push VAPID, FCM sender, subscriptions, per-user preferences, `sos_unacknowledged`) | `muhamhad-pc1/claude-push` | 2026-10-14 | branch `agent/muhamhad-pc1/push-web`; migration 008 |
+| Push notifications tablet app (Firebase Cloud Messaging) | `muhamhad-pc1/claude-push-mobile` | 2026-10-14 | branch `agent/muhamhad-pc1/push-mobile` |
 
 ## Migration numbers
 
@@ -21,7 +24,8 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 | 005 | be_security (audit append-only, received_at/flags, per-site employee_id) | `muhamhad-pc1/claude-be-sec` | pushed |
 | 006 | be_field (guard sessions, signed QR, patrol schedules) | `muhamhad-pc1/claude-be-field` | pushed |
 | 007 | be_features (overrides history, route snapshots, floor plans, channels, retention, telemetry, incident GPS) | `muhamhad-pc1/claude-be-features` | pushed |
-| 008 | *(next free)* | | |
+| 008 | push (subscriptions, preferences, device push tokens) | `muhamhad-pc1/claude-push` | reserved |
+| 009 | *(next free)* | | |
 
 ## Milestones (PRD §11)
 
