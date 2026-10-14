@@ -21,7 +21,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # pg_dump must match the server's major version (PostgreSQL 16).
 FROM alpine:3.24
 
-RUN apk add --no-cache ca-certificates tzdata postgresql16-client \
+# Base image packages lag behind security fixes: upgrade them at build time
+# (Trivy fails the build on fixable HIGH/CRITICAL findings).
+RUN apk upgrade --no-cache && apk add --no-cache ca-certificates tzdata postgresql16-client \
     && addgroup -S app && adduser -S -G app -H -h /app app
 
 WORKDIR /app

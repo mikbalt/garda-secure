@@ -9,7 +9,9 @@ import { defineConfig, devices } from '@playwright/test'
  * PW_CHANNEL=chrome to use the installed Google Chrome instead.
  */
 const PORT = Number(process.env.PW_PORT ?? 4173)
-const channel = process.env.PW_CHANNEL || undefined
+// 'chromium' = full Chromium in new headless mode: the slim headless shell has no
+// Push API, so the Notifications page would only show "not supported".
+const channel = process.env.PW_CHANNEL || 'chromium'
 
 export default defineConfig({
   testDir: 'e2e',

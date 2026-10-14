@@ -13,6 +13,10 @@ RUN npm run build
 # docker-entrypoint.d/40-securepatrol-config.sh), not baked in at build time.
 FROM nginx:1.30-alpine
 
+# Base image packages lag behind security fixes: upgrade them at build time
+# (Trivy fails the build on fixable HIGH/CRITICAL findings).
+RUN apk upgrade --no-cache
+
 # config.js is written to /tmp (tmpfs) so the container can run with a
 # read-only root filesystem; nginx.conf serves it from there.
 ENV API_URL=/api/v1 \

@@ -62,6 +62,10 @@ export async function quiet(page: Page) {
 
 /** axe-core scan (WCAG 2.1 A/AA); returns serious + critical violations. */
 export async function seriousA11yViolations(page: Page) {
+  // Measure final colours: a late data update can start a colour transition
+  // (e.g. a setup card switching state) while axe is sampling.
+  await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; animation: none !important; }' })
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
   const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze()
   return result.violations
     .filter((v) => v.impact === 'serious' || v.impact === 'critical')

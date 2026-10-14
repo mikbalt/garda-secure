@@ -6,7 +6,7 @@ FROM pgsty/mc:RELEASE.2026-09-16T00-00-00Z@sha256:cfc83108c3abb371f8fb84d99c1fdc
 
 FROM alpine:3.24
 
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk upgrade --no-cache && apk add --no-cache ca-certificates tzdata
 
 COPY --from=restic /usr/bin/restic /usr/local/bin/restic
 # `mc` may be a symlink to `mcli` in the fork's image: copy both.
