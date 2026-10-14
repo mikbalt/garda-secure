@@ -4,6 +4,7 @@
 # - SERVER_HOST: DNS name (preferred) or IPv4 address of the server
 # - every "change_me" secret becomes `openssl rand -hex 32` (URL-safe)
 # - least-privilege MinIO users are enabled (MINIO_APP_* / MINIO_OFFSITE_*)
+# - a browser push (VAPID, P-256) key pair is generated (WEBPUSH_*)
 # Refuses to overwrite an existing file. The result is chmod 600.
 set -eu
 . "$(dirname -- "$0")/lib.sh"
@@ -17,6 +18,11 @@ command -v openssl >/dev/null || die "openssl is required"
 
 rand() { openssl rand -hex 32; }
 
+# Browser push (VAPID) key pair; the subject is the server's https URL.
+vapid=$(vapid_keypair) || die "could not generate the VAPID key pair with openssl"
+vapid_pub=${vapid% *}
+vapid_priv=${vapid#* }
+
 umask 077
 tmp="$out.tmp.$$"
 cr=$(printf '\r')
@@ -29,6 +35,9 @@ while IFS= read -r line || [ -n "$line" ]; do
     MINIO_APP_SECRET_KEY=) echo "MINIO_APP_SECRET_KEY=$(rand)" ;;
     MINIO_OFFSITE_ACCESS_KEY=) echo "MINIO_OFFSITE_ACCESS_KEY=securepatrol-offsite" ;;
     MINIO_OFFSITE_SECRET_KEY=) echo "MINIO_OFFSITE_SECRET_KEY=$(rand)" ;;
+    WEBPUSH_VAPID_PUBLIC_KEY=) echo "WEBPUSH_VAPID_PUBLIC_KEY=$vapid_pub" ;;
+    WEBPUSH_VAPID_PRIVATE_KEY=) echo "WEBPUSH_VAPID_PRIVATE_KEY=$vapid_priv" ;;
+    WEBPUSH_SUBJECT=) echo "WEBPUSH_SUBJECT=https://$host" ;;
     *) printf '%s\n' "$line" ;;
   esac
 done < "$INFRA_DIR/.env.example" > "$tmp"

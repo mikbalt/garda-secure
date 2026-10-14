@@ -82,7 +82,8 @@ jobs:
       - name: docker compose config (full stack via COMPOSE_FILE, infra-only, local override)
         run: |
           sh scripts/gen-env.sh "$CI_HOST"
-          mkdir -p secrets && : > secrets/keycloak-admin-clients   # normally created by make preflight
+          # normally created by make preflight
+          mkdir -p secrets && : > secrets/keycloak-admin-clients && : > secrets/fcm-service-account.json
           docker compose config --quiet
           docker compose config --services | sort | tee /tmp/services
           for s in api notification-worker web nginx postgres redis minio minio-init keycloak \

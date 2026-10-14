@@ -88,15 +88,28 @@ x-backend-env: &backend-env
   WHATSAPP_TEMPLATE_LANG: ${WHATSAPP_TEMPLATE_LANG:-id}
   # Allowed WhatsApp API URL prefixes; empty = https://graph.facebook.com/ only.
   WHATSAPP_API_URL_ALLOWLIST: ${WHATSAPP_API_URL_ALLOWLIST:-}
+  # Push notifications (optional): browsers via VAPID keys, tablets via the
+  # Firebase service-account key mounted as a secret (empty file = off).
+  WEBPUSH_VAPID_PUBLIC_KEY: ${WEBPUSH_VAPID_PUBLIC_KEY:-}
+  WEBPUSH_VAPID_PRIVATE_KEY: ${WEBPUSH_VAPID_PRIVATE_KEY:-}
+  WEBPUSH_SUBJECT: ${WEBPUSH_SUBJECT:-}
+  WEBPUSH_ALLOWED_HOSTS: ${WEBPUSH_ALLOWED_HOSTS:-}
+  FCM_CREDENTIALS_FILE: /run/secrets/fcm_service_account
+  SOS_ESCALATE_AFTER: ${SOS_ESCALATE_AFTER:-3m}
+  SOS_ESCALATE_EVERY: ${SOS_ESCALATE_EVERY:-5m}
   BACKUP_HOUR: ${BACKUP_HOUR:-2}
   BACKUP_TZ: ${BACKUP_TZ:-Asia/Jakarta}
   TZ: ${TZ:-Asia/Jakarta}
   LOG_LEVEL: ${LOG_LEVEL:-info}
 
-# Created empty by `make preflight`, filled by `make keycloak-config`.
+# Created empty by `make preflight`, filled by `make keycloak-config`
+# (keycloak-admin-clients) or by the operator (fcm-service-account.json,
+# runbook "Push notifications").
 secrets:
   keycloak_admin_clients:
     file: ./secrets/keycloak-admin-clients
+  fcm_service_account:
+    file: ./secrets/fcm-service-account.json
 
 services:
   api:
@@ -112,6 +125,7 @@ services:
       PORT: "8080"
     secrets:
       - keycloak_admin_clients
+      - fcm_service_account
     depends_on:
       postgres:
         condition: service_healthy
@@ -151,6 +165,9 @@ services:
       BACKUP_TIMEOUT: ${BACKUP_TIMEOUT:-1h}
       # Keycloak DB is dumped with its own (owner) credentials.
       BACKUP_KEYCLOAK_DATABASE_URL: postgres://${KC_DB_USER}:${KC_DB_PASSWORD}@postgres:5432/${KC_DB_NAME}?sslmode=disable
+    # The worker sends the tablet pushes (FCM).
+    secrets:
+      - fcm_service_account
     depends_on:
       api:
         condition: service_healthy # api applies migrations first

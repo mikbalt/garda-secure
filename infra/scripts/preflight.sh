@@ -202,6 +202,49 @@ else
   ok "keycloak admin-client secrets present"
 fi
 
+# ── push notifications (optional): VAPID key pair + subject, FCM key file ───
+vpub=${WEBPUSH_VAPID_PUBLIC_KEY:-}
+vpriv=${WEBPUSH_VAPID_PRIVATE_KEY:-}
+vsub=${WEBPUSH_SUBJECT:-}
+if [ -z "$vpub" ] && [ -z "$vpriv" ]; then
+  warnp "WEBPUSH_VAPID_* empty: browser push is off (generate a pair: docker compose run --rm --no-deps api vapid-keys)"
+elif [ -z "$vpub" ] || [ -z "$vpriv" ]; then
+  fail "set both WEBPUSH_VAPID_PUBLIC_KEY and WEBPUSH_VAPID_PRIVATE_KEY, or neither"
+else
+  if ! command -v openssl >/dev/null; then
+    warnp "openssl not installed: VAPID keys not checked"
+  elif [ "$(vapid_public_of "$vpriv" || true)" != "$(printf '%s' "$vpub" | tr -d '=')" ]; then
+    fail "WEBPUSH_VAPID_PUBLIC_KEY does not belong to WEBPUSH_VAPID_PRIVATE_KEY (P-256, base64url)"
+  else
+    ok "VAPID key pair checked"
+  fi
+  case $vsub in
+    mailto:?*@?*|https://?*) ;;
+    *) fail "WEBPUSH_SUBJECT must be mailto:<address> or https://<url> when VAPID keys are set (got '${vsub}')" ;;
+  esac
+fi
+for v in SOS_ESCALATE_AFTER SOS_ESCALATE_EVERY; do
+  eval "val=\${$v:-}"
+  [ -z "$val" ] && continue
+  printf '%s' "$val" | grep -Eq '^([0-9]+(s|m|h))+$' || fail "$v must be a duration like 3m or 1m30s (1m-1h)"
+done
+fcm="$INFRA_DIR/secrets/fcm-service-account.json"
+if [ ! -f "$fcm" ]; then
+  : > "$fcm" && chmod 644 "$fcm"
+  warnp "secrets/fcm-service-account.json created empty: tablet push (FCM) is off until you add the Firebase key"
+elif [ ! -s "$fcm" ]; then
+  warnp "secrets/fcm-service-account.json is empty: tablet push (FCM) is off"
+elif ! command -v jq >/dev/null; then
+  warnp "jq not installed: FCM key file not checked"
+elif ! jq -e '.type == "service_account" and (.project_id | type == "string" and length > 0)
+              and (.client_email | type == "string") and (.private_key | type == "string" and startswith("-----BEGIN"))
+              and ((.token_uri // "https://oauth2.googleapis.com/token") == "https://oauth2.googleapis.com/token")' \
+            "$fcm" >/dev/null 2>&1; then
+  fail "secrets/fcm-service-account.json is not a Firebase service-account key (JSON with type service_account, project_id, client_email, private_key)"
+else
+  ok "FCM service-account key present (project $(jq -r .project_id "$fcm"))"
+fi
+
 # ── tools used by make keycloak-config / new-realm ──────────────────────────
 command -v jq >/dev/null || fail "jq is not installed (make up / deploy run keycloak-config, which needs it): apt install jq"
 
