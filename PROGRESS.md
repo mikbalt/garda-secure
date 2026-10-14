@@ -38,6 +38,8 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 ## Backlog (unclaimed)
 
+Planned major upgrades (Node 24, React 19, Vite 8, Zod 4, Tailwind 4, Flutter, Redis 8, Grafana 13): see [docs/maintenance.md](docs/maintenance.md).
+
 Verification
 - [ ] Smoke-test the full Docker stack (`make up`): Keycloak `start` under `/auth`, realm import, login, MinIO via :9443, backup job (`pg_dump` in image)
 - [ ] Real SMTP + WhatsApp template delivery test
@@ -47,8 +49,6 @@ Backend
 
 Web
 - [ ] HR receives `attendance_review` push but `/attendance?tab=review` is admin/supervisor only — drop HR from the event or give HR a read-only review view
-- [ ] e2e `push.spec.ts` was flaky once (passed on rerun) — stabilise
-- [ ] Tailwind 4 migration (dev-only `npm audit` findings in tailwind 3 build deps)
 - [ ] Manual UI pass against a running stack (all roles, both languages)
 - [ ] Promote page-local kits to `components/ui`: Avatar/PersonCell, FilterChips/ChipGroup, Segmented, PeriodStepper/DateRangeFilter, ConfirmDialog, Switch, Stat tiles, LiveIndicator (see `pages/guards/PeopleKit.tsx`, `pages/patrol/kit.tsx`, `pages/reports/ReportKit.tsx`, `pages/settings/kit.tsx`)
 - [ ] `Table`: optional row-click prop (Patrol history uses its own table markup)
@@ -92,3 +92,4 @@ Mobile (D-024) — open audit items, see docs/audit-2026-10.md
 | Keycloak 24.0.5 → 26.8.0: hostname v2, management port 9000, bootstrap admin vars, token contract (full scope off, `basic` scope), keycloak-js 26.2.4, `make keycloak-smoke`, `RESTORE_FRESH` rollback, CI stack checks, runbook upgrade procedure (D-052) | `muhamhad-pc1/claude-kc26` | 2026-10-13 | merge keycloak-26 |
 | Rebrand SecurePatrol → GARDA: all user-visible names (web, tablet, e-mail/WA, exports, Keycloak display names, alerts, docs, sales guide), app id `id.co.garda.tablet`, single icon source `branding/` + generator, PWA manifest (D-053) | `muhamhad-pc1/claude-rebrand` | 2026-10-14 | merge rebrand-garda |
 | Push notifications: Web Push (VAPID) + FCM sender, subscriptions & per-user preferences, Notifications page + service worker, `sos_unacknowledged` reminders, `attendance_review`/`device_pending`/`device_unhealthy`; tablet FCM client with local notifications and push-aware polling (D-054..D-057) | `muhamhad-pc1/claude-push`, `claude-push-mobile` | 2026-10-14 | merges 60141be, ea33a13 |
+| Dependabot clean-up: merged minor updates (Go x/crypto + miniredis, npm minor group, Prometheus 3.15, Alpine 3.24), closed majors/obsolete PRs, monthly grouped config without majors; docs/maintenance.md; stabilised push e2e | `muhamhad-pc1/claude` | 2026-10-14 | merge deps-2026-10 |

@@ -7,6 +7,7 @@ below before touching code.
 - Requirements: [SecurePatrol PRD-v3.md](SecurePatrol%20PRD-v3.md) (source of truth for scope)
 - Status / who is doing what: [PROGRESS.md](PROGRESS.md)
 - Architecture & product decisions: [DECISIONS.md](DECISIONS.md)
+- Maintenance routine, Dependabot rules, planned major upgrades: [docs/maintenance.md](docs/maintenance.md)
 
 ## Coordination protocol (multi-agent, multi-PC)
 
