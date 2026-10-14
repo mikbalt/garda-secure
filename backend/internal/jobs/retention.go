@@ -17,6 +17,9 @@ import (
 const (
 	retentionBatch   = 500
 	retentionBatches = 20
+	// pushDeliveryDays keeps finished push deliveries (webpush/fcm rows of
+	// notification_log) for a month of troubleshooting.
+	pushDeliveryDays = 30
 )
 
 // Retention applies the data retention periods (BE-S9, UU PDP 27/2022;
@@ -77,6 +80,13 @@ func (s *Scheduler) Retention(ctx context.Context) error {
 			})
 		})
 	}
+	// Push deliveries are transient (no recipient anyone reads later): rows
+	// finished more than pushDeliveryDays ago are deleted outright.
+	step("push deliveries", func() error {
+		return s.clearBatches("push_delivery", func() (int64, error) {
+			return repository.DeletePushDeliveries(ctx, s.pool, cut(pushDeliveryDays), retentionBatch*10)
+		})
+	})
 	if r.EvidencePhotoDays > 0 {
 		c := cut(r.EvidencePhotoDays)
 		step("incident photos", func() error {

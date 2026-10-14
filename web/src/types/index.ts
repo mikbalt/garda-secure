@@ -94,6 +94,8 @@ export interface Device {
   /** Latest health beacon of the tablet (D-049). */
   health?: DeviceHealth
   health_at?: string
+  /** The tablet registered a push (FCM) token. */
+  push_enabled?: boolean
 }
 
 // ── Schedules ────────────────────────────────────────────────────────────────

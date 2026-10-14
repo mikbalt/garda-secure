@@ -31,6 +31,8 @@ export const CAPABILITIES = {
   viewSettings: ['admin', 'platform-admin'] as Role[],
   viewSetup: ADMIN,
   viewAudit: ADMIN,
+  /** Own push notifications (/notifications): every web role. */
+  viewNotifications: [...WEB, 'platform-admin'] as Role[],
   // settings sections
   manageRealmSettings: ADMIN,
   /** Channels, backups, ops alerts and the ops delivery log (install-wide). */

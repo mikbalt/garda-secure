@@ -15,6 +15,7 @@ const EXPECTED: Record<Capability, Role[]> = {
   viewSettings: ['admin', 'platform-admin'],
   viewSetup: ['admin'],
   viewAudit: ['admin'],
+  viewNotifications: ['admin', 'supervisor', 'hr', 'client-readonly', 'platform-admin'],
   manageRealmSettings: ['admin'],
   managePlatform: ['platform-admin'],
   reviewAttendance: ['admin', 'supervisor'],

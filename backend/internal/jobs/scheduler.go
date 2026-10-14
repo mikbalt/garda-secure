@@ -88,6 +88,8 @@ func (s *Scheduler) jobs() []job {
 		{"monthly_recap", 10 * time.Minute, 40 * time.Minute, s.MonthlyRecap},
 		{"backups", time.Minute, backupTimeout, s.Backups},
 		{"retention", time.Hour, 50 * time.Minute, s.Retention},
+		{"sos_escalation", 30 * time.Second, 2 * time.Minute, s.EscalateSOS},
+		{"device_health", 5 * time.Minute, 4 * time.Minute, s.CheckDeviceHealth},
 	}
 }
 
@@ -294,7 +296,7 @@ func (s *Scheduler) flagAbsentSite(ctx context.Context, site *model.Site) error 
 				continue
 			}
 			st, err := s.notifier.Stage(ctx, tx, notification.Event{
-				Type: notification.EventAbsent, Site: site, DedupeKey: "absent:" + f.RecordID,
+				Type: notification.EventAbsent, Site: site, DedupeKey: "absent:" + f.RecordID, RefID: f.RecordID,
 				Params: map[string]string{
 					"guard": f.GuardName,
 					"shift": f.StartTime.In(site.Location()).Format("02 Jan 15:04"),

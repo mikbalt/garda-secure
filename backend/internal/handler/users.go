@@ -444,8 +444,33 @@ func (h *Handler) updateUser(c *fiber.Ctx) error {
 		}
 	}
 	after := kcadmin.ViewOf(u, roles)
+	h.updatePushAudience(c, p.Realm, after)
 	middleware.SetAuditAfter(c, after)
 	return c.JSON(after)
+}
+
+// updatePushAudience applies an admin's change to the user's push audience
+// right away: a disabled user loses every push subscription, new roles or
+// sites count from now on (not only from the user's next request).
+func (h *Handler) updatePushAudience(c *fiber.Ctx, realm string, v kcadmin.View) {
+	var err error
+	if !v.Enabled {
+		err = repository.DeletePushUser(c.Context(), h.DB, realm, v.ID)
+	} else {
+		var sites []string // nil = whole realm; invalid entries restrict (D-042)
+		if len(v.Sites) > 0 {
+			sites = []string{}
+			for _, s := range v.Sites {
+				if id, err := uuid.Parse(s); err == nil {
+					sites = append(sites, id.String())
+				}
+			}
+		}
+		err = repository.SetPushUserAudience(c.Context(), h.DB, realm, v.ID, v.Roles, sites)
+	}
+	if err != nil {
+		h.Log.Warn().Err(err).Str("user_id", v.ID).Msg("update push audience failed")
+	}
 }
 
 // POST /users/:id/reset-password {send_email?, temporary_password?} — a

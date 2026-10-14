@@ -24,11 +24,12 @@ const PAGES: Record<DemoRole, string[]> = {
     '/audit',
     '/users',
     '/settings?tab=devices',
+    '/notifications',
   ],
-  supervisor: ['/', '/attendance', '/patrol', '/patrol?view=plan', '/incidents', '/incidents?tab=visitors', '/schedules', '/guards', '/reports', '/reports?tab=compliance'],
-  hr: ['/', '/attendance', '/schedules', '/guards', '/reports', '/reports?tab=monthly'],
-  'client-readonly': ['/', '/attendance', '/patrol', '/patrol?view=plan', '/incidents', '/reports', '/reports?tab=compliance'],
-  'platform-admin': ['/settings?tab=channels', '/settings?tab=ops', '/settings?tab=opslog', '/settings?tab=backups'],
+  supervisor: ['/', '/attendance', '/patrol', '/patrol?view=plan', '/incidents', '/incidents?tab=visitors', '/schedules', '/guards', '/reports', '/reports?tab=compliance', '/notifications'],
+  hr: ['/', '/attendance', '/schedules', '/guards', '/reports', '/reports?tab=monthly', '/notifications'],
+  'client-readonly': ['/', '/attendance', '/patrol', '/patrol?view=plan', '/incidents', '/reports', '/reports?tab=compliance', '/notifications'],
+  'platform-admin': ['/settings?tab=channels', '/settings?tab=ops', '/settings?tab=opslog', '/settings?tab=backups', '/notifications'],
 }
 
 for (const [role, pages] of Object.entries(PAGES) as [DemoRole, string[]][]) {

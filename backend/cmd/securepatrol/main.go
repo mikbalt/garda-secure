@@ -33,11 +33,23 @@ import (
 	"github.com/securepatrol/backend/internal/metrics"
 	"github.com/securepatrol/backend/internal/middleware"
 	"github.com/securepatrol/backend/internal/notification"
+	"github.com/securepatrol/backend/internal/push"
 	"github.com/securepatrol/backend/internal/settings"
 	"github.com/securepatrol/backend/internal/storage"
 )
 
 func main() {
+	// `securepatrol vapid-keys` prints a fresh Web Push key pair (no config).
+	if len(os.Args) > 1 && os.Args[1] == "vapid-keys" {
+		pub, priv, err := push.GenerateVAPIDKeys()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "vapid-keys: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("WEBPUSH_VAPID_PUBLIC_KEY=%s\nWEBPUSH_VAPID_PRIVATE_KEY=%s\n", pub, priv)
+		return
+	}
+
 	// ── Config ───────────────────────────────────────────────────────────────
 	cfg, err := config.Load()
 	if err != nil {
@@ -128,6 +140,13 @@ func main() {
 		logger.Fatal().Err(err).Msg("settings store init failed")
 	}
 	notifier := notification.NewNotifier(pool, rdb, logger)
+	// Push transports (optional): browsers via VAPID, tablets via FCM.
+	pushSvc, err := push.New(cfg.Push)
+	if err != nil {
+		logger.Error().Err(err).Msg("FCM disabled: FCM_CREDENTIALS_FILE is not a valid service-account key")
+	}
+	notifier.UsePush(pushSvc, cfg.Push.AudienceMaxAge)
+	logger.Info().Bool("webpush", pushSvc.WebEnabled()).Bool("fcm", pushSvc.FCMEnabled()).Msg("push notifications")
 
 	// ── Worker mode: notification dispatch + scheduled jobs ─────────────────
 	if mode == "worker" {
@@ -205,6 +224,7 @@ func runWorker(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, rdb 
 	metrics.RegisterWorker(prometheus.DefaultRegisterer)
 
 	dispatcher := notification.NewWorker(pool, rdb, st, notifier, cfg.NotifyWorkers, logger)
+	dispatcher.UsePush(notifier.Push())
 	scheduler := jobs.NewScheduler(pool, rdb, notifier, stg, cfg, logger)
 	abortCtx, abort := context.WithCancel(context.Background())
 	defer abort()

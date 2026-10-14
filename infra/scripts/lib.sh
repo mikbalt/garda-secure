@@ -65,3 +65,44 @@ is_hostname() {
 compose() {
   (cd "$INFRA_DIR" && docker compose "$@")
 }
+
+# ── Web Push (VAPID) keys: P-256, base64url without padding ─────────────────
+
+b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+
+# b64url_decode — base64url (padding optional) on stdin to binary on stdout.
+b64url_decode() {
+  _bd=$(tr -- '-_' '+/' | tr -d '=\n')
+  case $((${#_bd} % 4)) in 2) _bd="$_bd==" ;; 3) _bd="$_bd=" ;; esac
+  printf '%s' "$_bd" | openssl base64 -d -A
+}
+
+# vapid_keypair — print "PUBLIC PRIVATE" of a new key pair (openssl only).
+# SEC1 DER of a P-256 key: the 32-byte scalar starts at byte 8; the last 65
+# bytes of the SubjectPublicKeyInfo DER are the uncompressed point.
+vapid_keypair() {
+  _vk=$(mktemp) || return 1
+  if ! openssl ecparam -name prime256v1 -genkey -noout -out "$_vk" 2>/dev/null; then
+    rm -f "$_vk"; return 1
+  fi
+  _vpriv=$(openssl ec -in "$_vk" -outform DER 2>/dev/null | tail -c +8 | head -c 32 | b64url)
+  _vpub=$(openssl ec -in "$_vk" -pubout -outform DER 2>/dev/null | tail -c 65 | b64url)
+  rm -f "$_vk"
+  [ ${#_vpub} -eq 87 ] && [ ${#_vpriv} -eq 43 ] || return 1
+  printf '%s %s\n' "$_vpub" "$_vpriv"
+}
+
+# vapid_public_of PRIVATE — the public key (base64url) of a private key.
+vapid_public_of() {
+  _vt=$(mktemp) || return 1
+  printf '%s' "$1" | b64url_decode > "$_vt" 2>/dev/null
+  if [ "$(wc -c < "$_vt" | tr -d ' ')" != 32 ]; then rm -f "$_vt"; return 1; fi
+  # ECPrivateKey { version 1, key, [0] prime256v1 } as DER (a file: binary
+  # stdin is not portable), then derive the public key.
+  { printf '\060\061\002\001\001\004\040'; cat "$_vt"
+    printf '\240\012\006\010\052\206\110\316\075\003\001\007'; } > "$_vt.der"
+  _vpub=$(openssl ec -inform DER -in "$_vt.der" -pubout -outform DER 2>/dev/null | tail -c 65 | b64url)
+  rm -f "$_vt" "$_vt.der"
+  [ ${#_vpub} -eq 87 ] || return 1
+  printf '%s\n' "$_vpub"
+}

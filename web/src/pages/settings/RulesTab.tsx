@@ -28,7 +28,7 @@ import {
 import { ConfirmDialog, IconTile, SectionHeader, Switch } from './kit'
 import type { Channel, ChannelInfo, EventTypes, NotificationRule, Site } from '../../types'
 
-const FALLBACK_EVENTS = ['sos', 'incident_high', 'incident_filed', 'absent', 'late_clock_in', 'patrol_not_started', 'sla_missed', 'defect_opened', 'monthly_recap']
+const FALLBACK_EVENTS = ['sos', 'sos_unacknowledged', 'incident_high', 'incident_filed', 'absent', 'late_clock_in', 'patrol_not_started', 'sla_missed', 'defect_opened', 'monthly_recap']
 
 /** Registered delivery channels and whether they are set up (GET /notifications/channels, D-047). */
 function useChannels() {

@@ -5,6 +5,7 @@ import { adminEn } from './admin.en'
 import { platformEn } from './platform.en'
 import { usersEn } from './users.en'
 import { patrol2En } from './patrol2.en'
+import { pushEn } from './push.en'
 
 /** English dictionary. Keys are the source of truth for the `Key` type. */
 export const en = {
@@ -438,6 +439,7 @@ export const en = {
   ...platformEn,
   ...usersEn,
   ...patrol2En,
+  ...pushEn,
 } as const
 
 export type Key = keyof typeof en

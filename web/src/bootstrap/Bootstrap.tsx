@@ -5,6 +5,7 @@ import { initKeycloak, login, rememberRealm, resolveRealm } from '../keycloak'
 import { config } from '../config'
 import { useT } from '../i18n/context'
 import { clearLocalSession, keycloakLogoutUrl, startIntent } from '../lib/session'
+import { dropPushForAccountSwitch } from '../lib/push'
 import { readStored, STORAGE_KEYS } from '../lib/storage'
 import { FullScreenMessage, LoadingScreen, RealmPicker } from './RealmPicker'
 
@@ -50,6 +51,8 @@ function initialPhase(): Phase {
   if (intent === 'org') {
     stripIntent()
     rememberRealm(null)
+    // Choosing another organisation: stop this browser receiving the previous account's push.
+    void dropPushForAccountSwitch({ server: false })
     return config.realms.length === 1 && !config.demo ? { kind: 'auth', realm: config.realms[0].id } : { kind: 'pick' }
   }
   const realm = resolveRealm()
@@ -118,6 +121,7 @@ export function Bootstrap() {
         label: t('org.switch'),
         onClick: () => {
           rememberRealm(null)
+          void dropPushForAccountSwitch({ server: false })
           setPhase({ kind: 'pick' })
         },
       })

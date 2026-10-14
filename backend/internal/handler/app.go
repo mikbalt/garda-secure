@@ -91,7 +91,9 @@ func (h *Handler) Mount(app *fiber.App, v *middleware.Validator) {
 		middleware.LoadDevice(h.DB),
 		middleware.LimitJSONBody(MaxJSONBodyBytes, "/api/v1/media", "/api/v1/sites/*/floorplans"),
 		middleware.LimitWrites(h.limiter, h.Cfg.RateLimitUserWrites, h.Cfg.RateLimitDeviceWrites),
+		h.RefreshPushAudience(),
 		middleware.Audit(h.DB),
+		h.SyncTablets(),
 	)
 	h.Register(api)
 }

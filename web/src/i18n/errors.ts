@@ -11,6 +11,7 @@ import {
 } from '../api/client'
 import type { Lang } from '../lib/time'
 import { PATROL_ERROR_CODES, exportTooLargeText } from './errors.patrol'
+import { PUSH_ERROR_CODES } from './errors.push'
 
 type Pair = { en: string; id: string }
 
@@ -203,6 +204,7 @@ export const ERROR_CODES: Record<string, Pair> = {
   },
   invalid_phone_number_id: { en: 'The phone number ID must be digits only.', id: 'Phone number ID hanya boleh berisi angka.' },
   ...PATROL_ERROR_CODES,
+  ...PUSH_ERROR_CODES,
 }
 
 /** Why a channel test failed (`reason` of 502 `delivery_failed`). */

@@ -104,6 +104,8 @@ type Device struct {
 	// in by GET /devices only.
 	Health   json.RawMessage `json:"health,omitempty"`
 	HealthAt *time.Time      `json:"health_at,omitempty"`
+	// PushEnabled: the tablet registered an FCM token (PUT /device/push-token).
+	PushEnabled bool `json:"push_enabled"`
 }
 
 // ShiftTemplate is a recurring schedule from which concrete shifts are generated.

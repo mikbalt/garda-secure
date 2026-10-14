@@ -9,10 +9,12 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/securepatrol/backend/internal/middleware"
 	"github.com/securepatrol/backend/internal/model"
+	"github.com/securepatrol/backend/internal/notification"
 	"github.com/securepatrol/backend/internal/repository"
 	"github.com/securepatrol/backend/internal/service"
 )
@@ -140,6 +142,7 @@ func (h *Handler) updateSite(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	markSync(c, &out.ID) // site config (language, grace minutes ...) lives on the tablets
 	return c.JSON(out)
 }
 
@@ -261,6 +264,7 @@ func (h *Handler) createGuard(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	markSync(c, g.SiteID) // roster changed
 	return c.Status(fiber.StatusCreated).JSON(g)
 }
 
@@ -277,12 +281,14 @@ func (h *Handler) updateGuard(c *fiber.Ctx) error {
 	if err := h.validateGuard(c, &b, g.ID); err != nil {
 		return h.fail(c, err)
 	}
+	oldSite := g.SiteID
 	g.Name, g.EmployeeID, g.SiteID, g.Role, g.Status, g.KeycloakUserID =
 		b.Name, b.EmployeeID, b.SiteID, b.Role, b.Status, b.KeycloakUserID
 	out, err := repository.UpdateGuard(c.Context(), h.DB, *g)
 	if err != nil {
 		return h.fail(c, err)
 	}
+	markSync(c, oldSite, out.SiteID) // roster of both sites
 	return c.JSON(out)
 }
 
@@ -319,6 +325,7 @@ func (h *Handler) setGuardPin(c *fiber.Ctx) error {
 	if err := repository.SetGuardPinHash(c.Context(), h.DB, g.ID, string(hash)); err != nil {
 		return h.fail(c, err)
 	}
+	markSync(c, g.SiteID) // the roster carries the PIN hash
 	return c.JSON(fiber.Map{"has_pin": true})
 }
 
@@ -378,10 +385,30 @@ func (h *Handler) updateDevice(c *fiber.Ctx) error {
 	if b.Status == "active" && b.SiteID == nil {
 		return h.fail(c, service.BadRequest("site_required", "assign a site before activating the device"))
 	}
-	out, err := repository.UpdateDevice(c.Context(), h.DB, d.ID, b.Name, b.SiteID, b.Status, actor(c))
+	ctx := c.Context()
+	var out *model.Device
+	var staged notification.Staged
+	err = pgx.BeginFunc(ctx, h.DB, func(tx pgx.Tx) error {
+		var err error
+		if out, err = repository.UpdateDevice(ctx, tx, d.ID, b.Name, b.SiteID, b.Status, actor(c)); err != nil {
+			return err
+		}
+		if out.Status != d.Status || deref(out.SiteID) != deref(d.SiteID) {
+			// Approved, revoked or moved: the tablet re-reads /device/me.
+			if staged, err = h.stageDeviceStatus(ctx, tx, out, requestID(c)); err != nil {
+				return err
+			}
+		}
+		if out.Status == "revoked" {
+			out.PushEnabled = false
+			return repository.ClearDevicePushToken(ctx, tx, d.ID) // after staging: the message still goes out
+		}
+		return nil
+	})
 	if err != nil {
 		return h.fail(c, err)
 	}
+	h.Notifier.Wake(ctx, staged)
 	return c.JSON(out)
 }
 
@@ -399,7 +426,19 @@ func (h *Handler) registerDevice(c *fiber.Ctx) error {
 		return h.fail(c, service.BadRequest("invalid_name", "name is required (max 100 characters)"))
 	}
 	p := middleware.GetPrincipal(c)
-	d, err := repository.RegisterDevice(c.Context(), h.DB, p.Realm, p.Subject, b.Name)
+	var d *model.Device
+	err := h.writeWithEvents(c, func(tx pgx.Tx) ([]notification.Event, error) {
+		var created bool
+		var err error
+		if d, created, err = repository.RegisterDeviceNew(c.Context(), tx, p.Realm, p.Subject, b.Name); err != nil || !created {
+			return nil, err
+		}
+		// A new tablet waits for approval: tell the realm's admins (push).
+		return []notification.Event{{
+			Type: notification.EventDevicePending, Realm: p.Realm, RefID: d.ID,
+			DedupeKey: "device_pending:" + d.ID, Params: map[string]string{"device": d.Name},
+		}}, nil
+	})
 	if err != nil {
 		return h.fail(c, err)
 	}

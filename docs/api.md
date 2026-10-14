@@ -118,6 +118,9 @@ invalid allows no site (fail closed). `GET /me` shows `sites` and
 | POST | `/device/telemetry` | active device, no guard header: health beacon `{app_version, app_build, platform, os_version, outbox_pending, outbox_failed, outbox_paused?, sos_pending, last_sync?, roster_synced_at?, clock_offset_ms, private_ca, pin_failures?, db_key_reset?, errors[] (≤ 10, each ≤ 500 chars), sent_at?}` → **204**; the latest beacon is stored per device (shown in `GET /devices`). At most 1 per minute per device (429 `rate_limited` + `Retry-After`); 400 `too_many_errors`, `invalid_count`, `field_too_long` |
 | POST | `/device/guard-sessions` | active device: `{guard_id, pin}` → 200 `{token, guard_id, expires_at}` (`Cache-Control: no-store`). 401 `{code: invalid_pin, attempts_left}`; 423 `{code: pin_locked, retry_after}` (seconds, also `Retry-After`) — 5 consecutive wrong PINs of a guard (counted on the server across tablets, reset on success or when an admin sets a PIN) lock the check for 15 min; the 5th wrong PIN already answers 423; 403 `guard_not_allowed` (unknown/inactive guard or other site); 409 `pin_not_set`; 400 `pin_required`; 429 `rate_limited` (`RATE_LIMIT_GUARD_SESSIONS_PER_MIN` per tablet, default 20). Every attempt is audited with the guard (`resource_type` `device.guard-sessions`, failures/locks with the lock state as `before`) |
 
+| PUT | `/device/push-token` | **pending or active** device, no guard header: `{token: "<FCM registration token>", platform: android\|ios}` → **204**. One token per device, the latest wins (a token registered by another device moves here). 400 `invalid_token` (1–4096 printable ASCII, no spaces), `invalid_platform`; 403 `device_unregistered`, `device_revoked`. The token is cleared when the device is revoked. See *Push notifications* |
+| DELETE | `/device/push-token` | same roles → **204**; the tablet gets no more pushes |
+
 Denials: `403 {code: device_unregistered | device_pending | device_revoked | guard_unknown | guard_not_allowed | guard_token_invalid}`, `400 {code: guard_required}`.
 
 ## Sites — `GET` web roles, writes `admin`
@@ -151,8 +154,8 @@ check). Responses always contain the full effective config.
 
 | Method | Path | Body |
 |---|---|---|
-| GET | `/devices` | devices of the realm (site-scoped admins: their sites + unassigned) incl. `health?` (the latest `/device/telemetry` beacon plus `received_at`) and `health_at?` |
-| PUT | `/devices/:id` | `{name?, site_id, status: pending\|active\|revoked}` — `active` requires `site_id` |
+| GET | `/devices` | devices of the realm (site-scoped admins: their sites + unassigned) incl. `health?` (the latest `/device/telemetry` beacon plus `received_at`), `health_at?` and `push_enabled` (the tablet registered an FCM token) |
+| PUT | `/devices/:id` | `{name?, site_id, status: pending\|active\|revoked}` — `active` requires `site_id`. A changed status or site sends the tablet an FCM `device_status` message; `revoked` then clears its push token |
 
 ## Schedules — read `admin, supervisor, hr`; write `admin`
 
@@ -337,7 +340,11 @@ worker was down it catches up until the 5th; e-mail gets an HTML table,
 WhatsApp a plain-text summary, both per guard-day as in `/reports/attendance/monthly`
 with a site total, in the site's language (`id`/`en`); both include the site's patrol schedule
 compliance when it has scheduled patrols), `patrol_not_started` (a scheduled
-patrol was not started within its grace period — see *Patrol schedules*). `absent` covers shifts up to 3 days back
+patrol was not started within its grace period — see *Patrol schedules*),
+`sos_unacknowledged` (an SOS still unacknowledged `SOS_ESCALATE_AFTER` (3 min)
+after it reached the server, repeated every `SOS_ESCALATE_EVERY` (5 min), 3
+reminders at most; after a worker outage only the latest due reminder is sent;
+placeholders `{guard} {site} {time} {minutes} {escalation} {location}`). `absent` covers shifts up to 3 days back
 (older flags found after a worker outage are recorded but not notified after
 24 h). `sla_missed` is raised for late scans, for unscanned SLA checkpoints of
 a session that ended (also early or auto-abandoned), and for overdue
@@ -352,6 +359,84 @@ the channel settings): `ops_backup_failed` (a backup run failed),
 with no SOS rule), `ops_job_failing` (a scheduled job failed 5 times in a row;
 hourly). Retry schedules: SOS 10 s, 20 s, 30 s, then every 60 s for 30 min;
 other events 30 s, 2 min, 10 min, 30 min, then `failed`.
+
+## Push notifications
+
+Browser push (Web Push, RFC 8030/8291/8292 with VAPID) for dashboard users and
+Firebase Cloud Messaging (HTTP v1) for tablets. Both are optional (runbook
+*Push notifications*). Push deliveries go through the same outbox as e-mail
+and WhatsApp (`notification_log`, channels `webpush` — recipient = subscription
+id — and `fcm` — recipient = FCM token; SOS lane for `sos`,
+`sos_unacknowledged`, `sos_ack`), but they are **not** listed in
+`/notifications/log` / `ops-log`, have no rule recipients and are deleted 30
+days after they finished. A push service answering 404/410 (FCM:
+`UNREGISTERED`) removes the subscription/token; other errors follow the retry
+policy. Push never raises `ops_sos_undelivered` (an SOS without e-mail/WhatsApp
+rule still does).
+
+Every route below: web roles `admin, supervisor, hr, client-readonly,
+platform-admin`; each user manages only their own browsers and preferences.
+
+| Method | Path | Body / notes |
+|---|---|---|
+| GET | `/push/config` | `{webpush: {enabled, vapid_public_key (base64url, 65-byte P-256 point; "" when off)}, fcm: {enabled}}` |
+| POST | `/push/subscriptions` | `{kind: "webpush", endpoint, keys: {p256dh, auth}, label?}` (a browser `PushSubscription`; label ≤ 100 chars, e.g. "Chrome on Windows") → 201 `{id}`; 200 `{id}` when the caller already had this endpoint (keys/label refreshed). An endpoint of another user (same browser profile, new login) moves to the caller (201). 400 `invalid_endpoint` (https, default port, no credentials, host a push service: `fcm.googleapis.com`, `android.googleapis.com`, `*.push.services.mozilla.com`, `*.push.apple.com`, `*.notify.windows.com`, plus `WEBPUSH_ALLOWED_HOSTS`; IP literals rejected), `invalid_keys` (p256dh a P-256 point, auth 16 bytes, base64url), `invalid_kind`, `field_too_long`; 409 `push_disabled`, `too_many_subscriptions` (20 per user) |
+| GET | `/push/subscriptions` | own browsers, newest first: `[{id, kind, label, endpoint, created_at, last_success_at, last_failure_at, last_error}]` (keys are never returned) |
+| DELETE | `/push/subscriptions/:id` | own only → 204, else 404 |
+| GET | `/push/preferences` | `{events: {<event>: bool}, available: [<event>]}` — `available` = push events the caller's roles can receive (catalogue order), `events` = effective value (the user's override, else the default) of each |
+| PUT | `/push/preferences` | `{events: {<event>: bool}}` (partial) → same shape as GET; 400 `invalid_event` for an event not in `available` |
+| POST | `/push/test` | `{lang?: id\|en}` (optional body) — sends a test push to all of the caller's browsers right away → `{sent, failed}`; gone subscriptions are removed (count as failed). 409 `push_disabled`; 3 per minute per user (429) |
+
+**Push events and audiences** (realm of the site; site-scoped users per D-042
+only for their sites; defaults in brackets, users override per event):
+
+| Group | Event | Roles (default) | Deep link `url` | Severity |
+|---|---|---|---|---|
+| SOS & incidents | `sos` | admin, supervisor (on) | `/incidents?tab=sos` | critical |
+| | `sos_unacknowledged` | admin, supervisor (on) | `/incidents?tab=sos` | critical |
+| | `incident_high` | admin, supervisor (on); client-readonly (off) | `/incidents?id=<id>` | high |
+| | `incident_filed` | admin, supervisor (off) | `/incidents?id=<id>` | normal |
+| Patrol | `patrol_not_started` | admin, supervisor (on); client-readonly (off) | `/patrol` | high |
+| | `sla_missed` | admin, supervisor (on) | `/patrol` | high |
+| Attendance | `absent` | admin, supervisor, hr (on) | `/attendance` | high |
+| | `late_clock_in` | admin, supervisor, hr (off) | `/attendance` | normal |
+| | `attendance_review` | admin, supervisor, hr (on) | `/attendance?tab=review` | normal |
+| Operations | `defect_opened` | admin, supervisor (on) | `/incidents?tab=defects` | normal |
+| | `device_pending` | admin (on) | `/settings?tab=devices` | normal |
+| | `device_unhealthy` | admin (on) | `/settings?tab=devices` | high |
+
+`attendance_review` (a clock-in landed in the review queue), `device_pending`
+(a new tablet registered; realm-wide, no site) and `device_unhealthy` (an
+active tablet's beacon shows outbox items unsynced for > 1 h, a clock off by
+> 2 min, or no beacon for > 1 h although the tablet was active today in site
+time; at most once per tablet every 6 h) are **push only** — not rule events.
+Audiences come from a snapshot of each user's realm, roles and `sites` claim,
+stored at subscribe time and refreshed on the user's authenticated requests
+(at most every 10 min unless they change) and when an admin edits the user
+(`PUT /users/:id`; a disabled user loses all subscriptions). Users without an
+authenticated request for `PUSH_AUDIENCE_MAX_AGE` (30 days) get no pushes.
+
+**Web push payload** (JSON, end-to-end encrypted, aes128gcm):
+`{title, body, url, tag, event, severity: critical|high|normal, site_id}` —
+title/body are the event's notification text in the site language (body ≤ 600
+chars), `url` an app path, `tag` `<event>-<ref id>` (`sos-<id>` for an SOS and
+its reminders, so a reminder replaces the alert). Test push: `event: "test"`,
+`url: "/notifications"`. Headers: `TTL` 120 s for `sos`/`sos_unacknowledged`,
+else 3600 s; `Urgency: high` for critical, else `normal`.
+
+**Tablet (FCM) messages** are high-priority **data messages** (no
+`notification` block), all values strings:
+`data = {type, site_id, ref_id, title, body}`; Android `priority: high`,
+`ttl` and `collapse_key` per type; iOS `apns-push-type: background`,
+`content-available: 1`.
+
+| `type` | Sent to | `ref_id` | TTL |
+|---|---|---|---|
+| `sos` | the other active tablets of the site (not the one that raised it) | SOS id | 60 s |
+| `sos_ack` | the site's active tablets, once, when the SOS is first acknowledged | SOS id | 5 min |
+| `patrol_not_started` | the site's active tablets | expectation id | 15 min |
+| `device_status` | that tablet, when its status or site changes (approved, revoked, moved; also while pending) — re-read `/device/me` | device id | 24 h |
+| `sync` | the site's active tablets after roster (guards, PINs), routes, QR codes, patrol schedules, shifts/templates or site settings changed — debounced: changes are collected per 30-second window and sent at its end (title/body empty) | "" | 1 h |
 
 ## Patrol schedules (D-035)
 

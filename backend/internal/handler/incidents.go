@@ -190,10 +190,12 @@ func (h *Handler) createIncident(c *fiber.Ctx) error {
 		// critical ones also incident_high. Both are staged with the row.
 		events := []notification.Event{{
 			Type: notification.EventIncidentFiled, Site: site, DedupeKey: "incident_filed:" + inc.ID, Params: params,
+			RefID: inc.ID,
 		}}
 		if inc.Severity == "high" || inc.Severity == "critical" {
 			events = append(events, notification.Event{
 				Type: notification.EventIncidentHigh, Site: site, DedupeKey: "incident:" + inc.ID, Params: params,
+				RefID: inc.ID,
 			})
 		}
 		return events, nil
@@ -352,6 +354,7 @@ func (h *Handler) createSos(c *fiber.Ctx) error {
 		}
 		return []notification.Event{{
 			Type: notification.EventSOS, Site: site, DedupeKey: "sos:" + alert.ID,
+			RefID: alert.ID, SourceDeviceID: *deviceID(c),
 			Params: map[string]string{
 				"guard": alert.GuardName, "time": alert.FiredAt.In(site.Location()).Format("02 Jan 15:04:05"),
 				"location": fmtGPS(alert.GPSLat, alert.GPSLng),
@@ -380,13 +383,35 @@ func (h *Handler) acknowledgeSos(c *fiber.Ctx) error {
 	if _, err := h.siteFor(c, alert.SiteID); err != nil {
 		return h.fail(c, err)
 	}
-	if g := middleware.GetGuard(c); g != nil && g.Role != "supervisor" {
+	g := middleware.GetGuard(c)
+	if g != nil && g.Role != "supervisor" {
 		return h.fail(c, service.Forbidden("supervisor_only", "only a supervisor can acknowledge SOS alerts"))
 	}
-	out, err := repository.AcknowledgeSosAlert(c.Context(), h.DB, alert.ID, actor(c))
+	by := actor(c)
+	if g != nil {
+		by = g.Name
+	} else if p := middleware.GetPrincipal(c); p != nil {
+		by = p.Actor()
+	}
+	ctx := c.Context()
+	var out *model.SosAlert
+	var staged notification.Staged
+	err = pgx.BeginFunc(ctx, h.DB, func(tx pgx.Tx) error {
+		var err error
+		if out, err = repository.AcknowledgeSosAlert(ctx, tx, alert.ID, actor(c)); err != nil {
+			return err
+		}
+		if alert.AcknowledgedAt != nil {
+			return nil // already acknowledged: the tablets were told then
+		}
+		// The site's tablets stop their SOS alarm (FCM sos_ack).
+		staged, err = h.stageSosAck(ctx, tx, out, by, requestID(c))
+		return err
+	})
 	if err != nil {
 		return h.fail(c, err)
 	}
+	h.Notifier.Wake(ctx, staged)
 	return c.JSON(out)
 }
 
@@ -465,7 +490,7 @@ func (h *Handler) createDefect(c *fiber.Ctx) error {
 			return nil, nil
 		}
 		return []notification.Event{{
-			Type: notification.EventDefectOpened, Site: site, DedupeKey: "defect:" + d.ID,
+			Type: notification.EventDefectOpened, Site: site, DedupeKey: "defect:" + d.ID, RefID: d.ID,
 			Params: map[string]string{
 				"guard": d.GuardName, "defect": deref(d.DefectType), "location": deref(d.Location),
 				"description": deref(d.Description),

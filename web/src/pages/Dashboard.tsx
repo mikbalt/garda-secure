@@ -18,6 +18,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { RequireSite } from '../components/RequireSite'
+import { PushNudge } from '../components/PushNudge'
 import { CardSkeleton } from '../components/LoadingSkeleton'
 import { Card, ErrorState } from '../components/ui/States'
 import { Badge, Dot, SeverityBadge, StatusBadge } from '../components/ui/Badge'
@@ -256,6 +257,7 @@ function Today({ site }: { site: Site }) {
       </div>
 
       <SetupCallout />
+      <PushNudge />
 
       {/* KPIs */}
       <div className={`grid grid-cols-2 gap-3 sm:gap-4 ${kpiCount >= 4 ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`}>

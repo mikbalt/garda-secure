@@ -42,6 +42,7 @@ import (
 	"github.com/securepatrol/backend/internal/jobs"
 	"github.com/securepatrol/backend/internal/middleware"
 	"github.com/securepatrol/backend/internal/notification"
+	"github.com/securepatrol/backend/internal/push"
 	"github.com/securepatrol/backend/internal/service"
 	"github.com/securepatrol/backend/internal/settings"
 	"github.com/securepatrol/backend/internal/storage"
@@ -94,6 +95,8 @@ type env struct {
 	sched    *jobs.Scheduler
 	settings *settings.Store
 	cfg      *config.Config
+	notifier *notification.Notifier
+	push     *push.Service // transports from cfg.Push (disabled unless a test configures them)
 
 	// Guard tokens from POST /device/guard-sessions by "tablet|guard";
 	// doH sends them as X-Guard-Token unless the caller sets that header.
@@ -155,6 +158,11 @@ func newEnv(t *testing.T, opts ...func(*config.Config)) *env {
 	}
 	log := zerolog.Nop()
 	notifier := notification.NewNotifier(pool, rdb, log)
+	pushSvc, err := push.New(cfg.Push)
+	if err != nil {
+		t.Fatal(err)
+	}
+	notifier.UsePush(pushSvc, cfg.Push.AudienceMaxAge)
 	validator := middleware.NewValidator([]middleware.RealmKeys{
 		{Realm: realm1, Issuer: issuer + realm1, JWKSURL: jwks.URL},
 		{Realm: realm2, Issuer: issuer + realm2, JWKSURL: jwks.URL},
@@ -168,6 +176,7 @@ func newEnv(t *testing.T, opts ...func(*config.Config)) *env {
 	h.Mount(app, validator)
 
 	return &env{t: t, app: app, pool: pool, mr: mr, key: key, settings: st, cfg: cfg, guardTokens: map[string]string{},
+		notifier: notifier, push: pushSvc,
 		sched: jobs.NewScheduler(pool, rdb, notifier, stg, cfg, log)}
 }
 
