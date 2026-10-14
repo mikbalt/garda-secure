@@ -89,7 +89,16 @@ jobs:
         run: |
           if [ -f pubspec.lock ]; then flutter pub get --enforce-lockfile
           else echo "::warning::mobile/pubspec.lock is not committed yet (INF-C6)"; flutter pub get; fi
-      - run: flutter build apk --debug
+      # Dummy push values: proves the Gradle side of the FCM dart-defines
+      # (android/app/build.gradle writes them as Firebase resources) on every
+      # change, not only on release tags. This APK is not published.
+      - name: flutter build apk --debug (with dummy FCM defines)
+        run: >-
+          flutter build apk --debug
+          --dart-define=SP_FCM_API_KEY=ci-dummy-key
+          --dart-define=SP_FCM_APP_ID=1:000000000000:android:0000000000000000
+          --dart-define=SP_FCM_PROJECT_ID=ci-dummy
+          --dart-define=SP_FCM_SENDER_ID=000000000000
 
   release-apk:
     name: Release APK (signed)
@@ -170,9 +179,24 @@ jobs:
         env:
           BUILD_NAME: ${{ steps.version.outputs.name }}
           BUILD_NUMBER: ${{ steps.version.outputs.number }}
+          # Push (Firebase Cloud Messaging, mobile/README.md). Optional: without
+          # all four the APK has push disabled and polls as before.
+          SP_FCM_API_KEY: ${{ secrets.SP_FCM_API_KEY }}
+          SP_FCM_APP_ID: ${{ secrets.SP_FCM_APP_ID }}
+          SP_FCM_PROJECT_ID: ${{ secrets.SP_FCM_PROJECT_ID }}
+          SP_FCM_SENDER_ID: ${{ secrets.SP_FCM_SENDER_ID }}
         run: |
           if [ -f pubspec.lock ]; then flutter pub get --enforce-lockfile; else flutter pub get; fi
-          flutter build apk --release --build-name="$BUILD_NAME" --build-number="$BUILD_NUMBER"
+          defines=()
+          if [ -n "$SP_FCM_API_KEY" ] && [ -n "$SP_FCM_APP_ID" ] && [ -n "$SP_FCM_PROJECT_ID" ] && [ -n "$SP_FCM_SENDER_ID" ]; then
+            for k in SP_FCM_API_KEY SP_FCM_APP_ID SP_FCM_PROJECT_ID SP_FCM_SENDER_ID; do
+              defines+=("--dart-define=$k=${!k}")
+            done
+            echo "Push (FCM) enabled for Firebase project $SP_FCM_PROJECT_ID."
+          else
+            echo "::notice title=Push disabled::Set SP_FCM_API_KEY, SP_FCM_APP_ID, SP_FCM_PROJECT_ID and SP_FCM_SENDER_ID (Settings → Secrets → Actions) to build the APK with push notifications. Without them tablets rely on polling."
+          fi
+          flutter build apk --release --build-name="$BUILD_NAME" --build-number="$BUILD_NUMBER" "${defines[@]}"
 
       - name: Verify the APK is signed with the release key (not the debug key)
         if: env.HAS_SIGNING == 'true'

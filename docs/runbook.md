@@ -372,6 +372,16 @@ expected / on time / late / missed per route and day.
   items, last sync, clock offset, repeated PIN failures and its last errors to
   `POST /api/v1/device/telemetry` (the endpoint must exist on the server; until then
   the tablet retries every 6 h).
+* *Push notifications (optional):* an APK built with the Firebase values
+  (`SP_FCM_*` secrets, mobile/README.md) registers its FCM token with the server and
+  reacts at once to an SOS from another post, approval/revocation/move and roster
+  changes; without them, or while push is unhealthy, it polls as before (SOS every
+  15 s, 30 s on the lock screen; with healthy push every 60 s — SOS never depends on
+  push alone). Android 13+ asks for the notification permission right after the
+  tablet registers — allow it. *About this tablet* shows the push status (Active /
+  Not configured / Permission denied / Token not sent yet) with *Ask for permission
+  again*; the health beacon reports it as `push`. Server side (Firebase service
+  account, sending): see runbook: *Push notifications*.
 
 ### Kiosk / MDM setup (dedicated device)
 
