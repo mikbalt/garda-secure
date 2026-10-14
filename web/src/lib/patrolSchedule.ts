@@ -3,7 +3,7 @@
  * (service/schedule.go): validation, patrols per window, a human preview and
  * the next planned patrol times in the site's time zone.
  */
-import { addDays, isoWeekday, todayIn, weekdayName, zonedToUtcIso, type Lang } from './time'
+import { addDays, isoWeekday, localDateOf, weekdayName, zonedToUtcIso, type Lang } from './time'
 import type { RouteSchedule } from '../types'
 
 export const MAX_SCHEDULES = 20
@@ -111,7 +111,8 @@ export interface PlannedPatrol {
  */
 export function plannedPatrols(schedules: RouteSchedule[], tz: string, from: number, horizonMs: number, max = 50): PlannedPatrol[] {
   const out: PlannedPatrol[] = []
-  const today = todayIn(tz)
+  // Start from the site-local date of `from`, not of "now" (they differ in tests and when planning ahead).
+  const today = localDateOf(new Date(from), tz)
   const to = from + horizonMs
   const days = Math.ceil(horizonMs / 86_400_000) + 1
   for (let d = -1; d <= days; d++) {

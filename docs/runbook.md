@@ -849,6 +849,7 @@ stuck (see §3).
 | Symptom | Check |
 |---|---|
 | `make up` stops in preflight | Fix the FAIL lines; `make preflight` re-checks. |
+| Browser that used the app before can't reach the start page (endless loading, error after login, wrong organisation) | Open `https://SERVER_HOST/?reset`: clears this browser's sign-in state and the Keycloak session, then sign in again. `/?org` only re-opens the organisation picker. After 20 s of loading the app offers *Reset sign-in* itself. |
 | Web login loops / "invalid token" | `KEYCLOAK_PUBLIC_URL` = `https://SERVER_HOST/auth` (the URL in the browser + `/auth`) and the realm in `KEYCLOAK_REALMS`; `make keycloak-config`. |
 | "Invalid redirect uri" on login | `make keycloak-config` (redirect URIs follow `PUBLIC_URL`). |
 | Keycloak stays "starting"/unhealthy after an upgrade | `docker compose logs keycloak`: schema migration still running (large session tables), an unknown/removed option, or the database is from a **newer** Keycloak (restore the matching dump, §2). The healthcheck allows 3 min + 10 × 20 s. |

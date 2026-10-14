@@ -131,7 +131,7 @@ export function FullScreenMessage({
       <h1 className="mt-6 text-xl font-semibold tracking-tight text-gray-900">{title}</h1>
       {body && <p className="mt-2 max-w-md text-sm text-gray-600">{body}</p>}
       {actions && (
-        <div className="mt-6 flex gap-2">
+        <div className="mt-6 flex flex-wrap justify-center gap-2">
           {actions.map((a, i) => (
             <button
               key={a.label}
