@@ -9,7 +9,15 @@ export interface Column<T> {
   className?: string
   /** Visually right-aligned numeric column. */
   numeric?: boolean
+  /**
+   * Pin the column to the right edge while the table scrolls horizontally —
+   * for a row's action button, so it stays visible on narrow screens.
+   */
+  stickyEnd?: boolean
 }
+
+// Solid background (rows are translucent on hover) and a soft edge towards the scrolled cells.
+const STICKY_END = 'sticky right-0 z-[1] shadow-[-10px_0_10px_-10px_rgba(15,23,42,0.18)]'
 
 interface TableProps<T> {
   columns: Column<T>[]
@@ -48,7 +56,7 @@ export function Table<T>({ columns, rows, rowKey, isLoading, error, empty, capti
                 scope="col"
                 className={`whitespace-nowrap px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500 ${
                   c.numeric ? 'text-right' : 'text-left'
-                } ${c.className ?? ''}`}
+                } ${c.stickyEnd ? `${STICKY_END} bg-gray-50` : ''} ${c.className ?? ''}`}
               >
                 {c.header}
               </th>
@@ -57,11 +65,13 @@ export function Table<T>({ columns, rows, rowKey, isLoading, error, empty, capti
         </thead>
         <tbody className="divide-y divide-gray-100">
           {rows.map((row) => (
-            <tr key={rowKey(row)} className={`transition-colors hover:bg-gray-50/80 ${rowClassName?.(row) ?? ''}`}>
+            <tr key={rowKey(row)} className={`group/row transition-colors hover:bg-gray-50/80 ${rowClassName?.(row) ?? ''}`}>
               {columns.map((c) => (
                 <td
                   key={c.key}
-                  className={`px-4 py-3 align-middle text-gray-800 ${c.numeric ? 'text-right tabular-nums' : ''} ${c.className ?? ''}`}
+                  className={`px-4 py-3 align-middle text-gray-800 ${c.numeric ? 'text-right tabular-nums' : ''} ${
+                    c.stickyEnd ? `${STICKY_END} bg-white transition-colors group-hover/row:bg-gray-50` : ''
+                  } ${c.className ?? ''}`}
                 >
                   {c.cell(row)}
                 </td>
@@ -78,7 +88,9 @@ export function Table<T>({ columns, rows, rowKey, isLoading, error, empty, capti
                   <Cell
                     key={c.key}
                     {...(i === 0 ? { scope: 'row' } : {})}
-                    className={`px-4 py-3 align-middle ${c.numeric ? 'text-right tabular-nums' : 'text-left'} ${c.className ?? ''}`}
+                    className={`px-4 py-3 align-middle ${c.numeric ? 'text-right tabular-nums' : 'text-left'} ${c.stickyEnd ? `${STICKY_END} bg-gray-50` : ''} ${
+                      c.className ?? ''
+                    }`}
                   >
                     {footer[c.key]}
                   </Cell>

@@ -113,25 +113,33 @@ function SetupCallout() {
   if (!s.enabled || s.isLoading || s.complete || !s.next) return null
   const NextIcon = s.next.icon
   return (
-    <div className="mb-6 flex flex-wrap items-center gap-4 rounded-2xl border border-primary-100 bg-gradient-to-r from-primary-50 via-white to-white p-4 pr-5 shadow-card">
-      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary-600 text-white shadow-lg shadow-primary-600/25">
-        <ListChecks className="h-5 w-5" aria-hidden="true" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-gray-900">{t('setup.cardTitle', { site: s.site?.name ?? '' })}</p>
-        <p className="mt-0.5 flex items-center gap-1.5 text-sm text-gray-600">
-          <NextIcon className="h-4 w-4 text-primary-500" aria-hidden="true" />
-          {t('setup.cardBody', { step: t(s.next.title) })}
-          <span className="text-gray-500">· {t('setup.progress', { done: s.done, total: s.total })}</span>
-        </p>
+    // Phones: icon + text on top, the two actions in their own row below
+    // (the text used to be squeezed into narrow columns next to the button).
+    <div
+      className="mb-6 flex flex-col gap-4 rounded-2xl border border-primary-100 bg-gradient-to-r from-primary-50 via-white to-white p-4 shadow-card sm:flex-row sm:items-center sm:pr-5"
+    >
+      <div className="flex min-w-0 flex-1 items-start gap-3 sm:items-center sm:gap-4">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-600 text-white shadow-lg shadow-primary-600/25 sm:h-11 sm:w-11">
+          <ListChecks className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="break-words text-sm font-semibold text-gray-900">{t('setup.cardTitle', { site: s.site?.name ?? '' })}</p>
+          <p className="mt-0.5 text-sm text-gray-600">
+            <NextIcon className="-mt-0.5 mr-1.5 inline-block h-4 w-4 align-middle text-primary-500" aria-hidden="true" />
+            {t('setup.cardBody', { step: t(s.next.title) })}{' '}
+            <span className="whitespace-nowrap text-gray-500">· {t('setup.progress', { done: s.done, total: s.total })}</span>
+          </p>
+        </div>
       </div>
-      <Link to={s.next.to} className={buttonClass('primary', 'md')}>
-        {t(s.next.cta)}
-        <ArrowRight className="h-4 w-4" aria-hidden="true" />
-      </Link>
-      <Link to="/setup" className={buttonClass('ghost', 'md')}>
-        {t('nav.setup')}
-      </Link>
+      <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+        <Link to={s.next.to} className={buttonClass('primary', 'md', 'flex-1 sm:flex-none')}>
+          {t(s.next.cta)}
+          <ArrowRight className="h-4 w-4" aria-hidden="true" />
+        </Link>
+        <Link to="/setup" className={buttonClass('ghost', 'md')}>
+          {t('nav.setup')}
+        </Link>
+      </div>
     </div>
   )
 }

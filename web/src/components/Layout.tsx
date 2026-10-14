@@ -115,7 +115,7 @@ function SetupMiniCard() {
   return (
     <Link
       to="/setup"
-      className="mx-3 mb-3 block rounded-xl bg-white/[0.06] p-3.5 ring-1 ring-white/10 transition-colors hover:bg-white/[0.09] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
+      className="mx-3 mb-3 mt-auto block shrink-0 rounded-xl bg-white/[0.06] p-3.5 ring-1 ring-white/10 transition-colors hover:bg-white/[0.09] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
     >
       <div className="flex items-center justify-between text-xs font-medium text-gray-200">
         <span>{t('setup.continue')}</span>
@@ -126,7 +126,7 @@ function SetupMiniCard() {
       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
         <div className="h-full rounded-full bg-gradient-to-r from-primary-400 to-emerald-400" style={{ width: `${pct}%` }} />
       </div>
-      <p className="mt-2 line-clamp-2 text-xs leading-snug text-gray-300">{t('setup.cardBody', { step: t(s.next.title) })}</p>
+      <p className="mt-2 line-clamp-2 [@media(max-height:52rem)]:hidden text-xs leading-snug text-gray-300">{t('setup.cardBody', { step: t(s.next.title) })}</p>
     </Link>
   )
 }
@@ -241,40 +241,46 @@ function Sidebar({ onClose }: { onClose: () => void }) {
           <X className="h-5 w-5" aria-hidden="true" />
         </button>
       </div>
-      <nav aria-label={t('nav.main')} className="scroll-thin-dark flex-1 space-y-5 overflow-y-auto px-3 pb-4">
-        {groups.map((g, gi) => {
-          const items = g.items.filter((n) => can(n.cap))
-          if (items.length === 0) return null
-          return (
-            <div key={gi}>
-              {g.label && <p className="mb-1.5 px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-400">{t(g.label)}</p>}
-              <ul className="space-y-0.5">
-                {items.map(({ to, label, icon: Icon, end }) => (
-                  <li key={to}>
-                    <NavLink
-                      to={to}
-                      end={end}
-                      className={({ isActive }) =>
-                        `group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 ${
-                          isActive ? 'bg-white/10 text-white shadow-[inset_2px_0_0_0] shadow-primary-400' : 'text-gray-300 hover:bg-white/[0.05] hover:text-white'
-                        }`
-                      }
-                    >
-                      {({ isActive }) => (
-                        <>
-                          <Icon className={`h-[18px] w-[18px] shrink-0 ${isActive ? 'text-primary-300' : 'text-gray-400 group-hover:text-gray-200'}`} aria-hidden="true" />
-                          {t(label)}
-                        </>
-                      )}
-                    </NavLink>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )
-        })}
-      </nav>
-      <SetupMiniCard />
+      {/* Nav and the setup card share one scroll area, so the card never covers the
+          last nav items on short screens (e.g. 1366x820); with room to spare the card
+          sits at the bottom (`mt-auto`). Below 52rem of height the nav tightens and the
+          card drops its description so both still fit at 1366x820. */}
+      <div className="scroll-thin-dark flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <nav aria-label={t('nav.main')} className="space-y-5 px-3 pb-4 [@media(max-height:52rem)]:space-y-4">
+          {groups.map((g, gi) => {
+            const items = g.items.filter((n) => can(n.cap))
+            if (items.length === 0) return null
+            return (
+              <div key={gi}>
+                {g.label && <p className="mb-1.5 px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-400">{t(g.label)}</p>}
+                <ul className="space-y-0.5">
+                  {items.map(({ to, label, icon: Icon, end }) => (
+                    <li key={to}>
+                      <NavLink
+                        to={to}
+                        end={end}
+                        className={({ isActive }) =>
+                          `group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 ${
+                            isActive ? 'bg-white/10 text-white shadow-[inset_2px_0_0_0] shadow-primary-400' : 'text-gray-300 hover:bg-white/[0.05] hover:text-white'
+                          }`
+                        }
+                      >
+                        {({ isActive }) => (
+                          <>
+                            <Icon className={`h-[18px] w-[18px] shrink-0 ${isActive ? 'text-primary-300' : 'text-gray-400 group-hover:text-gray-200'}`} aria-hidden="true" />
+                            {t(label)}
+                          </>
+                        )}
+                      </NavLink>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )
+          })}
+        </nav>
+        <SetupMiniCard />
+      </div>
       <div className="border-t border-white/[0.06] pt-3">
         <UserPanel />
       </div>
@@ -486,7 +492,11 @@ export function Layout() {
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {config.demo && <DemoBar />}
-        <header className="no-print flex h-16 shrink-0 items-center gap-3 border-b border-gray-200/80 bg-white/80 px-4 backdrop-blur sm:px-6">
+        {/* `relative z-20`: `backdrop-blur` makes the header a stacking context, so without
+            its own z-index the later, positioned <main> (and the SOS banner) painted over the
+            site picker's dropdown and swallowed its clicks. Stays below the off-canvas
+            overlay (z-30), the sidebar (z-40) and modals (z-50). */}
+        <header className="no-print relative z-20 flex h-16 shrink-0 items-center gap-3 border-b border-gray-200/80 bg-white/80 px-4 backdrop-blur sm:px-6">
           <button
             ref={openerRef}
             type="button"
