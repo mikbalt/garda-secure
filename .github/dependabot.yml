@@ -34,11 +34,13 @@ updates:
         update-types: [minor, patch]
     commit-message: { prefix: "chore(deps)" }
 
+  # Paused (limit 0): new plugin versions need a newer Flutter than 3.24, so
+  # every PR fails. Re-enable (limit 2) right after the Flutter upgrade.
   - package-ecosystem: pub
     directory: /mobile
     target-branch: init
     schedule: { interval: monthly }
-    open-pull-requests-limit: 2
+    open-pull-requests-limit: 0
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
@@ -76,6 +78,9 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+      # Go comes from backend/go.mod and the toolchain policy (D-031); the
+      # builder image moves with it, not on its own.
+      - dependency-name: "golang"
       # nginx: odd minors (1.31, 1.33, …) are "mainline"; we stay on stable.
       - dependency-name: "nginx"
         update-types: ["version-update:semver-minor"]

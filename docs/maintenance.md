@@ -52,7 +52,7 @@ selalu sebelum tanggal *end of life*-nya:
 | Node (build web) | 22 LTS | 24 LTS | Node 22 habis dukungan April 2027 |
 | React | 18 | 19 | Bersamaan dengan library UI terkait |
 | Vite / Zod / Tailwind | 7 / 3 / 3 | 8 / 4 / 4 | Tailwind 4 juga menghapus temuan `npm audit` di tools build |
-| Flutter (tablet) | 3.24 | versi stabil terbaru | Membuka update `path`, `intl`, Firebase |
+| Flutter (tablet) | 3.24 | versi stabil terbaru | Membuka update paket Flutter (Dependabot untuk `mobile/` dijeda sampai upgrade ini: set `open-pull-requests-limit` kembali ke 2), `path`, `intl`, Firebase, `geolocator_android` |
 | Redis | 7 | 8 | Uji worker notifikasi |
 | Grafana | 12 | 13 | Dashboard dicek ulang |
 | Go | 1.26 | rilis berikutnya saat 1.26 habis dukungan | Kebijakan D-031 |
