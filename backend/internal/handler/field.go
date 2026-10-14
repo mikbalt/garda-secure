@@ -163,6 +163,7 @@ func (h *Handler) regenerateQR(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	markSync(c, &out.SiteID)
 	service.DecorateQR(out, h.qr)
 	return c.JSON(out)
 }

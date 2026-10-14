@@ -185,8 +185,25 @@ func (h *Handler) clockIn(c *fiber.Ctx) error {
 		AfterWrite: func(ctx context.Context, tx pgx.Tx, res *service.ClockInResult) error {
 			staged = notification.Staged{}
 			rec := res.Record
-			if rec.Status != "late" || rec.SiteID != site.ID || rec.ShiftID == nil ||
-				(!res.Created && !replayFresh(rec.CreatedAt)) {
+			if rec.SiteID != site.ID || (!res.Created && !replayFresh(rec.CreatedAt)) {
+				return nil
+			}
+			if rec.NeedsReview {
+				// Push only: the review queue has work (D-007, D-033).
+				s, err := h.Notifier.Stage(ctx, tx, notification.Event{
+					Type: notification.EventAttendanceReview, Site: site, DedupeKey: "attendance_review:" + rec.ID,
+					RefID: rec.ID, RequestID: requestID(c),
+					Params: map[string]string{
+						"guard": guard.Name, "time": fmtTime(rec.ClockInAt, site.Location()),
+						"reason": reviewReason(rec),
+					},
+				})
+				if err != nil {
+					return err
+				}
+				staged.IDs = append(staged.IDs, s.IDs...)
+			}
+			if rec.Status != "late" || rec.ShiftID == nil {
 				return nil
 			}
 			shift := res.Shift
@@ -196,16 +213,16 @@ func (h *Handler) clockIn(c *fiber.Ctx) error {
 					return err
 				}
 			}
-			var err error
-			staged, err = h.Notifier.Stage(ctx, tx, notification.Event{
+			s, err := h.Notifier.Stage(ctx, tx, notification.Event{
 				Type: notification.EventLateClockIn, Site: site, DedupeKey: "late:" + rec.ID,
-				RequestID: requestID(c),
+				RequestID: requestID(c), RefID: rec.ID,
 				Params: map[string]string{
 					"guard":   guard.Name,
 					"minutes": strconv.Itoa(rec.LateMinutes),
 					"shift":   shift.StartTime.In(site.Location()).Format("02 Jan 15:04"),
 				},
 			})
+			staged.IDs = append(staged.IDs, s.IDs...)
 			return err
 		},
 	})

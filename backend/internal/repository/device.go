@@ -9,12 +9,12 @@ import (
 )
 
 const deviceColumns = `id, keycloak_realm, keycloak_user_id, name, site_id, status,
-	approved_by, approved_at, last_seen_at, created_at, updated_at`
+	approved_by, approved_at, last_seen_at, created_at, updated_at, push_token IS NOT NULL`
 
 func scanDevice(row pgx.Row) (model.Device, error) {
 	var d model.Device
 	err := row.Scan(&d.ID, &d.KeycloakRealm, &d.KeycloakUserID, &d.Name, &d.SiteID, &d.Status,
-		&d.ApprovedBy, &d.ApprovedAt, &d.LastSeenAt, &d.CreatedAt, &d.UpdatedAt)
+		&d.ApprovedBy, &d.ApprovedAt, &d.LastSeenAt, &d.CreatedAt, &d.UpdatedAt, &d.PushEnabled)
 	return d, err
 }
 
@@ -23,17 +23,28 @@ func scanDeviceRows(rows pgx.Rows) (model.Device, error) { return scanDevice(row
 // RegisterDevice creates a pending device for a Keycloak device account, or
 // returns the existing one (renaming it only while still pending).
 func RegisterDevice(ctx context.Context, db DBTX, realm, userID, name string) (*model.Device, error) {
-	d, err := scanDevice(db.QueryRow(ctx, `
+	d, _, err := RegisterDeviceNew(ctx, db, realm, userID, name)
+	return d, err
+}
+
+// RegisterDeviceNew is RegisterDevice that also reports whether the device
+// was created by this call (device_pending push).
+func RegisterDeviceNew(ctx context.Context, db DBTX, realm, userID, name string) (*model.Device, bool, error) {
+	var d model.Device
+	var created bool
+	err := db.QueryRow(ctx, `
 		INSERT INTO devices (keycloak_realm, keycloak_user_id, name)
 		VALUES ($1, $2, $3)
 		ON CONFLICT (keycloak_realm, keycloak_user_id) DO UPDATE
 		  SET name = CASE WHEN devices.status = 'pending' THEN EXCLUDED.name ELSE devices.name END,
 		      updated_at = now()
-		RETURNING `+deviceColumns, realm, userID, name))
+		RETURNING `+deviceColumns+`, (xmax = 0)`, realm, userID, name).Scan(
+		&d.ID, &d.KeycloakRealm, &d.KeycloakUserID, &d.Name, &d.SiteID, &d.Status,
+		&d.ApprovedBy, &d.ApprovedAt, &d.LastSeenAt, &d.CreatedAt, &d.UpdatedAt, &d.PushEnabled, &created)
 	if err != nil {
-		return nil, fmt.Errorf("RegisterDevice: %w", err)
+		return nil, false, fmt.Errorf("RegisterDevice: %w", err)
 	}
-	return &d, nil
+	return &d, created, nil
 }
 
 // GetDeviceByIdentity looks a device up by its Keycloak account.

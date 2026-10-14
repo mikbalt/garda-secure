@@ -120,7 +120,7 @@ func (s *Scheduler) decideExpectation(ctx context.Context, id string, now time.T
 func patrolNotStartedEvent(site *model.Site, route *model.Route, e *model.PatrolExpectation) notification.Event {
 	loc := site.Location()
 	return notification.Event{
-		Type: notification.EventPatrolNotStarted, Site: site, DedupeKey: "patrol_not_started:" + e.ID,
+		Type: notification.EventPatrolNotStarted, Site: site, DedupeKey: "patrol_not_started:" + e.ID, RefID: e.ID,
 		Params: map[string]string{
 			"route":       route.Name,
 			"due":         e.DueAt.In(loc).Format("15:04"),

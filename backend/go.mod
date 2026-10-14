@@ -5,6 +5,7 @@ go 1.26.0
 toolchain go1.26.9
 
 require (
+	github.com/SherClockHolmes/webpush-go v1.4.0
 	github.com/alicebob/miniredis/v2 v2.39.0
 	github.com/fergusstrange/embedded-postgres v1.34.0
 	github.com/go-pdf/fpdf v0.9.0

@@ -136,7 +136,7 @@ func (c *Checker) Evaluate(ctx context.Context, sess model.PatrolSession) (int, 
 			}
 			staged, err = c.notifier.Stage(ctx, tx, notification.Event{
 				Type: notification.EventSLAMissed, Site: site,
-				DedupeKey: "sla:" + sess.ID + ":" + cp.ID,
+				DedupeKey: "sla:" + sess.ID + ":" + cp.ID, RefID: sess.ID,
 				Params: map[string]string{
 					"guard": guard.Name, "route": p.RouteName, "checkpoint": cp.Name,
 					"due": cp.DueAt.In(site.Location()).Format("15:04"),

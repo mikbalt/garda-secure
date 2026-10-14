@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -18,6 +19,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/securepatrol/backend/internal/model"
+	"github.com/securepatrol/backend/internal/push"
 	"github.com/securepatrol/backend/internal/repository"
 )
 
@@ -36,12 +38,17 @@ const (
 	// EventPatrolNotStarted: a scheduled patrol was not started within its
 	// grace period (D-035).
 	EventPatrolNotStarted = "patrol_not_started"
+	// EventSOSUnacknowledged: an SOS is still unacknowledged after
+	// SOS_ESCALATE_AFTER; repeated every SOS_ESCALATE_EVERY, 3 times at most.
+	EventSOSUnacknowledged = "sos_unacknowledged"
 )
 
-// EventTypes lists every site event a rule can subscribe to.
+// EventTypes lists every site event a rule can subscribe to. Push-only
+// events (attendance_review, device_pending, device_unhealthy) are not here.
 var EventTypes = []string{
 	EventSOS, EventSLAMissed, EventAbsent, EventLateClockIn,
 	EventIncidentHigh, EventIncidentFiled, EventDefectOpened, EventMonthlyRecap, EventPatrolNotStarted,
+	EventSOSUnacknowledged,
 }
 
 // Install-wide operations events. Their recipients are ops_alert_rules, not
@@ -65,9 +72,11 @@ const (
 	LaneNormal = "normal"
 )
 
-// LaneFor returns the dispatch lane of an event type.
+// LaneFor returns the dispatch lane of an event type (SOS, its reminders,
+// its acknowledgement to tablets and undelivered-SOS alerts use the SOS lane).
 func LaneFor(eventType string) string {
-	if eventType == EventSOS || eventType == EventOpsSOSUndelivered {
+	switch eventType {
+	case EventSOS, EventSOSUnacknowledged, EventOpsSOSUndelivered, push.TabletSOSAck:
 		return LaneSOS
 	}
 	return LaneNormal
@@ -96,6 +105,15 @@ type Event struct {
 	TextBody string
 	// RequestID links the delivery to the API request that caused it.
 	RequestID string
+	// RefID is the record behind the event (SOS, incident, device ...):
+	// push deep links and tablet messages carry it.
+	RefID string
+	// Realm is the tenant of an event without a site (device_pending);
+	// otherwise the site's realm is used.
+	Realm string
+	// SourceDeviceID is the tablet that raised the event; it gets no tablet
+	// push about its own SOS.
+	SourceDeviceID string
 }
 
 // Staged is the result of staging an event: the new delivery IDs.
@@ -108,6 +126,9 @@ type Notifier struct {
 	pool *pgxpool.Pool
 	rdb  *redis.Client
 	log  zerolog.Logger
+
+	push           *push.Service // nil = no push (see UsePush)
+	audienceMaxAge time.Duration
 }
 
 // NewNotifier creates a notifier.
@@ -116,66 +137,31 @@ func NewNotifier(pool *pgxpool.Pool, rdb *redis.Client, log zerolog.Logger) *Not
 }
 
 // Stage records one delivery per enabled recipient using db, which should be
-// the transaction that writes the domain row. Already-staged deliveries
-// (same dedupe key) are skipped, so staging again on an idempotent replay
-// only fills in what is missing. After commit call Wake.
+// the transaction that writes the domain row: rule recipients (e-mail,
+// WhatsApp), browser push subscribers and, for some events, the site's
+// tablets. Already-staged deliveries (same dedupe key) are skipped, so
+// staging again on an idempotent replay only fills in what is missing.
+// After commit call Wake.
 func (n *Notifier) Stage(ctx context.Context, db repository.DBTX, ev Event) (Staged, error) {
-	return stage(ctx, db, n.log, ev)
-}
-
-func stage(ctx context.Context, db repository.DBTX, log zerolog.Logger, ev Event) (Staged, error) {
-	var out Staged
-	type recipient struct{ channel, address string }
-	var recipients []recipient
-	var siteID *string
-	lang := "id"
-	params := map[string]string{}
-
 	if IsOpsEvent(ev.Type) {
-		rules, err := repository.ListOpsRecipients(ctx, db, ev.Type)
-		if err != nil {
-			return out, err
-		}
-		for _, r := range rules {
-			recipients = append(recipients, recipient{r.Channel, r.Recipient})
-		}
-		if len(recipients) == 0 {
-			log.Warn().Str("event", ev.Type).Str("dedupe", ev.DedupeKey).Str("request_id", ev.RequestID).
-				Msg("ops alert has no recipients (configure ops alert rules)")
-		}
-	} else {
-		if ev.Site == nil {
-			return out, fmt.Errorf("stage %s: site is required", ev.Type)
-		}
-		rules, err := repository.ListRecipients(ctx, db, ev.Site.ID, ev.Type)
-		if err != nil {
-			return out, err
-		}
-		for _, r := range rules {
-			recipients = append(recipients, recipient{r.Channel, r.Recipient})
-		}
+		return n.stageOps(ctx, db, ev)
+	}
+	var out Staged
+	var siteID *string
+	realm, lang := ev.Realm, "id"
+	params := map[string]string{}
+	switch {
+	case ev.Site != nil:
 		id := ev.Site.ID
 		siteID = &id
 		lang = ev.Site.Config().Language
 		params["site"] = ev.Site.Name
-		if len(recipients) == 0 && ev.Type == EventSOS {
-			// An SOS nobody receives is an operations problem, not a no-op.
-			log.Error().Str("site_id", id).Str("dedupe", ev.DedupeKey).Str("request_id", ev.RequestID).
-				Msg("SOS has no recipients at this site; alerting ops")
-			ops := Event{
-				Type: EventOpsSOSUndelivered, DedupeKey: "ops:sos_no_recipients:" + ev.DedupeKey, RequestID: ev.RequestID,
-				Params: map[string]string{
-					"site": ev.Site.Name, "guard": ev.Params["guard"], "time": ev.Params["time"],
-					"recipient": "(none)", "reason": "no SOS notification rule is configured for this site",
-				},
-			}
-			return stage(ctx, db, log, ops)
+		if ev.Site.KeycloakRealm != nil {
+			realm = *ev.Site.KeycloakRealm
 		}
+	case !IsPushOnly(ev.Type):
+		return out, fmt.Errorf("stage %s: site is required", ev.Type)
 	}
-	if len(recipients) == 0 {
-		return out, nil
-	}
-
 	for k, v := range ev.Params {
 		params[k] = v
 	}
@@ -189,32 +175,88 @@ func stage(ctx context.Context, db repository.DBTX, log zerolog.Logger, ev Event
 			body = b
 		}
 	}
-	var reqID *string
-	if ev.RequestID != "" {
-		reqID = &ev.RequestID
-	}
-	lane := LaneFor(ev.Type)
 
-	for _, r := range recipients {
-		var dedupe *string
-		if ev.DedupeKey != "" {
-			k := ev.DedupeKey + "|" + r.channel + "|" + r.address
-			dedupe = &k
-		}
-		b := body
-		if r.channel != "email" && ev.TextBody != "" {
-			b = ev.TextBody
-		}
-		id, err := repository.InsertNotificationLog(ctx, db, model.NotificationLog{
-			SiteID: siteID, EventType: ev.Type, Channel: r.channel, Recipient: r.address,
-			Subject: subject, Body: b,
-		}, lane, reqID, dedupe)
+	if !IsPushOnly(ev.Type) {
+		rules, err := repository.ListRecipients(ctx, db, *siteID, ev.Type)
 		if err != nil {
 			return out, err
 		}
-		if id != "" {
-			out.IDs = append(out.IDs, id)
+		for _, r := range rules {
+			b := body
+			if r.Channel != "email" && ev.TextBody != "" {
+				b = ev.TextBody
+			}
+			id, err := n.insert(ctx, db, outboxRow{
+				siteID: siteID, event: ev.Type, channel: r.Channel, recipient: r.Recipient,
+				subject: subject, body: b, dedupe: ev.DedupeKey, requestID: ev.RequestID,
+			})
+			if err != nil {
+				return out, err
+			}
+			out.add(id)
 		}
+		if len(rules) == 0 && ev.Type == EventSOS {
+			// An SOS no rule recipient receives is an operations problem, not
+			// a no-op (browser push is best effort and does not count).
+			n.log.Error().Str("site_id", *siteID).Str("dedupe", ev.DedupeKey).Str("request_id", ev.RequestID).
+				Msg("SOS has no recipients at this site; alerting ops")
+			s, err := n.stageOps(ctx, db, Event{
+				Type: EventOpsSOSUndelivered, DedupeKey: "ops:sos_no_recipients:" + ev.DedupeKey, RequestID: ev.RequestID,
+				Params: map[string]string{
+					"site": ev.Site.Name, "guard": ev.Params["guard"], "time": ev.Params["time"],
+					"recipient": "(none)", "reason": "no SOS notification rule is configured for this site",
+				},
+			})
+			if err != nil {
+				return out, err
+			}
+			out.IDs = append(out.IDs, s.IDs...)
+		}
+	}
+
+	s, err := n.stagePush(ctx, db, ev, siteID, realm, subject, body)
+	if err != nil {
+		return out, err
+	}
+	out.IDs = append(out.IDs, s.IDs...)
+	return out, nil
+}
+
+// stageOps stages an install-wide ops alert to the ops alert rules.
+func (n *Notifier) stageOps(ctx context.Context, db repository.DBTX, ev Event) (Staged, error) {
+	var out Staged
+	rules, err := repository.ListOpsRecipients(ctx, db, ev.Type)
+	if err != nil {
+		return out, err
+	}
+	if len(rules) == 0 {
+		n.log.Warn().Str("event", ev.Type).Str("dedupe", ev.DedupeKey).Str("request_id", ev.RequestID).
+			Msg("ops alert has no recipients (configure ops alert rules)")
+		return out, nil
+	}
+	subject, body := ev.Subject, ev.Body
+	if subject == "" || body == "" {
+		s, b := Render(ev.Type, "id", ev.Params)
+		if subject == "" {
+			subject = s
+		}
+		if body == "" {
+			body = b
+		}
+	}
+	for _, r := range rules {
+		b := body
+		if r.Channel != "email" && ev.TextBody != "" {
+			b = ev.TextBody
+		}
+		id, err := n.insert(ctx, db, outboxRow{
+			event: ev.Type, channel: r.Channel, recipient: r.Recipient,
+			subject: subject, body: b, dedupe: ev.DedupeKey, requestID: ev.RequestID,
+		})
+		if err != nil {
+			return out, err
+		}
+		out.add(id)
 	}
 	return out, nil
 }
@@ -289,6 +331,17 @@ var templates = map[string]map[string]template{
 		EventMonthlyRecap: {"Rekap absensi bulanan {month} — {site}", "Rekap absensi {month} untuk {site}."},
 		EventPatrolNotStarted: {"[Patroli] {route} belum dimulai di {site}",
 			"Patroli terjadwal rute {route} di {site} seharusnya dimulai pukul {due} ({date}) dan belum dimulai hingga {grace_until}. Hubungi petugas jaga."},
+		EventSOSUnacknowledged: {"[SOS] Belum ditanggapi: {guard} di {site}",
+			"SOS dari {guard} di {site} pada {time} belum ditanggapi setelah {minutes} menit (pengingat {escalation}/3). Lokasi terakhir: {location}. Segera hubungi lokasi dan konfirmasi di dashboard."},
+		EventAttendanceReview: {"[Tinjau] Clock-in {guard} di {site}",
+			"Clock-in {guard} di {site} pada {time} masuk antrean tinjauan ({reason}). Periksa di Absensi > Tinjauan."},
+		EventDevicePending: {"[Tablet] {device} menunggu persetujuan",
+			"Tablet baru \"{device}\" terdaftar dan menunggu persetujuan. Setujui dan tetapkan lokasinya di Pengaturan > Tablet."},
+		EventDeviceUnhealthy: {"[Tablet] {device} bermasalah di {site}",
+			"Tablet \"{device}\" di {site}: {reason}. Periksa koneksi, jam dan aplikasi tablet."},
+		push.TabletSOSAck:       {"SOS ditanggapi", "SOS dari {guard} sudah ditanggapi oleh {actor}."},
+		push.TabletDeviceStatus: {"Status tablet berubah", "Status tablet ini sekarang: {status}."},
+		EventPushTest:           {"GARDA: notifikasi uji", "Notifikasi push berfungsi di perangkat ini."},
 		EventOpsBackupFailed: {"[OPS] Backup database gagal",
 			"Backup {backup} ({trigger}) gagal pada {time}: {error}. Periksa log worker dan ruang penyimpanan MinIO."},
 		EventOpsBackupStale: {"[OPS] Tidak ada backup berhasil sejak {last}",
@@ -316,6 +369,17 @@ var templates = map[string]map[string]template{
 		EventMonthlyRecap: {"Monthly attendance recap {month} — {site}", "Attendance recap {month} for {site}."},
 		EventPatrolNotStarted: {"[Patrol] {route} not started at {site}",
 			"The scheduled patrol on route {route} at {site} was due at {due} ({date}) and had not been started by {grace_until}. Contact the guard on duty."},
+		EventSOSUnacknowledged: {"[SOS] Not acknowledged: {guard} at {site}",
+			"The SOS from {guard} at {site} at {time} is still not acknowledged after {minutes} minutes (reminder {escalation}/3). Last known location: {location}. Call the site and acknowledge in the dashboard."},
+		EventAttendanceReview: {"[Review] Clock-in by {guard} at {site}",
+			"The clock-in of {guard} at {site} at {time} needs review ({reason}). See Attendance > Review."},
+		EventDevicePending: {"[Tablet] {device} awaits approval",
+			"A new tablet \"{device}\" registered and is waiting for approval. Approve it and assign its site in Settings > Tablets."},
+		EventDeviceUnhealthy: {"[Tablet] {device} has a problem at {site}",
+			"Tablet \"{device}\" at {site}: {reason}. Check the tablet's connection, clock and app."},
+		push.TabletSOSAck:       {"SOS acknowledged", "The SOS from {guard} was acknowledged by {actor}."},
+		push.TabletDeviceStatus: {"Tablet status changed", "This tablet is now: {status}."},
+		EventPushTest:           {"GARDA test notification", "Push notifications work on this device."},
 		EventOpsBackupFailed: {"[OPS] Database backup failed",
 			"Backup {backup} ({trigger}) failed at {time}: {error}. Check the worker logs and MinIO storage."},
 		EventOpsBackupStale: {"[OPS] No successful backup since {last}",

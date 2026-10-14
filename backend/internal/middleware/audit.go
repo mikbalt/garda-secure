@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -172,7 +173,13 @@ func resourceType(route string) string {
 }
 
 // sensitiveKeys are JSON keys whose values never reach the audit log.
-var sensitiveKeys = []string{"password", "token", "secret", "pin", "authorization", "api_key", "apikey", "credential", "id_number"}
+// Push subscriptions: the endpoint is a capability URL and keys.auth a
+// shared secret.
+var sensitiveKeys = []string{"password", "token", "secret", "pin", "authorization", "api_key", "apikey", "credential", "id_number",
+	"endpoint", "p256dh"}
+
+// sensitiveExact are keys redacted only on an exact (case-insensitive) match.
+var sensitiveExact = []string{"auth"}
 
 // RedactJSON returns a compact copy of a JSON document with secret values
 // replaced by "[redacted]". Bodies over max bytes are reduced to their
@@ -203,7 +210,7 @@ func redact(v any) any {
 	case map[string]any:
 		for k, val := range t {
 			lk := strings.ToLower(k)
-			hit := false
+			hit := slices.Contains(sensitiveExact, lk)
 			for _, s := range sensitiveKeys {
 				if strings.Contains(lk, s) {
 					hit = true

@@ -76,6 +76,7 @@ func (h *Handler) createRoute(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	markSync(c, &out.SiteID)
 	return c.Status(fiber.StatusCreated).JSON(out)
 }
 
@@ -121,6 +122,7 @@ func (h *Handler) updateRoute(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	markSync(c, &out.SiteID)
 	service.DecorateQR(out, h.qr)
 	return c.JSON(out)
 }

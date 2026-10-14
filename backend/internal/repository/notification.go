@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/securepatrol/backend/internal/model"
@@ -105,13 +106,19 @@ func scanLogRows(rows pgx.Rows) (model.NotificationLog, error) { return scanLog(
 // ("", nil) is returned. Call it in the transaction that writes the domain
 // row (transactional outbox, BE-R1).
 func InsertNotificationLog(ctx context.Context, db DBTX, l model.NotificationLog, lane string, requestID, dedupeKey *string) (string, error) {
+	return InsertDelivery(ctx, db, l, lane, requestID, dedupeKey, nil)
+}
+
+// InsertDelivery is InsertNotificationLog with an optional earliest send
+// time (debounced tablet sync messages).
+func InsertDelivery(ctx context.Context, db DBTX, l model.NotificationLog, lane string, requestID, dedupeKey *string, notBefore *time.Time) (string, error) {
 	var id string
 	err := db.QueryRow(ctx, `
-		INSERT INTO notification_log (site_id, event_type, channel, recipient, subject, body, dedupe_key, lane, request_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO notification_log (site_id, event_type, channel, recipient, subject, body, dedupe_key, lane, request_id, next_attempt_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, now()))
 		ON CONFLICT (dedupe_key) DO NOTHING
 		RETURNING id`,
-		l.SiteID, l.EventType, l.Channel, l.Recipient, l.Subject, l.Body, dedupeKey, lane, requestID,
+		l.SiteID, l.EventType, l.Channel, l.Recipient, l.Subject, l.Body, dedupeKey, lane, requestID, notBefore,
 	).Scan(&id)
 	if err != nil {
 		if mapNoRows(err) == ErrNotFound {
@@ -131,14 +138,14 @@ func GetNotificationLog(ctx context.Context, db DBTX, id string) (*model.Notific
 	return &l, nil
 }
 
-// ListNotificationLog returns recent deliveries of a set of sites, optionally
-// by status.
+// ListNotificationLog returns recent rule deliveries (e-mail, WhatsApp) of
+// a set of sites, optionally by status. Push deliveries are not listed.
 func ListNotificationLog(ctx context.Context, db DBTX, siteIDs []string, status string, limit int) ([]model.NotificationLog, error) {
 	rows, err := db.Query(ctx, `
 		SELECT `+logColumns+` FROM notification_log
-		WHERE site_id = ANY($1) AND ($2 = '' OR status = $2)
+		WHERE site_id = ANY($1) AND ($2 = '' OR status = $2) AND channel <> ALL($4::text[])
 		ORDER BY created_at DESC
-		LIMIT $3`, siteIDs, status, limit)
+		LIMIT $3`, siteIDs, status, limit, pushChannels)
 	if err != nil {
 		return nil, fmt.Errorf("ListNotificationLog: %w", err)
 	}

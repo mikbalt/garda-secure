@@ -4,6 +4,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -77,6 +78,9 @@ func (h *Handler) Register(api fiber.Router) {
 	dev.Get("/sos", device, h.deviceSos)
 	dev.Post("/telemetry", device, h.deviceTelemetry)
 	dev.Post("/guard-sessions", device, h.createGuardSession)
+	// Pending tablets register too, so they hear their approval.
+	dev.Put("/push-token", isDevice, h.putDevicePushToken)
+	dev.Delete("/push-token", isDevice, h.deleteDevicePushToken)
 
 	sites := api.Group("/sites")
 	sites.Get("/", web(rolesWeb...), h.listSites)
@@ -207,6 +211,18 @@ func (h *Handler) Register(api fiber.Router) {
 	bk.Post("/", h.createBackup)
 
 	api.Get("/audit", web(rolesAdmin...), h.listAudit)
+
+	// Browser push for dashboard users: each user manages their own browsers
+	// and event preferences.
+	// A platform-admin-only user may open the page (no events available).
+	pu, anyWeb := api.Group("/push"), web(append(slices.Clone(rolesWeb), middleware.RolePlatformAdmin)...)
+	pu.Get("/config", anyWeb, h.pushConfig)
+	pu.Get("/subscriptions", anyWeb, h.listPushSubscriptions)
+	pu.Post("/subscriptions", anyWeb, h.createPushSubscription)
+	pu.Delete("/subscriptions/:id", anyWeb, h.deletePushSubscription)
+	pu.Get("/preferences", anyWeb, h.getPushPreferences)
+	pu.Put("/preferences", anyWeb, h.putPushPreferences)
+	pu.Post("/test", anyWeb, h.testPush)
 
 	// User and tablet-account management via Keycloak (F1), caller's realm.
 	api.Get("/users", admin, h.listUsers)

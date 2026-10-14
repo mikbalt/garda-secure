@@ -102,6 +102,9 @@ type Config struct {
 	Retention     Retention
 	KeycloakAdmin KeycloakAdmin
 
+	// Push notifications to browsers and tablets; see push.go.
+	Push Push
+
 	MigrationsPath string
 
 	LogLevel string
@@ -186,6 +189,9 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	if err := cfg.loadFeatures(); err != nil {
+		return nil, err
+	}
+	if err := cfg.loadPush(); err != nil {
 		return nil, err
 	}
 

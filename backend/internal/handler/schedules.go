@@ -70,6 +70,7 @@ func (h *Handler) putRouteSchedules(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	markSync(c, &r.SiteID)
 	return c.JSON(fiber.Map{"route_id": r.ID, "schedules": out, "generated_expectations": generated})
 }
 

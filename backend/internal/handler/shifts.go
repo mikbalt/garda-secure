@@ -86,6 +86,7 @@ func (h *Handler) createTemplate(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	markSync(c, &site.ID) // tablets cache the guards' shifts
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"template": out, "generated_shifts": generated})
 }
 
@@ -136,6 +137,7 @@ func (h *Handler) updateTemplate(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	markSync(c, &site.ID)
 	return c.JSON(fiber.Map{"template": out, "generated_shifts": generated})
 }
 
@@ -154,6 +156,7 @@ func (h *Handler) deleteTemplate(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	markSync(c, &t.SiteID)
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
@@ -215,6 +218,7 @@ func (h *Handler) createShift(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	markSync(c, &site.ID)
 	return c.Status(fiber.StatusCreated).JSON(s)
 }
 
@@ -255,6 +259,7 @@ func (h *Handler) updateShift(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	markSync(c, &s.SiteID)
 	return c.JSON(out)
 }
 
@@ -270,5 +275,6 @@ func (h *Handler) deleteShift(c *fiber.Ctx) error {
 		}
 		return h.fail(c, err)
 	}
+	markSync(c, &s.SiteID)
 	return c.SendStatus(fiber.StatusNoContent)
 }

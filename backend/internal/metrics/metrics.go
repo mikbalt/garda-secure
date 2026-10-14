@@ -17,11 +17,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 )
 
-// Notification results used in sp_notifications_total.
+// Notification results used in sp_notifications_total and sp_push_sent_total.
 const (
 	ResultSent   = "sent"
 	ResultRetry  = "retry"
 	ResultFailed = "failed"
+	// ResultGone: the push service no longer knows the target (404/410,
+	// FCM UNREGISTERED); the subscription or token was removed.
+	ResultGone = "gone"
 )
 
 var (
@@ -43,6 +46,14 @@ var (
 		Name: "sp_notifications_total",
 		Help: "Notification delivery attempts by channel, event type and result (sent, retry, failed).",
 	}, []string{"channel", "event", "result"})
+
+	// PushSent counts push attempts (kind = webpush | fcm; result = sent |
+	// retry | failed | gone). Push is kept out of sp_notifications_total so
+	// expired browser subscriptions never fire the notification alerts.
+	PushSent = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "sp_push_sent_total",
+		Help: "Push attempts by kind (webpush, fcm), event type and result (sent, retry, failed, gone).",
+	}, []string{"kind", "event", "result"})
 
 	// QueueDepth is the number of queued deliveries per lane (sos | normal).
 	QueueDepth = prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -90,7 +101,7 @@ var (
 	// RetentionItems counts records/objects handled by the retention job
 	// (kind = visitor_log, visitor_photo, selfie, attendance_gps, scan_gps,
 	// notification_log, incident_photo, defect_photo, checkpoint_photo,
-	// visitor_id_encrypted; result = done | failed).
+	// visitor_id_encrypted, push_delivery; result = done | failed).
 	RetentionItems = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "sp_retention_items_total",
 		Help: "Items purged, cleared or encrypted by the retention job, by kind and result (done, failed).",
@@ -106,14 +117,14 @@ var (
 
 // RegisterAPI registers the API metrics and the Go/process collectors.
 func RegisterAPI(r prometheus.Registerer) {
-	r.MustRegister(HTTPRequests, HTTPDuration, DeviceOutboxPending)
+	r.MustRegister(HTTPRequests, HTTPDuration, DeviceOutboxPending, PushSent)
 	registerRuntime(r)
 }
 
 // RegisterWorker registers the worker metrics and the Go/process collectors.
 func RegisterWorker(r prometheus.Registerer) {
 	r.MustRegister(Notifications, QueueDepth, NotificationsFailed, SOSUnacknowledged,
-		WorkerHeartbeat, JobRuns, JobLastSuccess, BackupLastSuccess, RetentionItems)
+		WorkerHeartbeat, JobRuns, JobLastSuccess, BackupLastSuccess, RetentionItems, PushSent)
 	registerRuntime(r)
 }
 

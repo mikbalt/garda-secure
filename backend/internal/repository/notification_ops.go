@@ -99,9 +99,9 @@ func DeleteOpsAlertRule(ctx context.Context, db DBTX, id string) error {
 func ListOpsNotificationLog(ctx context.Context, db DBTX, status string, limit int) ([]model.NotificationLog, error) {
 	rows, err := db.Query(ctx, `
 		SELECT `+logColumns+` FROM notification_log
-		WHERE site_id IS NULL AND ($1 = '' OR status = $1)
+		WHERE site_id IS NULL AND ($1 = '' OR status = $1) AND channel <> ALL($3::text[])
 		ORDER BY created_at DESC
-		LIMIT $2`, status, limit)
+		LIMIT $2`, status, limit, pushChannels)
 	if err != nil {
 		return nil, fmt.Errorf("ListOpsNotificationLog: %w", err)
 	}

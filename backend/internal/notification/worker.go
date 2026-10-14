@@ -13,6 +13,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/securepatrol/backend/internal/metrics"
+	"github.com/securepatrol/backend/internal/push"
 	"github.com/securepatrol/backend/internal/repository"
 	"github.com/securepatrol/backend/internal/settings"
 )
@@ -197,6 +198,7 @@ func (w *Worker) deliver(d *repository.Delivery) {
 	}
 
 	sendErr := w.send(d.Channel, d.Recipient, d.Subject, d.Body)
+	isPush := IsPushChannel(d.Channel)
 
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
@@ -204,12 +206,22 @@ func (w *Worker) deliver(d *repository.Delivery) {
 		if err := w.store.MarkSent(ctx, d.ID); err != nil {
 			log.Error().Err(err).Msg("mark sent failed (may be sent again after the lease)")
 		}
-		metrics.Notifications.WithLabelValues(d.Channel, d.EventType, metrics.ResultSent).Inc()
+		w.count(d, isPush, metrics.ResultSent)
 		log.Info().Msg("notification sent")
 		return
 	}
 
 	msg := sendErr.Error()
+	if isPush && (errors.Is(sendErr, push.ErrGone) || errors.Is(sendErr, push.ErrDisabled)) {
+		// The subscription/token is gone (already removed) or push was
+		// switched off: retrying cannot help.
+		if err := w.store.MarkFailed(ctx, d.ID, msg); err != nil {
+			log.Error().Err(err).Msg("mark failed failed")
+		}
+		w.count(d, isPush, metrics.ResultGone)
+		log.Info().Str("error", msg).Msg("push target gone; delivery dropped")
+		return
+	}
 	attempts := d.Attempts + 1
 	delay, retry := RetryDelay(d.Lane, attempts)
 	if retry {
@@ -217,7 +229,7 @@ func (w *Worker) deliver(d *repository.Delivery) {
 		if err := w.store.MarkRetry(ctx, d.ID, msg, next); err != nil {
 			log.Error().Err(err).Msg("mark retry failed")
 		}
-		metrics.Notifications.WithLabelValues(d.Channel, d.EventType, metrics.ResultRetry).Inc()
+		w.count(d, isPush, metrics.ResultRetry)
 		log.Warn().Str("error", msg).Dur("retry_in", delay).Msg("delivery failed; will retry")
 		return
 	}
@@ -225,12 +237,25 @@ func (w *Worker) deliver(d *repository.Delivery) {
 	if err := w.store.MarkFailed(ctx, d.ID, msg); err != nil {
 		log.Error().Err(err).Msg("mark failed failed")
 	}
-	metrics.Notifications.WithLabelValues(d.Channel, d.EventType, metrics.ResultFailed).Inc()
-	metrics.NotificationsFailed.WithLabelValues(d.EventType).Inc()
+	w.count(d, isPush, metrics.ResultFailed)
 	log.Error().Str("error", msg).Msg("delivery failed permanently")
+	if isPush {
+		return // best effort: never an ops alert or a NotificationsFailing page
+	}
+	metrics.NotificationsFailed.WithLabelValues(d.EventType).Inc()
 	if d.EventType == EventSOS {
 		w.alertSOSUndelivered(ctx, d, msg)
 	}
+}
+
+// count records a delivery attempt: push in sp_push_sent_total, rule
+// channels in sp_notifications_total.
+func (w *Worker) count(d *repository.Delivery, isPush bool, result string) {
+	if isPush {
+		metrics.PushSent.WithLabelValues(d.Channel, d.EventType, result).Inc()
+		return
+	}
+	metrics.Notifications.WithLabelValues(d.Channel, d.EventType, result).Inc()
 }
 
 // alertSOSUndelivered tells the ops recipients that an SOS delivery gave up.
@@ -253,6 +278,9 @@ func (w *Worker) alertSOSUndelivered(ctx context.Context, d *repository.Delivery
 func (w *Worker) send(channel, recipient, subject, body string) error {
 	ch, ok := w.channels[channel]
 	if !ok {
+		if IsPushChannel(channel) {
+			return fmt.Errorf("%w: %s", push.ErrDisabled, channel)
+		}
 		return errors.New("unsupported channel " + channel)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), sendTimeout)

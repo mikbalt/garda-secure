@@ -22,6 +22,15 @@ func TestRedactJSON(t *testing.T) {
 	if nj := string(RedactJSON([]byte("pin=1234"), 4096)); strings.Contains(nj, "1234") {
 		t.Errorf("non-JSON body kept: %s", nj)
 	}
+	sub := string(RedactJSON([]byte(`{"kind":"webpush","endpoint":"https://fcm.googleapis.com/x","keys":{"p256dh":"P","auth":"A"},"label":"Chrome","author":"Sari"}`), 4096))
+	for _, secret := range []string{"fcm.googleapis.com", `"P"`, `"A"`} {
+		if strings.Contains(sub, secret) {
+			t.Errorf("push secret %s kept: %s", secret, sub)
+		}
+	}
+	if !strings.Contains(sub, "Chrome") || !strings.Contains(sub, "Sari") {
+		t.Errorf("push label or unrelated auth* key lost: %s", sub)
+	}
 }
 
 func TestResourceType(t *testing.T) {
