@@ -26,4 +26,6 @@ export const STORAGE_KEYS = {
   sosMuted: 'sp.sos.muted',
   /** Epoch ms of the last user input in any tab (idle logout). */
   lastActivity: 'sp.lastActivity',
+  /** "1" = the dashboard hint to turn on push notifications was dismissed. */
+  pushNudgeDismissed: 'sp.push.nudgeDismissed',
 } as const

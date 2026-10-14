@@ -1,0 +1,116 @@
+import type { pushEn } from './push.en'
+
+/** Notifikasi push: halaman Notifikasi, petunjuk di dasbor dan kejadian khusus push. */
+export const pushId: Record<keyof typeof pushEn, string> = {
+  // halaman
+  'push.title': 'Notifikasi',
+  'push.subtitle': 'Terima peringatan GARDA di perangkat ini meski aplikasi ditutup, dan pilih peringatan yang Anda inginkan.',
+  'push.demoNote': 'Demo: notifikasi disimulasikan di browser ini. Pengiriman sungguhan ke ponsel dan komputer memerlukan server GARDA.',
+
+  // perangkat ini
+  'push.device.title': 'Perangkat ini',
+  'push.state.on': 'Aktif',
+  'push.state.off': 'Mati',
+  'push.state.blocked': 'Diblokir browser',
+  'push.state.unsupported': 'Tidak didukung',
+  'push.state.ios': 'Perlu Layar Utama',
+  'push.state.server': 'Belum disiapkan',
+  'push.on.body': 'Peringatan masuk ke perangkat ini meski GARDA ditutup.',
+  'push.off.body': 'Aktifkan notifikasi agar SOS dan peringatan lain tetap masuk ke sini meski GARDA ditutup. Browser akan meminta izin.',
+  'push.enable': 'Aktifkan notifikasi',
+  'push.disable': 'Matikan di perangkat ini',
+  'push.enabled': 'Notifikasi aktif di perangkat ini.',
+  'push.disabled': 'Notifikasi dimatikan di perangkat ini.',
+  'push.blocked.body': 'Notifikasi untuk GARDA diblokir di browser ini.',
+  'push.blocked.how': 'Untuk mengizinkannya lagi, klik ikon gembok atau pengaturan di samping alamat web, ubah Notifikasi menjadi "Izinkan", lalu muat ulang halaman ini.',
+  'push.unsupported.body': 'Browser ini tidak dapat menerima notifikasi push. Gunakan Chrome, Edge, Firefox atau Safari versi terbaru di komputer atau ponsel Android.',
+  'push.ios.title': 'Tambahkan ke Layar Utama dulu',
+  'push.ios.body': 'Di iPhone dan iPad, notifikasi hanya berfungsi bila GARDA dibuka dari Layar Utama.',
+  'push.ios.step1': 'Ketuk tombol Bagikan di Safari.',
+  'push.ios.step2': 'Pilih "Tambah ke Layar Utama".',
+  'push.ios.step3': 'Buka GARDA dari Layar Utama, lalu aktifkan notifikasi di sana.',
+  'push.server.body': 'Notifikasi push belum disiapkan di server ini. Minta administrator Anda untuk mengaturnya.',
+  'push.keyRotated': 'Kunci notifikasi server telah berubah. Aktifkan notifikasi lagi agar peringatan tetap masuk.',
+
+  // galat di browser
+  'push.err.denied': 'Notifikasi diblokir. Izinkan di pengaturan situs browser, lalu coba lagi.',
+  'push.err.dismissed': 'Notifikasi belum diizinkan. Coba lagi dan pilih "Izinkan" saat browser bertanya.',
+  'push.err.unsupported': 'Browser ini tidak dapat menerima notifikasi push.',
+  'push.err.no_worker': 'Layanan notifikasi browser ini tidak berjalan. Muat ulang halaman lalu coba lagi.',
+  'push.err.subscribe_failed': 'Browser tidak dapat mendaftar notifikasi. Jendela pribadi (incognito) tidak dapat menerimanya; selain itu periksa koneksi internet lalu coba lagi.',
+  'push.err.invalid_key': 'Kunci notifikasi server tidak valid. Hubungi administrator Anda.',
+
+  // perangkat Anda
+  'push.devices.title': 'Perangkat Anda',
+  'push.devices.desc': 'Browser dan aplikasi tempat Anda menerima notifikasi GARDA.',
+  'push.devices.empty': 'Belum ada perangkat yang menerima notifikasi. Aktifkan di atas untuk menambahkan perangkat ini.',
+  'push.devices.added': 'Ditambahkan {when}',
+  'push.devices.lastOk': 'Terakhir terkirim {when}',
+  'push.devices.never': 'Belum ada yang terkirim',
+  'push.devices.lastError': 'Galat terakhir {when}: {error}',
+  'push.devices.app': 'Aplikasi tablet',
+  'push.devices.remove': 'Hapus',
+  'push.devices.removeLabel': 'Hapus {label}',
+  'push.devices.removeTitle': 'Hapus perangkat ini?',
+  'push.devices.removeBody': '"{label}" tidak akan menerima notifikasi GARDA lagi. Anda dapat mengaktifkannya kembali di perangkat itu kapan saja.',
+  'push.devices.removed': 'Perangkat dihapus.',
+
+  // preferensi
+  'push.prefs.title': 'Yang dikirim ke saya',
+  'push.prefs.desc': 'Berlaku untuk semua perangkat Anda. Hanya peringatan yang dapat diterima peran Anda yang ditampilkan.',
+  'push.prefs.none': 'Tidak ada peringatan push untuk peran Anda.',
+  'push.prefs.noDevice': 'Belum ada perangkat yang menerima notifikasi — aktifkan di atas agar peringatan ini masuk.',
+  'push.group.sos': 'SOS & insiden',
+  'push.group.patrol': 'Patroli',
+  'push.group.attendance': 'Absensi',
+  'push.group.ops': 'Operasional',
+  'push.group.other': 'Lainnya',
+  'push.ev.sos': 'Tombol SOS ditekan',
+  'push.ev.sos.desc': 'Petugas menekan tombol darurat di tablet.',
+  'push.ev.sos_unacknowledged': 'SOS belum ditanggapi',
+  'push.ev.sos_unacknowledged.desc': 'SOS masih terbuka setelah beberapa menit — diingatkan hingga 3 kali.',
+  'push.ev.incident_high': 'Insiden tinggi atau kritis',
+  'push.ev.incident_high.desc': 'Petugas melaporkan insiden serius seperti pencurian, kebakaran atau penyusupan.',
+  'push.ev.incident_filed': 'Setiap insiden baru',
+  'push.ev.incident_filed.desc': 'Setiap laporan insiden baru, dari rendah hingga kritis.',
+  'push.ev.patrol_not_started': 'Patroli belum dimulai',
+  'push.ev.patrol_not_started.desc': 'Patroli terjadwal tidak dimulai tepat waktu.',
+  'push.ev.sla_missed': 'Scan titik terlewat',
+  'push.ev.sla_missed.desc': 'Titik patroli tidak dipindai dalam batas waktunya.',
+  'push.ev.absent': 'Petugas tidak hadir',
+  'push.ev.absent.desc': 'Petugas belum absen masuk — pos mungkin tidak terjaga.',
+  'push.ev.late_clock_in': 'Petugas terlambat',
+  'push.ev.late_clock_in.desc': 'Petugas absen masuk melewati batas toleransi terlambat.',
+  'push.ev.attendance_review': 'Absensi perlu ditinjau',
+  'push.ev.attendance_review.desc': 'Absen masuk menunggu di antrean tinjauan, mis. jauh dari pos atau selfie kurang jelas.',
+  'push.ev.defect_opened': 'Kerusakan fasilitas baru',
+  'push.ev.defect_opened.desc': 'Petugas melaporkan kerusakan seperti lampu, CCTV atau pintu rusak.',
+  'push.ev.device_pending': 'Tablet menunggu persetujuan',
+  'push.ev.device_pending.desc': 'Tablet baru masuk dan harus disetujui sebelum dapat dipakai petugas.',
+  'push.ev.device_unhealthy': 'Masalah tablet',
+  'push.ev.device_unhealthy.desc': 'Tablet berhenti sinkron, jamnya tidak tepat, atau melaporkan galat.',
+
+  // tes
+  'push.test': 'Kirim tes',
+  'push.test.sent': 'Tes dikirim ke {n} perangkat.',
+  'push.test.partial': 'Tes dikirim ke {sent} perangkat; {failed} gagal — lihat "Perangkat Anda".',
+  'push.test.none': 'Belum ada perangkat yang menerima notifikasi. Aktifkan dulu.',
+  'push.test.title': 'Notifikasi tes GARDA',
+  'push.test.body': 'Notifikasi berfungsi di perangkat ini.',
+
+  // petunjuk di dasbor
+  'push.nudge.title': 'Terima peringatan SOS meski GARDA ditutup',
+  'push.nudge.body': 'Aktifkan notifikasi di perangkat ini agar Anda tidak melewatkan keadaan darurat.',
+  'push.nudge.cta': 'Atur notifikasi',
+  'push.nudge.dismiss': 'Nanti saja',
+
+  // tablet (pengaturan → perangkat)
+  'push.dev.on': 'Push aktif',
+  'push.dev.off': 'Tanpa push',
+  'push.dev.onHint': 'Tablet sudah terdaftar untuk pesan push.',
+  'push.dev.offHint': 'Tablet belum terdaftar untuk pesan push.',
+
+  // aturan notifikasi (e-mail / WhatsApp)
+  'push.rule.sosUnack': 'SOS belum ditanggapi',
+  'push.rule.sosUnackDesc': 'Dikirim bila SOS masih belum ditanggapi setelah beberapa menit, diulang hingga 3 kali — cadangan bila penerima pertama tidak merespons.',
+}

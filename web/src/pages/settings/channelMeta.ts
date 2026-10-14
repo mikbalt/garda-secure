@@ -1,4 +1,5 @@
 import {
+  BellRing,
   CalendarRange,
   CalendarX2,
   FileWarning,
@@ -41,6 +42,7 @@ export interface EventMeta {
 /** Display order and plain-language meaning of each notification event. */
 export const EVENT_ORDER = [
   'sos',
+  'sos_unacknowledged',
   'incident_high',
   'incident_filed',
   'absent',
@@ -58,6 +60,7 @@ export const EVENT_ORDER = [
 
 export const EVENT_META: Record<string, EventMeta> = {
   sos: { icon: Siren, tone: 'red', title: 'adm.ev.sos', desc: 'adm.ev.sosDesc' },
+  sos_unacknowledged: { icon: BellRing, tone: 'red', title: 'push.rule.sosUnack', desc: 'push.rule.sosUnackDesc' },
   incident_high: { icon: ShieldAlert, tone: 'orange', title: 'adm.ev.incident', desc: 'adm.ev.incidentDesc' },
   incident_filed: { icon: FileWarning, tone: 'amber', title: 'p2.ev.incidentFiled', desc: 'p2.ev.incidentFiledDesc' },
   patrol_not_started: { icon: CalendarX2, tone: 'orange', title: 'p2.ev.notStarted', desc: 'p2.ev.notStartedDesc' },

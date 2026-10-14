@@ -8,7 +8,7 @@ import path from 'path'
  * foreign origins. (The MinIO img-src origin is not needed in demo mode.)
  */
 const PREVIEW_CSP =
-  "default-src 'self'; img-src 'self' data: blob:; connect-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; frame-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'"
+  "default-src 'self'; img-src 'self' data: blob:; connect-src 'self'; script-src 'self'; worker-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; frame-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'"
 
 export default defineConfig({
   plugins: [react()],

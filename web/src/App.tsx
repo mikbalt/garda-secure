@@ -23,6 +23,7 @@ const Settings = lazy(() => import('./pages/Settings'))
 const Setup = lazy(() => import('./pages/Setup'))
 const Audit = lazy(() => import('./pages/Audit'))
 const Users = lazy(() => import('./pages/Users'))
+const Notifications = lazy(() => import('./pages/Notifications'))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -72,6 +73,7 @@ export function App() {
                     <Route path="/settings" element={page('viewSettings', <Settings />)} />
                     <Route path="/audit" element={page('viewAudit', <Audit />)} />
                     <Route path="/users" element={page('manageUsers', <Users />)} />
+                    <Route path="/notifications" element={page('viewNotifications', <Notifications />)} />
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Route>
                 </Routes>

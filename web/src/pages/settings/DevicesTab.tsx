@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Ban, CheckCircle2, Clock, MapPin, Pencil, RotateCcw, Tablet, TriangleAlert } from 'lucide-react'
+import { Ban, BellOff, BellRing, CheckCircle2, Clock, MapPin, Pencil, RotateCcw, Tablet, TriangleAlert } from 'lucide-react'
 import apiClient, { apiGet } from '../../api/client'
 import { TableSkeleton } from '../../components/LoadingSkeleton'
 import { Badge, Dot } from '../../components/ui/Badge'
@@ -245,6 +245,12 @@ export function DevicesTab() {
                               <Clock className="h-3 w-3" aria-hidden="true" />
                               {d.last_seen_at ? t('adm.dev.lastSeen', { when: relativeTime(d.last_seen_at, lang, now) }) : t('adm.dev.neverSeen')}
                             </span>
+                            {d.push_enabled !== undefined && (
+                              <span className="inline-flex items-center gap-1" title={t(d.push_enabled ? 'push.dev.onHint' : 'push.dev.offHint')}>
+                                {d.push_enabled ? <BellRing className="h-3 w-3" aria-hidden="true" /> : <BellOff className="h-3 w-3" aria-hidden="true" />}
+                                {t(d.push_enabled ? 'push.dev.on' : 'push.dev.off')}
+                              </span>
+                            )}
                           </p>
                         </div>
                       </div>

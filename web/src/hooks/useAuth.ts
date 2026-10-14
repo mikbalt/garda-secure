@@ -3,6 +3,7 @@ import { getRealm, getUserRoles, getUsername, logout, switchOrganisation } from 
 import { config } from '../config'
 import { can, canSeeMedia, type Capability, type MediaKind } from '../lib/roles'
 import { useT } from '../i18n/context'
+import { dropPushForAccountSwitch } from '../lib/push'
 
 export interface AuthUser {
   username: string
@@ -33,7 +34,10 @@ export function useAuth() {
       can: (cap: Capability) => can(roles, cap),
       canSeeMedia: (kind: MediaKind | undefined) => canSeeMedia(roles, kind),
       logout,
-      switchOrganisation,
+      /** Another organisation = another account: this browser stops receiving the current user's push first (logout keeps it). */
+      switchOrganisation: () => {
+        void dropPushForAccountSwitch().finally(switchOrganisation)
+      },
       multiRealm: config.realms.length > 1,
     }
     // roles array identity changes per call; key captures its content

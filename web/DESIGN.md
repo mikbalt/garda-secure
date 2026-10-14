@@ -50,7 +50,16 @@ Hooks: `useSite()` (selected location), `useAuth().can(cap)` (role checks —
 hide actions the user cannot perform; `canSeeMedia(kind)` for photos),
 `useTabParam`, `useNewParam(open)` (open the create form when the URL has
 `?new=1`; the setup guide links there), `useActiveSos()` (open SOS alerts of
-all visible sites).
+all visible sites), `usePush()` (web push state of this browser —
+`unsupported` / `ios-needs-install` / `server-disabled` / `blocked` / `off` /
+`on` — with enable/disable; logic in `lib/push.ts`).
+
+Push notifications: `/notifications` (user menu, every web role) is a
+personal page, **not** site-scoped (no `RequireSite`). The service worker
+`public/sw.js` only shows pushes and handles clicks (no fetch handler, no
+caching); a click posts `garda:navigate` to an open window
+(`useServiceWorkerNavigation` in the Layout) or opens one. Admins and
+supervisors get a one-time dashboard hint (`PushNudge`) while push is `off`.
 
 Roles: `platform-admin` (install-wide operator) sees Settings → Channels, Ops
 alerts, Ops log, Backups; a realm `admin` without it sees an explanation

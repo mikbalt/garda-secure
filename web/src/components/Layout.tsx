@@ -2,6 +2,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
   BarChart3,
+  Bell,
   Building2,
   CalendarDays,
   Check,
@@ -25,6 +26,7 @@ import {
 import { useAuth } from '../hooks/useAuth'
 import { useSetupProgress } from '../hooks/useSetupProgress'
 import { useMe } from '../hooks/useMe'
+import { useServiceWorkerNavigation } from '../hooks/usePush'
 import { useI18n, type Key } from '../i18n/context'
 import { useSite } from '../context/site'
 import { config } from '../config'
@@ -148,7 +150,7 @@ function ScopeHint() {
 }
 
 function UserPanel() {
-  const { user, logout, switchOrganisation, multiRealm } = useAuth()
+  const { user, logout, switchOrganisation, multiRealm, can } = useAuth()
   const { t, lang, setLang } = useI18n()
   const role = primaryRole(user.roles)
   const roleLabel = role ? t(`role.${role}` as Key) : ''
@@ -208,6 +210,12 @@ function UserPanel() {
             </div>
           </div>
           <div className="border-t border-gray-100 pt-1">
+            {can('viewNotifications') && (
+              <Link to="/notifications" className={item} onClick={close}>
+                <Bell className="h-4 w-4 text-gray-500" aria-hidden="true" />
+                {t('push.title')}
+              </Link>
+            )}
             {multiRealm && (
               <button type="button" className={item} onClick={() => (close(), switchOrganisation())}>
                 <Repeat className="h-4 w-4 text-gray-500" aria-hidden="true" />
@@ -463,6 +471,7 @@ export function Layout() {
   const desktop = useDesktop()
   const closeMenu = useCallback(() => setMenuOpen(false), [])
   const { asideRef, openerRef, modal } = useOffCanvas(menuOpen, closeMenu, desktop)
+  useServiceWorkerNavigation()
 
   useEffect(() => setMenuOpen(false), [location.pathname])
 

@@ -16,6 +16,7 @@ import type {
   SessionSummary,
   Severity,
 } from '../types'
+import type { PushSubscriptionRow } from '../types/push'
 import { getUserRoles } from '../keycloak'
 import { emptyWorld, iso, seedWorld, uid, wib, type World } from './world'
 import { demoHealth, demoMe, registerPeopleMocks, visibleSites, visitorReadAudit } from './mockPeople'
@@ -93,6 +94,10 @@ class HttpError {
 /** A page of a paged list: the body is `rows`, `X-Total-Count` is `total`. */
 class Paged {
   constructor(public rows: unknown[], public total: number) {}
+}
+/** A body with an explicit status (e.g. 200 instead of 201 for an idempotent create). */
+class WithStatus {
+  constructor(public status: number, public data: unknown) {}
 }
 const notFound = () => new HttpError(404, 'not_found', 'not found')
 const bad = (code: string, msg: string) => new HttpError(400, code, msg)
@@ -268,7 +273,7 @@ on('PUT', '/guards/:id/pin', ({ params, body }) => {
 })
 
 // Devices
-on('GET', '/devices', () => w.devices.map((d, i) => ({ ...d, ...demoHealth(d, i) })))
+on('GET', '/devices', () => w.devices.map((d, i) => ({ ...d, ...demoHealth(d, i), push_enabled: d.status === 'active' && i % 2 === 0 })))
 on('PUT', '/devices/:id', ({ params, body }) => {
   const d = byId(w.devices, params.id)
   if (body.status === 'active' && !body.site_id) throw bad('site_required', 'assign a site before activating the device')
@@ -568,7 +573,7 @@ on('GET', '/reports/guards/kpi', ({ query }): { site_id?: string; rows: GuardKpi
 }))
 
 // Administration
-on('GET', '/notifications/event-types', () => ({ event_types: ['sos', 'sla_missed', 'absent', 'late_clock_in', 'incident_high', 'incident_filed', 'defect_opened', 'monthly_recap', 'patrol_not_started'], channels: ['email', 'whatsapp'] }))
+on('GET', '/notifications/event-types', () => ({ event_types: ['sos', 'sos_unacknowledged', 'sla_missed', 'absent', 'late_clock_in', 'incident_high', 'incident_filed', 'defect_opened', 'monthly_recap', 'patrol_not_started'], channels: ['email', 'whatsapp'] }))
 on('GET', '/notifications/channels', () => [
   { name: 'email', configured: !!w.channels.smtp?.host },
   { name: 'whatsapp', configured: !!w.channels.whatsapp?.phone_number_id },
@@ -589,6 +594,83 @@ on('POST', '/notifications/log/:id/retry', ({ params }) => {
   Object.assign(byId(w.log, params.id), { status: 'queued', last_error: undefined })
   return { status: 'queued' }
 })
+// Push notifications (docs/api.md /push/*): in memory, reset on reload like a fresh browser session.
+const DEMO_VAPID_KEY = 'BMq1fmPg8AzlxBtu9BAMXXrnv7ZHddAm_OP_dwQGJNHzfDtLx_jfbPnTcbGpLln9Z9ffQpmSLrj8BM_Jdh5uM3c'
+const PUSH_EVENTS = ['sos', 'sos_unacknowledged', 'incident_high', 'incident_filed', 'patrol_not_started', 'sla_missed', 'absent', 'late_clock_in', 'attendance_review', 'defect_opened', 'device_pending', 'device_unhealthy']
+const PUSH_HOSTS = /^(fcm\.googleapis\.com|updates\.push\.services\.mozilla\.com|[\w.-]+\.notify\.windows\.com|web\.push\.apple\.com|[\w.-]+\.push\.apple\.com|demo\.push\.invalid)$/
+const pushPrefs: Record<string, boolean> = {}
+const pushSubs: PushSubscriptionRow[] = [
+  {
+    id: uid(), kind: 'webpush', label: 'Chrome on Android', endpoint: 'https://fcm.googleapis.com/fcm/send/demo-android-phone',
+    created_at: iso(new Date(Date.now() - 3 * 86_400_000)), last_success_at: iso(new Date(Date.now() - 2 * 3600_000)), last_failure_at: null, last_error: null,
+  },
+  {
+    id: uid(), kind: 'webpush', label: 'Firefox on Windows', endpoint: 'https://updates.push.services.mozilla.com/wpush/v2/demo-office-pc',
+    created_at: iso(new Date(Date.now() - 20 * 86_400_000)), last_success_at: iso(new Date(Date.now() - 6 * 86_400_000)),
+    last_failure_at: iso(new Date(Date.now() - 86_400_000)), last_error: '429 Too Many Requests',
+  },
+]
+/** Push events a role can receive (backend: by the routes behind each event). */
+function pushAvailable(): string[] {
+  if (hasRole('admin')) return PUSH_EVENTS
+  if (hasRole('supervisor')) return PUSH_EVENTS.filter((e) => e !== 'device_pending' && e !== 'device_unhealthy')
+  if (hasRole('hr')) return ['absent', 'late_clock_in', 'attendance_review']
+  if (hasRole('client-readonly')) return ['incident_high', 'patrol_not_started']
+  return []
+}
+function pushPreferences() {
+  const client = !hasRole('admin', 'supervisor', 'hr') && hasRole('client-readonly')
+  const def = (e: string) => (client ? false : e !== 'incident_filed' && e !== 'late_clock_in')
+  const available = pushAvailable()
+  return { events: Object.fromEntries(available.map((e) => [e, pushPrefs[e] ?? def(e)])), available }
+}
+on('GET', '/push/config', () => ({ webpush: { enabled: true, vapid_public_key: DEMO_VAPID_KEY }, fcm: { enabled: true } }))
+on('GET', '/push/subscriptions', () => pushSubs)
+on('POST', '/push/subscriptions', ({ body }) => {
+  const endpoint = String(body.endpoint ?? '')
+  let host = ''
+  try {
+    const u = new URL(endpoint)
+    if (u.protocol === 'https:') host = u.hostname
+  } catch {
+    /* invalid */
+  }
+  if (body.kind !== 'webpush' || !PUSH_HOSTS.test(host)) throw bad('invalid_endpoint', 'endpoint must be https on a known push service')
+  const keys = (body.keys ?? {}) as { p256dh?: unknown; auth?: unknown }
+  if (typeof keys.p256dh !== 'string' || !keys.p256dh || typeof keys.auth !== 'string' || !keys.auth) throw bad('invalid_keys', 'keys.p256dh and keys.auth are required')
+  const existing = pushSubs.find((s) => s.endpoint === endpoint)
+  if (existing) return new WithStatus(200, { id: existing.id })
+  if (pushSubs.length >= 20) throw new HttpError(409, 'too_many_subscriptions', 'at most 20 push subscriptions per user')
+  const row: PushSubscriptionRow = {
+    id: uid(), kind: 'webpush', label: String(body.label ?? '').slice(0, 100), endpoint,
+    created_at: iso(now()), last_success_at: null, last_failure_at: null, last_error: null,
+  }
+  pushSubs.push(row)
+  return { id: row.id }
+})
+on('DELETE', '/push/subscriptions/:id', ({ params }) => {
+  const i = pushSubs.findIndex((s) => s.id === params.id)
+  if (i < 0) throw notFound()
+  pushSubs.splice(i, 1)
+  return null
+})
+on('GET', '/push/preferences', () => pushPreferences())
+on('PUT', '/push/preferences', ({ body }) => {
+  const events = (body.events ?? {}) as Record<string, unknown>
+  const available = pushAvailable()
+  for (const [e, v] of Object.entries(events)) {
+    if (!available.includes(e)) throw bad('invalid_event', `event ${e} is not available`)
+    if (typeof v !== 'boolean') throw bad('invalid_event', `event ${e} needs true or false`)
+  }
+  for (const [e, v] of Object.entries(events)) pushPrefs[e] = v as boolean
+  return pushPreferences()
+})
+on('POST', '/push/test', () => {
+  const at = iso(now())
+  for (const s of pushSubs) s.last_success_at = at
+  return new WithStatus(200, { sent: pushSubs.length, failed: 0 })
+})
+
 on('GET', '/settings/channels', () => (requirePlatform(), w.channels))
 on('PUT', '/settings/channels', ({ body }) => {
   requirePlatform()
@@ -807,6 +889,7 @@ const adapter: AxiosAdapter = async (cfg: InternalAxiosRequestConfig) => {
               : csvBlob(columns, rows)
         return respond(200, blob, { 'content-type': blob.type, 'content-disposition': `attachment; filename="${base}.${format}"` })
       }
+      if (data instanceof WithStatus) return respond(data.status, data.data)
       if (data instanceof Paged) {
         return respond(200, data.rows, { 'x-total-count': String(data.total) })
       }
