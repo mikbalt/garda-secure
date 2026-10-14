@@ -1,0 +1,567 @@
+<title>Panduan Sales SecurePatrol</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: sticky contents rail on the left (desktop), one reading column with full-width screenshots; collapses to one column on phones. */
+:root {
+  --bg: #f6f7fb;
+  --surface: #ffffff;
+  --ink: #0f1a2e;
+  --muted: #536079;
+  --line: #dde2ec;
+  --accent: #2453d6;
+  --accent-soft: #e8eefc;
+  --sos: #c81e3a;
+  --sos-soft: #fdecef;
+  --ok: #0f7a52;
+  --ok-soft: #e4f5ee;
+  --warn: #9a5b00;
+  --warn-soft: #fdf3e1;
+  --shadow: 0 1px 2px rgba(15, 26, 46, .06), 0 8px 24px rgba(15, 26, 46, .06);
+  --font-display: "Plus Jakarta Sans", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Plus Jakarta Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c1322; --surface: #131c30; --ink: #e8edf7; --muted: #a2adc4; --line: #26324b;
+    --accent: #7ea2ff; --accent-soft: #1b2850; --sos: #ff6b81; --sos-soft: #3a1520;
+    --ok: #5fd3a4; --ok-soft: #0f2e24; --warn: #f2b64f; --warn-soft: #33260c;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0c1322; --surface: #131c30; --ink: #e8edf7; --muted: #a2adc4; --line: #26324b;
+  --accent: #7ea2ff; --accent-soft: #1b2850; --sos: #ff6b81; --sos-soft: #3a1520;
+  --ok: #5fd3a4; --ok-soft: #0f2e24; --warn: #f2b64f; --warn-soft: #33260c;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 16px; line-height: 1.6;
+  padding-inline: 16px; padding-block: 0;
+}
+a { color: var(--accent); }
+a:focus-visible, button:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+code, .mono { font-family: var(--font-mono); font-size: .88em; }
+code { background: var(--accent-soft); padding: .1em .35em; border-radius: 4px; overflow-wrap: anywhere; }
+
+.page { max-width: 1240px; margin: 0 auto; display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 48px; padding-block: 40px 80px; }
+@media (max-width: 960px) { .page { grid-template-columns: minmax(0, 1fr); gap: 24px; padding-block: 24px 64px; } }
+
+/* contents rail */
+.toc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 24px); align-self: start; max-height: calc(100vh - 48px); overflow: auto; font-size: 14px; }
+@media (max-width: 960px) { .toc { position: static; max-height: none; } }
+.toc .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+.toc .mark { width: 34px; height: 34px; border-radius: 9px; background: var(--accent); display: grid; place-items: center; flex: none; }
+.toc .mark svg { width: 20px; height: 20px; }
+.toc .brand b { font-family: var(--font-display); font-size: 15px; letter-spacing: -.01em; }
+.toc .brand span { display: block; color: var(--muted); font-size: 12px; }
+.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; counter-reset: toc; }
+.toc li a { display: flex; gap: 10px; padding: 6px 10px; border-radius: 7px; color: var(--ink); text-decoration: none; }
+.toc li a::before { counter-increment: toc; content: counter(toc, decimal-leading-zero); font-family: var(--font-mono); font-size: 12px; color: var(--muted); padding-top: 2px; }
+.toc li a:hover { background: var(--accent-soft); }
+@media (max-width: 960px) { .toc ol { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); } }
+
+main { min-width: 0; }
+header.hero { padding-bottom: 28px; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+.eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(30px, 4.4vw, 46px); line-height: 1.1; letter-spacing: -.025em; margin: 10px 0 14px; text-wrap: balance; }
+.lede { font-size: 18px; color: var(--muted); max-width: 64ch; margin: 0; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 18px; font-size: 13px; color: var(--muted); }
+.meta span { display: inline-flex; align-items: center; gap: 6px; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); display: inline-block; }
+
+section { padding-top: 44px; }
+h2 { font-family: var(--font-display); font-weight: 750; font-size: clamp(24px, 3vw, 30px); letter-spacing: -.02em; line-height: 1.2; margin: 0 0 6px; text-wrap: balance; scroll-margin-top: 20px; }
+h2 .num { font-family: var(--font-mono); font-size: .55em; color: var(--muted); font-weight: 500; vertical-align: .35em; margin-right: 10px; }
+h3 { font-family: var(--font-display); font-weight: 700; font-size: 19px; letter-spacing: -.01em; margin: 32px 0 6px; scroll-margin-top: 20px; }
+.intro { color: var(--muted); max-width: 70ch; margin: 0 0 18px; }
+p, li { max-width: 72ch; }
+ul.tight { padding-left: 20px; margin: 8px 0; }
+ul.tight li { margin: 3px 0; }
+
+/* value grid */
+.values { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 18px; }
+.value { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+.value b { display: block; font-family: var(--font-display); font-size: 16px; margin-bottom: 4px; }
+.value p { margin: 0; color: var(--muted); font-size: 14.5px; }
+.value .tag { font-family: var(--font-mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+
+/* pitch */
+.pitch { background: var(--ink); color: var(--bg); border-radius: 14px; padding: 22px 24px; margin-top: 16px; }
+.pitch p { margin: 0; font-size: 17.5px; line-height: 1.55; max-width: none; }
+.pitch .eyebrow { color: #9db6ff; display: block; margin-bottom: 8px; }
+
+/* tables */
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); margin-top: 14px; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; min-width: 560px; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; background: color-mix(in srgb, var(--accent-soft) 45%, var(--surface)); }
+tr:last-child td { border-bottom: 0; }
+td b { font-weight: 650; }
+
+/* figures */
+figure.shot { margin: 18px 0 8px; }
+figure.shot button { display: block; width: 100%; padding: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--surface); box-shadow: var(--shadow); cursor: zoom-in; }
+figure.shot img { display: block; width: 100%; height: auto; }
+figure.shot figcaption { font-size: 13.5px; color: var(--muted); margin-top: 8px; display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+figure.shot figcaption .who { font-family: var(--font-mono); font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); padding: 1px 7px; border-radius: 99px; }
+.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+.pair figure.shot { margin-top: 10px; }
+.narrow figure.shot button { max-width: 420px; }
+
+/* say-this callout */
+.say { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 10px 14px; border-radius: 0 10px 10px 0; margin: 12px 0; font-size: 15px; }
+.say::before { content: "Kalimat jualan"; display: block; font-family: var(--font-mono); font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--accent); margin-bottom: 2px; }
+.careful { border-left: 3px solid var(--warn); background: var(--warn-soft); padding: 10px 14px; border-radius: 0 10px 10px 0; margin: 12px 0; font-size: 15px; }
+.careful::before { content: "Hati-hati menjanjikan"; display: block; font-family: var(--font-mono); font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--warn); margin-bottom: 2px; }
+.sosnote { border-left: 3px solid var(--sos); background: var(--sos-soft); padding: 10px 14px; border-radius: 0 10px 10px 0; margin: 12px 0; font-size: 15px; }
+
+/* demo script steps (a real sequence) */
+ol.steps { list-style: none; padding: 0; margin: 18px 0 0; counter-reset: step; display: grid; gap: 26px; }
+ol.steps > li { counter-increment: step; display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 4px 16px; max-width: none; }
+ol.steps > li > * { grid-column: 2; min-width: 0; }
+ol.steps > li::before { content: counter(step); grid-column: 1; grid-row: 1 / span 2; width: 36px; height: 36px; border-radius: 50%; background: var(--ink); color: var(--bg); display: grid; place-items: center; font-weight: 700; font-family: var(--font-display); }
+ol.steps h4 { margin: 4px 0 0; font-family: var(--font-display); font-size: 17px; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+ol.steps h4 .time { font-family: var(--font-mono); font-size: 12px; color: var(--muted); font-weight: 400; }
+ol.steps p { margin: 4px 0; }
+@media (max-width: 520px) { ol.steps > li { grid-template-columns: minmax(0, 1fr); } ol.steps > li::before, ol.steps > li > * { grid-column: 1; grid-row: auto; } }
+
+/* checklists */
+.checks { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-top: 14px; }
+.check { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; min-width: 0; }
+.check h4 { margin: 0 0 8px; font-family: var(--font-display); font-size: 15.5px; }
+.check ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 7px; font-size: 14.5px; }
+.check li { position: relative; padding-left: 26px; overflow-wrap: anywhere; }
+.check li::before { content: ""; position: absolute; left: 0; top: 5px; width: 14px; height: 14px; border: 1.5px solid var(--muted); border-radius: 4px; }
+
+/* faq */
+details { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 0 16px; margin-top: 10px; }
+summary { cursor: pointer; padding: 13px 0; font-weight: 650; list-style-position: outside; }
+details[open] summary { border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+details p { margin: 6px 0 14px; font-size: 15px; }
+
+/* lightbox */
+dialog.zoom { border: 0; padding: 0; background: transparent; max-width: 96vw; max-height: 94vh; }
+dialog.zoom::backdrop { background: rgba(8, 12, 22, .82); }
+dialog.zoom img { display: block; max-width: 96vw; max-height: 88vh; width: auto; height: auto; border-radius: 8px; }
+dialog.zoom p { color: #e8edf7; font-size: 14px; margin: 8px 4px 0; text-align: center; max-width: none; }
+dialog.zoom button { position: absolute; top: 8px; right: 8px; border: 0; border-radius: 99px; width: 36px; height: 36px; background: rgba(255,255,255,.92); color: #0f1a2e; font-size: 20px; cursor: pointer; }
+
+footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13.5px; }
+</style>
+
+<div class="page">
+  <nav class="toc" aria-label="Daftar isi">
+    <div class="brand">
+      <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg></span>
+      <div><b>SecurePatrol</b><span>Panduan sales &amp; presales</span></div>
+    </div>
+    <ol>
+      <li><a href="#ringkas">Ringkasan 1 menit</a></li>
+      <li><a href="#peran">Siapa penggunanya</a></li>
+      <li><a href="#siapkan">Menyiapkan demo</a></li>
+      <li><a href="#alur">Alur demo 20 menit</a></li>
+      <li><a href="#tablet">Aplikasi tablet</a></li>
+      <li><a href="#fitur">Tur fitur web</a></li>
+      <li><a href="#laporan">Laporan &amp; export</a></li>
+      <li><a href="#admin">Admin, keamanan &amp; operator</a></li>
+      <li><a href="#faq">Pertanyaan &amp; keberatan</a></li>
+      <li><a href="#discovery">Checklist ke calon klien</a></li>
+      <li><a href="#kebutuhan">Yang disiapkan klien</a></li>
+      <li><a href="#batasan">Batasan versi 1</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <header class="hero">
+      <span class="eyebrow">Untuk tim sales &amp; presales</span>
+      <h1>Panduan Sales SecurePatrol</h1>
+      <p class="lede">Semua yang perlu disiapkan sebelum bertemu calon klien: cerita produk, alur demo lengkap dengan gambar layar, jawaban untuk pertanyaan yang sering muncul, dan data apa saja yang perlu dikumpulkan dari klien.</p>
+      <div class="meta">
+        <span><span class="dot" aria-hidden="true"></span>Versi Oktober 2026</span>
+        <span>Gambar diambil dari <b>mode demo</b> (data contoh PT Logistik Nusantara)</span>
+        <span>Klik gambar untuk memperbesar</span>
+      </div>
+    </header>
+
+    <section id="ringkas">
+      <h2><span class="num">01</span>Ringkasan 1 menit</h2>
+      <p class="intro">SecurePatrol adalah sistem patroli dan absensi untuk perusahaan jasa keamanan. Petugas memakai tablet bersama di pos jaga; admin, supervisor, HR, dan klien memakai dashboard web. Semua data berjalan di server milik sendiri (on-premise).</p>
+      <div class="pitch">
+        <span class="eyebrow">Versi 30 detik</span>
+        <p>“Dengan SecurePatrol, Bapak/Ibu tahu setiap saat apakah petugas benar-benar hadir dan benar-benar berpatroli. Absen dan patroli tercatat di tablet pos dengan QR, foto, dan GPS, tetap jalan walau internet putus. Kalau ada keadaan darurat, satu tombol SOS langsung mengirim WhatsApp ke supervisor. Klien bisa melihat patroli secara langsung, dan rekap bulanan siap dipakai untuk penggajian.”</p>
+      </div>
+      <div class="values">
+        <div class="value"><span class="tag">Bukti kehadiran</span><b>Absen yang sulit dipalsukan</b><p>Absen dengan selfie dan GPS, PIN dicek server, dan absen mencurigakan masuk antrean tinjauan.</p></div>
+        <div class="value"><span class="tag">Bukti patroli</span><b>QR bertanda tangan</b><p>Kode QR tidak bisa digandakan. Scan yang terlalu cepat atau jauh dari titiknya otomatis ditandai.</p></div>
+        <div class="value"><span class="tag">Darurat</span><b>SOS ke WhatsApp supervisor</b><p>Tahan tombol 2 detik, bahkan dari layar kunci tanpa PIN. Dashboard web berbunyi sampai ada yang menanggapi.</p></div>
+        <div class="value"><span class="tag">Tetap jalan</span><b>Offline di tablet</b><p>Rute, QR, dan PIN tersimpan di tablet. Laporan dikirim otomatis saat internet kembali.</p></div>
+        <div class="value"><span class="tag">Transparansi</span><b>Klien ikut memantau</b><p>Akun klien hanya-lihat untuk lokasinya sendiri: patroli langsung di denah, absensi, dan insiden.</p></div>
+        <div class="value"><span class="tag">Penggajian</span><b>Rekap bulanan per hari</b><p>Hadir, terlambat, absen, dan jam kerja per petugas. Bisa diunduh ke Excel, CSV, atau PDF.</p></div>
+      </div>
+    </section>
+
+    <section id="peran">
+      <h2><span class="num">02</span>Siapa penggunanya</h2>
+      <p class="intro">Setiap peran melihat menu yang berbeda. Dalam demo, peran bisa diganti lewat pilihan <b>Lihat sebagai</b> di bilah ungu bagian atas.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Peran</th><th>Memakai</th><th>Yang bisa dilakukan</th><th>Yang ditunjukkan saat demo</th></tr></thead>
+          <tbody>
+            <tr><td><b>Petugas</b></td><td>Tablet pos</td><td>Absen masuk/pulang, patroli QR, lapor insiden/kerusakan, buku tamu, SOS</td><td>Layar kunci, beranda, patroli, SOS</td></tr>
+            <tr><td><b>Supervisor</b></td><td>Web + tablet</td><td>Semua tugas petugas, menanggapi SOS, menangani insiden, meninjau absensi</td><td>Dashboard Hari ini, SOS, antrean tinjauan</td></tr>
+            <tr><td><b>Admin / Ops</b></td><td>Web</td><td>Lokasi, petugas, jadwal, rute, tablet, pengguna, peringatan, laporan</td><td>Panduan setup, rute &amp; denah, pengguna</td></tr>
+            <tr><td><b>HR / Penggajian</b></td><td>Web</td><td>Absensi, rekap bulanan, KPI petugas</td><td>Rekap bulanan &amp; export Excel</td></tr>
+            <tr><td><b>Klien (hanya lihat)</b></td><td>Web + e-mail bulanan</td><td>Patroli langsung, absensi, insiden, laporan untuk lokasinya</td><td>Tampilan klien yang ringkas</td></tr>
+            <tr><td><b>Operator platform</b></td><td>Web</td><td>Kredensial WhatsApp/e-mail, alert operasional, backup (seluruh instalasi)</td><td>Biasanya tidak perlu didemokan</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="siapkan">
+      <h2><span class="num">03</span>Menyiapkan demo</h2>
+      <p class="intro">Mode demo berjalan di browser dengan data contoh, tanpa server dan tanpa login. Aman dipakai di depan klien: tidak ada data asli yang tampil.</p>
+      <div class="checks">
+        <div class="check">
+          <h4>Sehari sebelumnya</h4>
+          <ul>
+            <li>Minta tim teknis alamat demo (web dengan mode demo), atau jalankan sendiri: <code>cd web &amp;&amp; npm run dev:demo</code></li>
+            <li>Cari tahu jenis bisnis klien: gudang, kantor, kawasan industri, atau perumahan. Sesuaikan cerita, misalnya rute keliling gudang.</li>
+            <li>Siapkan gambar tablet di panduan ini, atau tablet Android berisi aplikasi kalau sudah tersedia.</li>
+            <li>Baca bagian <a href="#faq">pertanyaan &amp; keberatan</a> dan <a href="#batasan">batasan versi 1</a>.</li>
+          </ul>
+        </div>
+        <div class="check">
+          <h4>30 menit sebelum</h4>
+          <ul>
+            <li>Buka alamat demo, lalu tekan <b>Pakai data contoh</b> di bilah ungu supaya datanya segar.</li>
+            <li>Pastikan bahasa <b>ID</b> aktif (tombol ID/EN di kanan atas).</li>
+            <li>Suara alarm SOS menyala saat ada SOS. Nyalakan atau matikan dengan <b>Suara mati</b> di banner merah sesuai kebutuhan ruang rapat.</li>
+            <li>Siapkan dua tab: satu sebagai <b>Administrator</b>, satu sebagai <b>Klien (hanya lihat)</b>.</li>
+          </ul>
+        </div>
+        <div class="check">
+          <h4>Saat demo</h4>
+          <ul>
+            <li>Mulai dari masalah klien (absen titip, laporan kertas, patroli tidak terbukti), baru tunjukkan fitur.</li>
+            <li>Ganti peran lewat <b>Lihat sebagai</b>. Halaman akan kembali ke beranda.</li>
+            <li>Data contoh hanya tersimpan di browser itu. <b>Mulai dari kosong</b> menunjukkan tampilan awal klien baru.</li>
+            <li>Waktu di data contoh selalu mengikuti jam saat demo, jadi data terlihat “hari ini”.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="alur">
+      <h2><span class="num">04</span>Alur demo 20 menit</h2>
+      <p class="intro">Urutan yang sudah teruji untuk rapat pertama. Ceritanya: satu hari di Gudang Cikarang, dari pagi sampai laporan akhir bulan.</p>
+      <ol class="steps">
+        <li>
+          <h4>Buka “Hari ini” dan tunjukkan SOS <span class="time">± 2 menit · Administrator</span></h4>
+          <p>Dashboard pertama yang dilihat supervisor setiap pagi: kehadiran, patroli berjalan, insiden terbuka, dan hal yang perlu ditindak. Banner merah SOS muncul di semua halaman dan berbunyi sampai ada yang menekan <b>Tanggapi</b>.</p>
+          <figure class="shot"><button type="button" data-zoom><img src="img/web-dashboard.png" alt="Dashboard Hari ini dengan banner SOS merah berisi dua SOS yang belum ditanggapi, kartu kehadiran 2 dari 6, patroli berjalan 1, insiden terbuka 2" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>Dashboard “Hari ini”: dua SOS belum ditanggapi di dua lokasi berbeda.</figcaption></figure>
+          <p class="say">SOS dari lokasi mana pun langsung terlihat di semua halaman, berbunyi, dan masuk ke WhatsApp supervisor. Tidak ada lagi telepon yang tidak terangkat.</p>
+        </li>
+        <li>
+          <h4>Pindah ke tablet: petugas masuk dengan PIN <span class="time">± 3 menit · Tablet</span></h4>
+          <p>Satu tablet dipakai bersama di pos jaga. Petugas memilih namanya lalu memasukkan PIN. Tombol SOS tetap bisa dipakai di layar kunci tanpa PIN.</p>
+          <div class="pair">
+            <figure class="shot"><button type="button" data-zoom><img src="img/tab-lock.png" alt="Layar kunci tablet: pilih nama petugas, satu petugas tanpa PIN berwarna abu-abu" loading="lazy" width="1280" height="800"></button><figcaption><span class="who">Tablet</span>“Siapa yang bertugas?”: pilih nama.</figcaption></figure>
+            <figure class="shot"><button type="button" data-zoom><img src="img/tab-pin.png" alt="Masukkan PIN dengan keypad besar dan tombol SOS merah yang bisa dipakai tanpa PIN" loading="lazy" width="1280" height="800"></button><figcaption><span class="who">Tablet</span>PIN 4–6 angka; SOS tetap bisa ditahan tanpa PIN.</figcaption></figure>
+          </div>
+          <figure class="shot"><button type="button" data-zoom><img src="img/tab-home.png" alt="Beranda tablet: shift 07:00–15:00 sudah masuk, jadwal patroli berikutnya pukul 11:00, empat tombol tugas, tombol SOS di kanan" loading="lazy" width="1280" height="800"></button><figcaption><span class="who">Tablet</span>Beranda petugas: shift, jadwal patroli berikutnya, empat tugas utama, dan SOS. Tanda “Terverifikasi” berarti PIN sudah dicek server.</figcaption></figure>
+        </li>
+        <li>
+          <h4>Patroli dengan QR <span class="time">± 2 menit · Tablet</span></h4>
+          <p>Petugas memilih rute, lalu memindai QR di setiap titik. Setiap titik punya batas waktu (SLA). Titik yang terlambat langsung terlihat oranye, dan supervisor mendapat peringatan.</p>
+          <figure class="shot"><button type="button" data-zoom><img src="img/tab-patrol-active.png" alt="Patroli berjalan: 2 dari 5 titik, titik berikutnya terlambat 5 menit, tombol besar Pindai QR dan opsi Tanpa QR (foto)" loading="lazy" width="1280" height="800"></button><figcaption><span class="who">Tablet</span>Patroli berjalan: progres per titik, titik berikutnya, dan cadangan “Tanpa QR (foto)” kalau stiker rusak.</figcaption></figure>
+          <p class="say">Rute dan QR tersimpan di tablet, jadi patroli tetap tercatat di basement atau area tanpa sinyal.</p>
+        </li>
+        <li>
+          <h4>Kembali ke web: patroli langsung di denah <span class="time">± 3 menit · Administrator</span></h4>
+          <p>Supervisor dan klien melihat posisi patroli di denah lokasi: titik hijau sudah dipindai, biru berikutnya, abu-abu belum.</p>
+          <figure class="shot"><button type="button" data-zoom><img src="img/web-patrol-plan.png" alt="Denah gudang dengan titik patroli 1 sampai 3 hijau, titik 4 biru sebagai berikutnya, 5 dan 6 abu-abu" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>Patroli Agus Pratama di denah Gudang Cikarang: 3 dari 6 titik.</figcaption></figure>
+        </li>
+        <li>
+          <h4>Absensi dan antrean tinjauan <span class="time">± 3 menit · Supervisor</span></h4>
+          <p>Status per petugas hari ini: hadir, terlambat (berapa menit), belum masuk. Absen yang mencurigakan, misalnya jam tablet mundur atau data dari tablet yang lama offline, masuk antrean <b>Perlu ditinjau</b>.</p>
+          <figure class="shot"><button type="button" data-zoom><img src="img/web-attendance-review.png" alt="Antrean perlu ditinjau dengan penjelasan dan absen bertanda Sinkron terlambat dan Waktu mundur" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>Absen bertanda “Sinkron terlambat” dan “Waktu mundur” menunggu ditinjau.</figcaption></figure>
+          <p class="say">Sistem tidak hanya mencatat. Sistem juga memberi tahu absen mana yang patut dicurigai.</p>
+        </li>
+        <li>
+          <h4>Insiden lengkap dengan bukti <span class="time">± 3 menit · Administrator</span></h4>
+          <p>Laporan insiden dari tablet berisi kategori, tingkat, lokasi, GPS, dan sampai 5 foto. Laporan asli tidak bisa diubah. Koreksi tercatat terpisah beserta alasannya, dan bisa diunduh sebagai PDF.</p>
+          <figure class="shot"><button type="button" data-zoom><img src="img/web-incident-detail.png" alt="Detail insiden Pencurian, tingkat Kritis, status Diproses, tabel koreksi, tiga foto, tombol Unduh PDF" loading="lazy" width="1366" height="1180"></button><figcaption><span class="who">Administrator</span>Detail insiden yang sudah dikoreksi: nilai asli dan nilai sekarang terlihat berdampingan.</figcaption></figure>
+        </li>
+        <li>
+          <h4>Laporan akhir bulan untuk HR <span class="time">± 2 menit · HR</span></h4>
+          <p>Rekap per petugas per hari: hadir, terlambat, absen, pulang awal, dan jam kerja, ditambah kepatuhan jadwal patroli. Unduh ke Excel untuk penggajian.</p>
+          <figure class="shot"><button type="button" data-zoom><img src="img/web-hr-monthly.png" alt="Rekap bulanan untuk penggajian sebagai HR: 94 hari terjadwal, kehadiran 89,1 persen, 310,1 jam" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">HR</span>Rekap bulanan untuk penggajian; menu HR lebih ringkas.</figcaption></figure>
+        </li>
+        <li>
+          <h4>Tutup dengan tampilan klien <span class="time">± 2 menit · Klien</span></h4>
+          <p>Ganti ke <b>Klien (hanya lihat)</b>. Klien hanya melihat lokasinya sendiri, tanpa tombol ubah apa pun.</p>
+          <figure class="shot"><button type="button" data-zoom><img src="img/web-client-dashboard.png" alt="Dashboard klien hanya lihat: kehadiran, patroli berjalan, sorotan insiden" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Klien</span>Klien memantau sendiri tanpa harus menelepon tim operasional.</figcaption></figure>
+          <p class="say">Klien Bapak/Ibu bisa melihat sendiri bahwa patroli benar terjadi. Ini nilai tambah saat perpanjangan kontrak.</p>
+        </li>
+      </ol>
+    </section>
+
+    <section id="tablet">
+      <h2><span class="num">05</span>Aplikasi tablet</h2>
+      <p class="intro">Satu tablet Android per pos jaga, dipakai bergantian oleh petugas. Semua tindakan tersimpan dulu di tablet, lalu dikirim berurutan saat ada internet.</p>
+
+      <h3>Pemasangan pertama (dilakukan admin, sekali)</h3>
+      <p>Tablet dihubungkan ke alamat server dan kode organisasi, masuk dengan akun tablet yang dibuat admin di web, lalu menunggu persetujuan admin.</p>
+      <div class="pair">
+        <figure class="shot"><button type="button" data-zoom><img src="img/tab-setup.png" alt="Pengaturan tablet langkah 1: alamat server dan kode organisasi" loading="lazy" width="1280" height="800"></button><figcaption><span class="who">Tablet</span>Langkah 1 dari 3: hubungkan ke server.</figcaption></figure>
+        <figure class="shot"><button type="button" data-zoom><img src="img/tab-pending.png" alt="Tablet menunggu persetujuan admin di web" loading="lazy" width="1280" height="800"></button><figcaption><span class="who">Tablet</span>Langkah 3: menunggu disetujui di web (Pengaturan → Tablet).</figcaption></figure>
+      </div>
+
+      <h3>Tugas harian petugas</h3>
+      <div class="pair">
+        <figure class="shot"><button type="button" data-zoom><img src="img/tab-clock.png" alt="Absen masuk dengan swafoto opsional dan lokasi GPS didapat plus minus 8 meter" loading="lazy" width="1280" height="800"></button><figcaption><span class="who">Tablet</span>Absen masuk: swafoto (opsional) dan GPS.</figcaption></figure>
+        <figure class="shot"><button type="button" data-zoom><img src="img/tab-patrol-routes.png" alt="Pilih rute patroli dengan jadwal dan jumlah titik" loading="lazy" width="1280" height="800"></button><figcaption><span class="who">Tablet</span>Pilih rute; jadwal patroli terlihat di setiap rute.</figcaption></figure>
+        <figure class="shot"><button type="button" data-zoom><img src="img/tab-incident.png" alt="Formulir lapor insiden: kategori Penyusupan, tingkat Tinggi, keterangan, foto" loading="lazy" width="1280" height="1500"></button><figcaption><span class="who">Tablet</span>Lapor insiden: kategori dan tingkat dipilih dengan satu sentuhan; maksimal 5 foto.</figcaption></figure>
+        <figure class="shot"><button type="button" data-zoom><img src="img/tab-defect.png" alt="Formulir lapor kerusakan: jenis Lampu, lokasi, keterangan, satu foto" loading="lazy" width="1280" height="1100"></button><figcaption><span class="who">Tablet</span>Lapor kerusakan fasilitas: CCTV, lampu, pintu, pagar, dan lainnya.</figcaption></figure>
+        <figure class="shot"><button type="button" data-zoom><img src="img/tab-visitors.png" alt="Buku tamu: 3 tamu masih di dalam, tombol Catat keluar" loading="lazy" width="1280" height="800"></button><figcaption><span class="who">Tablet</span>Buku tamu digital: masuk, keluar, plat nomor, tuan rumah.</figcaption></figure>
+        <figure class="shot"><button type="button" data-zoom><img src="img/tab-sos.png" alt="Kartu SOS merah dari petugas lain di beranda supervisor dengan tombol Tanggapi" loading="lazy" width="1280" height="800"></button><figcaption><span class="who">Tablet · Supervisor</span>SOS dari petugas lain muncul di tablet supervisor dan bisa langsung ditanggapi.</figcaption></figure>
+      </div>
+
+      <h3>Saat internet putus</h3>
+      <figure class="shot"><button type="button" data-zoom><img src="img/tab-outbox.png" alt="Antrean kirim saat offline: 3 laporan menunggu dikirim" loading="lazy" width="1280" height="800"></button><figcaption><span class="who">Tablet</span>“Antrean kirim”: absen, scan titik, dan insiden tetap tersimpan, lalu dikirim otomatis saat online.</figcaption></figure>
+      <p class="sosnote"><b>SOS saat offline:</b> SOS selalu dikirim paling dulu dan dicoba ulang setiap 10 detik. Selama belum terkirim, layar tablet menampilkan peringatan merah supaya petugas menghubungi supervisor lewat cara lain.</p>
+    </section>
+
+    <section id="fitur">
+      <h2><span class="num">06</span>Tur fitur web</h2>
+      <p class="intro">Bahan referensi kalau klien bertanya lebih dalam. Urutannya mengikuti cara admin menyiapkan lokasi baru.</p>
+
+      <h3>Panduan setup</h3>
+      <p>Admin baru langsung diarahkan lewat 6 langkah: lokasi, petugas &amp; PIN, jadwal, rute &amp; QR, tablet, dan peringatan. Setiap langkah tercentang otomatis saat sudah dikerjakan.</p>
+      <figure class="shot"><button type="button" data-zoom><img src="img/web-setup.png" alt="Panduan setup 5 dari 6 langkah selesai" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>Panduan setup: 5 dari 6 langkah selesai, tinggal satu petugas yang belum punya PIN.</figcaption></figure>
+
+      <h3>Petugas &amp; PIN</h3>
+      <div class="pair">
+        <figure class="shot"><button type="button" data-zoom><img src="img/web-guards.png" alt="Daftar petugas dengan status PIN dan peringatan satu petugas belum punya PIN" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>Daftar petugas; yang belum punya PIN langsung terlihat.</figcaption></figure>
+        <figure class="shot"><button type="button" data-zoom><img src="img/web-guard-pin.png" alt="Dialog atur PIN petugas, PIN mudah seperti 1234 ditolak" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>Atur PIN 4–6 angka; PIN mudah seperti 1234 ditolak.</figcaption></figure>
+      </div>
+
+      <h3>Jadwal shift</h3>
+      <p>Pola shift berulang (pagi, siang, malam) dibuat sekali, lalu sistem membuat shift otomatis 14 hari ke depan. Shift sekali pakai juga bisa ditambahkan.</p>
+      <div class="pair">
+        <figure class="shot"><button type="button" data-zoom><img src="img/web-schedules-templates.png" alt="Pola shift per petugas: pagi 07:00 sampai 15:00, siang 15:00 sampai 23:00" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>Pola shift berulang per petugas.</figcaption></figure>
+        <figure class="shot"><button type="button" data-zoom><img src="img/web-schedules-roster.png" alt="Roster mingguan 12 sampai 18 Oktober dengan hari ini disorot" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>Roster mingguan: 44 shift, 352 jam.</figcaption></figure>
+      </div>
+
+      <h3>Absensi</h3>
+      <p>Status hadir, terlambat, dan tidak hadir dihitung otomatis dari jadwal. Admin bisa mengoreksi dengan alasan wajib, dan setiap koreksi tersimpan di riwayat.</p>
+      <figure class="shot"><button type="button" data-zoom><img src="img/web-attendance.png" alt="Absensi harian dengan filter status dan baris per petugas" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>Absensi harian dengan filter status.</figcaption></figure>
+      <div class="pair">
+        <figure class="shot"><button type="button" data-zoom><img src="img/web-attendance-override.png" alt="Dialog koreksi kehadiran dengan alasan wajib" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>Koreksi kehadiran: alasan wajib dan tercatat di audit.</figcaption></figure>
+        <figure class="shot"><button type="button" data-zoom><img src="img/web-attendance-history.png" alt="Riwayat koreksi dengan dua koreksi beserta alasannya" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>Riwayat koreksi: sebelum → sesudah, oleh siapa, dan alasannya.</figcaption></figure>
+      </div>
+
+      <h3>Rute patroli, QR, denah, dan jadwal patroli</h3>
+      <p>Rute adalah urutan titik periksa dengan batas waktu per titik. Setiap titik punya QR bertanda tangan yang tidak bisa dibuat sendiri. Titik ditempatkan di denah lokasi, dan rute diberi jadwal (misalnya setiap 2 jam dari 22:00 sampai 06:00).</p>
+      <div class="pair">
+        <figure class="shot"><button type="button" data-zoom><img src="img/web-route-editor.png" alt="Editor rute dengan titik periksa dan batas waktu" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>Titik periksa berurutan dengan batas waktu; QR “Bertanda tangan”.</figcaption></figure>
+        <figure class="shot"><button type="button" data-zoom><img src="img/web-route-plan.png" alt="Menempatkan titik patroli di denah gudang" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>Tempatkan titik di denah dengan klik atau seret.</figcaption></figure>
+        <figure class="shot"><button type="button" data-zoom><img src="img/web-route-schedule.png" alt="Jadwal patroli setiap 2 jam dari 22:00 sampai 06:00" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>Jadwal patroli: 4 patroli per malam, toleransi 15 menit.</figcaption></figure>
+        <figure class="shot"><button type="button" data-zoom><img src="img/web-qr-sheet.png" alt="Lembar QR siap cetak, satu kode per titik" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>Lembar QR siap cetak di kertas A4.</figcaption></figure>
+      </div>
+      <p class="say">Kalau patroli terjadwal tidak dimulai tepat waktu, supervisor otomatis mendapat peringatan “patroli belum dimulai”, bahkan ketika tablet sedang mati.</p>
+
+      <h3>Patroli langsung dan riwayat</h3>
+      <div class="pair">
+        <figure class="shot"><button type="button" data-zoom><img src="img/web-patrol-live.png" alt="Kartu patroli langsung dengan titik lewat batas" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>Tampilan kartu: “Tangga Darurat terlambat 1 mnt”.</figcaption></figure>
+        <figure class="shot"><button type="button" data-zoom><img src="img/web-session-timeline.png" alt="Linimasa patroli selesai 100 persen dengan setiap titik tepat waktu" loading="lazy" width="1366" height="1000"></button><figcaption><span class="who">Administrator</span>Linimasa satu patroli: scan QR, manual, dan tanda “Terlalu cepat”.</figcaption></figure>
+      </div>
+
+      <h3>Insiden, SOS, kerusakan, dan tamu</h3>
+      <figure class="shot"><button type="button" data-zoom><img src="img/web-incidents.png" alt="Daftar insiden dengan filter periode, status, tingkat, dan kategori" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>Daftar insiden; tanda “Diubah” untuk laporan yang sudah dikoreksi.</figcaption></figure>
+      <div class="pair">
+        <figure class="shot"><button type="button" data-zoom><img src="img/web-sos-tab.png" alt="Tab SOS dengan peringatan menunggu 3 menit dan tombol Tanggapi" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>SOS: berapa lama menunggu dan siapa yang menanggapi.</figcaption></figure>
+        <figure class="shot"><button type="button" data-zoom><img src="img/web-defects.png" alt="Papan kerusakan: Terbuka, Diproses, Selesai" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>Kerusakan fasilitas sebagai papan: terbuka, diproses, selesai.</figcaption></figure>
+      </div>
+      <figure class="shot"><button type="button" data-zoom><img src="img/web-visitors.png" alt="Buku tamu dengan nomor identitas disamarkan" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>Buku tamu: nomor identitas tamu disamarkan dan disimpan terenkripsi.</figcaption></figure>
+    </section>
+
+    <section id="laporan">
+      <h2><span class="num">07</span>Laporan &amp; export</h2>
+      <p class="intro">Enam laporan siap pakai. Semuanya bisa diunduh ke Excel dan CSV, dan log insiden juga ke PDF. Klien bisa menerima rekap bulanan otomatis lewat e-mail setiap tanggal 1.</p>
+      <figure class="shot"><button type="button" data-zoom><img src="img/web-reports.png" alt="Halaman laporan dengan enam kartu laporan" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>Daftar laporan beserta penggunanya.</figcaption></figure>
+      <div class="pair">
+        <figure class="shot"><button type="button" data-zoom><img src="img/web-report-monthly.png" alt="Rekap bulanan per hari untuk penggajian" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>Rekap bulanan per hari: hadir, terlambat, absen, jam kerja.</figcaption></figure>
+        <figure class="shot"><button type="button" data-zoom><img src="img/web-report-compliance.png" alt="Kepatuhan jadwal patroli 74,2 persen dalam 7 hari" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>Kepatuhan jadwal patroli: tepat waktu, terlambat, terlewat.</figcaption></figure>
+        <figure class="shot"><button type="button" data-zoom><img src="img/web-report-kpi.png" alt="KPI petugas 30 hari: kehadiran, tepat waktu, kelengkapan patroli" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>KPI petugas: siapa yang perlu dibina (di bawah 75%).</figcaption></figure>
+        <figure class="shot"><button type="button" data-zoom><img src="img/web-report-daily.png" alt="Laporan kehadiran harian" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>Kehadiran harian untuk supervisor dan klien.</figcaption></figure>
+      </div>
+      <figure class="shot"><button type="button" data-zoom><img src="img/web-report-export.png" alt="Menu unduh dengan pilihan Excel, CSV, dan PDF" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>Pilihan unduhan: Excel, CSV, PDF (log insiden).</figcaption></figure>
+    </section>
+
+    <section id="admin">
+      <h2><span class="num">08</span>Admin, keamanan &amp; operator</h2>
+      <p class="intro">Bagian ini penting untuk tim IT atau procurement klien.</p>
+
+      <h3>Peringatan lewat e-mail dan WhatsApp</h3>
+      <p>Per lokasi, admin memilih kejadian mana dikirim ke siapa: SOS, insiden tinggi/kritis, semua insiden, terlambat absen, tidak hadir, patroli terlambat, patroli belum dimulai, kerusakan baru, dan rekap bulanan.</p>
+      <figure class="shot"><button type="button" data-zoom><img src="img/web-rules.png" alt="Aturan peringatan per kejadian dengan penerima e-mail dan WhatsApp" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>Aturan peringatan per lokasi: SOS ke e-mail dan WhatsApp.</figcaption></figure>
+
+      <h3>Tablet: akun, persetujuan, dan kesehatan</h3>
+      <p>Admin membuat akun tablet di web, menyetujui tablet baru, dan bisa mencabut tablet yang hilang. Setiap tablet melaporkan kesehatannya: antrean kirim, selisih jam, dan error.</p>
+      <div class="pair">
+        <figure class="shot"><button type="button" data-zoom><img src="img/web-devices.png" alt="Daftar tablet: satu menunggu persetujuan, dua aktif dengan status kesehatan" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>Tablet menunggu persetujuan dan tablet aktif.</figcaption></figure>
+        <figure class="shot"><button type="button" data-zoom><img src="img/web-device-health.png" alt="Kesehatan tablet dengan tiga peringatan" loading="lazy" width="1366" height="1080"></button><figcaption><span class="who">Administrator</span>Kesehatan tablet: data belum terkirim, jam tablet selisih.</figcaption></figure>
+      </div>
+      <figure class="shot"><button type="button" data-zoom><img src="img/web-device-account.png" alt="Akun tablet baru dengan kata sandi yang hanya ditampilkan sekali" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>Akun tablet baru: kata sandi hanya tampil sekali, plus cara masuk di tablet.</figcaption></figure>
+
+      <h3>Pengguna &amp; akses</h3>
+      <p>Admin menambah pengguna web, memilih perannya, dan membatasi lokasi yang bisa dilihat, misalnya klien hanya untuk Gudang Cikarang. Staf wajib memakai autentikator (OTP) saat login.</p>
+      <div class="pair">
+        <figure class="shot"><button type="button" data-zoom><img src="img/web-users.png" alt="Daftar pengguna dengan peran, lokasi, dan status autentikator" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>Pengguna, peran, lokasi, dan status keamanan login.</figcaption></figure>
+        <figure class="shot"><button type="button" data-zoom><img src="img/web-user-create.png" alt="Tambah pengguna sebagai supervisor yang dibatasi ke Gudang Cikarang" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>Supervisor baru yang hanya bisa melihat satu lokasi.</figcaption></figure>
+      </div>
+
+      <h3>Log audit</h3>
+      <p>Setiap perubahan oleh admin tercatat: siapa, kapan, dari mana, dan nilai sebelum/sesudah. Log ini tidak bisa diubah atau dihapus, termasuk oleh admin.</p>
+      <figure class="shot"><button type="button" data-zoom><img src="img/web-audit.png" alt="Log audit dengan detail sebelum dan sesudah perubahan data petugas" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Administrator</span>Catatan audit: perubahan NIK dan status petugas.</figcaption></figure>
+
+      <h3>Operator platform (pengelola server)</h3>
+      <p>Kredensial WhatsApp/e-mail dan backup hanya bisa diatur operator platform, bukan admin klien. Backup database berjalan setiap malam dan disalin terenkripsi ke disk kedua.</p>
+      <div class="pair">
+        <figure class="shot"><button type="button" data-zoom><img src="img/web-channels.png" alt="Kanal pengiriman WhatsApp Business sudah diatur" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Operator</span>Kanal pengiriman: WhatsApp Business Cloud API dan e-mail.</figcaption></figure>
+        <figure class="shot"><button type="button" data-zoom><img src="img/web-backups.png" alt="Cadangan data terakhir berhasil 8 jam yang lalu" loading="lazy" width="1366" height="820"></button><figcaption><span class="who">Operator</span>Status backup harian.</figcaption></figure>
+      </div>
+
+      <h3>Di ponsel</h3>
+      <p>Dashboard web juga nyaman dibuka dari ponsel supervisor.</p>
+      <div class="pair narrow">
+        <figure class="shot"><button type="button" data-zoom><img src="img/web-phone-dashboard.png" alt="Dashboard di layar ponsel dengan banner SOS" loading="lazy" width="390" height="844"></button><figcaption><span class="who">Ponsel</span>Hari ini di ponsel.</figcaption></figure>
+        <figure class="shot"><button type="button" data-zoom><img src="img/web-phone-menu.png" alt="Menu navigasi terbuka di ponsel" loading="lazy" width="390" height="844"></button><figcaption><span class="who">Ponsel</span>Menu di ponsel.</figcaption></figure>
+      </div>
+    </section>
+
+    <section id="faq">
+      <h2><span class="num">09</span>Pertanyaan &amp; keberatan yang sering muncul</h2>
+      <details><summary>Bagaimana kalau di lokasi tidak ada internet?</summary><p>Tablet tetap bisa dipakai: PIN, rute, dan QR tersimpan di tablet. Absen, patroli, dan laporan menunggu di antrean kirim, lalu terkirim otomatis saat internet kembali. Datanya tetap memakai jam kejadian, bukan jam kirim. Yang butuh internet hanyalah notifikasi WhatsApp/e-mail dan tampilan langsung di web.</p></details>
+      <details><summary>Bagaimana mencegah absen titip atau patroli palsu?</summary><p>Beberapa lapis: PIN per petugas yang dicek server, swafoto dan GPS saat absen, QR bertanda tangan yang tidak bisa digandakan, serta tanda otomatis untuk scan yang jauh dari titiknya, scan yang terlalu cepat antar titik, dan jam tablet yang tidak wajar. Semua yang mencurigakan masuk antrean tinjauan supervisor.</p></details>
+      <details><summary>Data kami disimpan di mana?</summary><p>Di server on-premise milik perusahaan (atau server yang ditunjuk), bukan di cloud pihak ketiga. Satu-satunya data yang keluar adalah isi pesan notifikasi WhatsApp, yang dikirim lewat WhatsApp Business Cloud API milik Meta. Kalau klien keberatan, notifikasi cukup lewat e-mail.</p></details>
+      <details><summary>Apakah sesuai UU PDP?</summary><p>Ada pengaturan masa simpan data: data tamu dan swafoto 365 hari, notifikasi 180 hari; bukti insiden disimpan sampai dihapus. Nomor identitas tamu dienkripsi dan disamarkan, metadata lokasi di foto dihapus otomatis, dan akses foto dibatasi per peran. Untuk detail kepatuhan, libatkan tim teknis dan legal klien.</p></details>
+      <details><summary>Bagaimana kalau tablet hilang atau dicuri?</summary><p>Admin mencabut tablet itu di web, dan tablet langsung tidak bisa mengirim data lagi. Data di tablet terenkripsi, dan tablet menolak dibuka kalau sudah 7 hari tidak sinkron. Keluar dari akun tablet butuh PIN supervisor.</p></details>
+      <details><summary>Notifikasinya lewat apa? Bisa Telegram atau LINE?</summary><p>E-mail dan WhatsApp Business. Telegram dan LINE tidak direncanakan. WhatsApp butuh akun WhatsApp Business milik klien atau operator dengan templat pesan yang sudah disetujui Meta. Biaya per pesan mengikuti tarif Meta.</p></details>
+      <details><summary>Berapa cepat SOS sampai?</summary><p>Targetnya di bawah 30 detik sampai ke supervisor. SOS selalu dikirim paling dulu, punya jalur pengiriman sendiri, dan dicoba ulang terus sampai terkirim. Waktu nyatanya bergantung pada sinyal di lokasi dan layanan WhatsApp/e-mail.</p></details>
+      <details><summary>Bisa terhubung ke sistem penggajian kami?</summary><p>Belum ada integrasi langsung di versi 1. Rekap bulanan per hari bisa diunduh ke Excel/CSV untuk diimpor ke sistem penggajian.</p></details>
+      <details><summary>Satu perusahaan punya banyak klien. Datanya tercampur?</summary><p>Tidak. Setiap klien punya “organisasi” (realm login) sendiri yang terpisah penuh. Di dalam satu klien, akses pengguna bisa dibatasi per lokasi.</p></details>
+      <details><summary>Perangkat apa yang dibutuhkan petugas?</summary><p>Tablet Android dengan kamera (untuk QR dan foto) dan GPS, satu per pos jaga. Petugas tidak perlu memakai ponsel pribadi.</p></details>
+      <details><summary>Seberapa “langsung” tampilan patroli di web?</summary><p>Diperbarui sekitar setiap 10 detik. Untuk pemantauan patroli ini terasa langsung, tapi bukan video atau pelacakan GPS terus-menerus.</p></details>
+    </section>
+
+    <section id="discovery">
+      <h2><span class="num">10</span>Checklist ke calon klien</h2>
+      <p class="intro">Pertanyaan untuk rapat discovery. Jawabannya dipakai tim teknis untuk menghitung kebutuhan dan menyiapkan implementasi.</p>
+      <div class="checks">
+        <div class="check"><h4>Skala &amp; lokasi</h4><ul>
+          <li>Berapa lokasi (site), dan di kota/zona waktu mana?</li>
+          <li>Berapa petugas per lokasi dan berapa pos jaga (jumlah tablet)?</li>
+          <li>Ada lokasi yang sinyalnya lemah (basement, area terpencil)?</li>
+          <li>Apakah satu klien punya beberapa lokasi yang harus dipisah aksesnya?</li>
+        </ul></div>
+        <div class="check"><h4>Shift &amp; absensi</h4><ul>
+          <li>Pola shift (pagi/siang/malam, 8 atau 12 jam, hari libur)?</li>
+          <li>Toleransi terlambat dan batas absen pulang?</li>
+          <li>Perlu swafoto saat absen?</li>
+          <li>Format rekap yang dipakai HR untuk penggajian?</li>
+        </ul></div>
+        <div class="check"><h4>Patroli</h4><ul>
+          <li>Rute dan titik periksa per lokasi, beserta batas waktunya</li>
+          <li>Frekuensi patroli (misalnya setiap 2 jam di malam hari)</li>
+          <li>Denah lokasi (gambar/PDF) untuk ditempatkan titiknya</li>
+          <li>Siapa yang menempel dan merawat stiker QR?</li>
+        </ul></div>
+        <div class="check"><h4>Notifikasi &amp; pelaporan</h4><ul>
+          <li>Siapa yang menerima SOS, insiden, dan absensi (nama, e-mail, nomor WhatsApp)?</li>
+          <li>Ada akun WhatsApp Business? Siapa pemiliknya?</li>
+          <li>Server e-mail (SMTP) yang bisa dipakai?</li>
+          <li>Apakah klien akhir perlu akses web dan e-mail rekap bulanan?</li>
+        </ul></div>
+        <div class="check"><h4>IT &amp; kepatuhan</h4><ul>
+          <li>Server on-premise tersedia, atau perlu disediakan?</li>
+          <li>Nama domain atau alamat IP untuk server</li>
+          <li>Kebijakan masa simpan data dan persyaratan UU PDP</li>
+          <li>Siapa kontak IT klien untuk instalasi?</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <section id="kebutuhan">
+      <h2><span class="num">11</span>Yang perlu disiapkan klien</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Kebutuhan</th><th>Rincian</th><th>Catatan</th></tr></thead>
+          <tbody>
+            <tr><td><b>Server</b></td><td>Satu server Linux dengan Docker. Perkiraan awal untuk 2 lokasi: 4 vCPU, 8 GB RAM, SSD 100 GB.</td><td>Perkiraan. Konfirmasi ke tim teknis sesuai jumlah lokasi dan foto.</td></tr>
+            <tr><td><b>Disk cadangan</b></td><td>Disk kedua atau NAS untuk salinan backup terenkripsi</td><td>Wajib untuk pemulihan bencana</td></tr>
+            <tr><td><b>Alamat server</b></td><td>Nama domain atau IP tetap yang bisa dijangkau tablet (port 443 dan 9443)</td><td>Tablet butuh akses dari jaringan 4G/Wi-Fi lokasi</td></tr>
+            <tr><td><b>Tablet</b></td><td>Android dengan kamera dan GPS, satu per pos jaga</td><td>Disarankan memakai mode kiosk supaya tablet hanya menjalankan SecurePatrol</td></tr>
+            <tr><td><b>Internet di lokasi</b></td><td>4G atau Wi-Fi; boleh tidak stabil</td><td>Tablet tetap jalan offline</td></tr>
+            <tr><td><b>WhatsApp Business</b></td><td>Akun WhatsApp Business Cloud API + templat pesan yang disetujui Meta</td><td>Opsional; tanpa ini notifikasi lewat e-mail</td></tr>
+            <tr><td><b>E-mail</b></td><td>Akun SMTP untuk mengirim peringatan dan rekap</td><td></td></tr>
+            <tr><td><b>Data awal</b></td><td>Daftar petugas (nama, NIK karyawan), pola shift, rute &amp; titik, denah, daftar penerima peringatan</td><td>Bisa diisi bersama saat implementasi</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="batasan">
+      <h2><span class="num">12</span>Batasan versi 1</h2>
+      <p class="intro">Supaya tidak ada janji yang tidak bisa dipenuhi, berikut yang belum ada di versi 1.</p>
+      <p class="careful">Belum ada: login sidik jari/wajah, video langsung dari patroli, integrasi langsung ke sistem penggajian (pakai export Excel/CSV), notifikasi Telegram/LINE, notifikasi push di ponsel, peta jalan berbasis GPS (yang ada peta denah lokasi), aplikasi iOS yang dirilis (yang siap adalah Android), dan pengaturan tablet otomatis lewat MDM.</p>
+      <ul class="tight">
+        <li>Target peluncuran versi 1: <b>2 lokasi, sampai 10 petugas</b>. Arsitekturnya disiapkan untuk berkembang, tapi untuk skala besar libatkan tim teknis (uji beban belum dilakukan).</li>
+        <li>Tampilan langsung diperbarui sekitar setiap 10 detik, bukan real-time detik per detik.</li>
+        <li>Bahasa: Indonesia dan Inggris.</li>
+      </ul>
+    </section>
+
+    <footer>
+      Gambar diambil otomatis dari mode demo dengan data contoh, jadi nama, angka, dan waktu bukan data asli. Tim teknis bisa memperbarui gambar dengan <code>npm run guide:shots</code> (web) dan test screenshot Flutter (tablet); sumbernya ada di repo pada folder <code>docs/sales-guide/</code>.
+    </footer>
+  </main>
+</div>
+
+<dialog class="zoom" id="zoom" aria-label="Gambar diperbesar">
+  <button type="button" id="zoom-close" aria-label="Tutup">×</button>
+  <img id="zoom-img" alt="">
+  <p id="zoom-cap"></p>
+</dialog>
+
+<script>
+(function () {
+  var dlg = document.getElementById('zoom');
+  var img = document.getElementById('zoom-img');
+  var cap = document.getElementById('zoom-cap');
+  if (!dlg || typeof dlg.showModal !== 'function') return;
+  document.querySelectorAll('[data-zoom]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var src = btn.querySelector('img');
+      var fc = btn.parentElement.querySelector('figcaption');
+      img.src = src.getAttribute('src');
+      img.alt = src.alt;
+      cap.textContent = fc ? fc.textContent : '';
+      dlg.showModal();
+    });
+  });
+  document.getElementById('zoom-close').addEventListener('click', function () { dlg.close(); });
+  dlg.addEventListener('click', function (e) { if (e.target === dlg) dlg.close(); });
+})();
+</script>
