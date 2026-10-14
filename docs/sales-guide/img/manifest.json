@@ -1,0 +1,350 @@
+[
+  {
+    "file": "web-setup.png",
+    "role": "admin",
+    "what": "Setup guide page ('Panduan setup') for site Gudang Cikarang showing progress 5 of 6 steps and the step cards.",
+    "notable": ["progress ring '5/6' and '5 dari 6 langkah selesai'", "step 01 'Buat lokasi' marked 'Selesai'", "step 02 'Daftarkan petugas & PIN' marked 'Hampir selesai' with blue 'Lengkapi PIN' button and '8 petugas · 1 belum punya PIN'", "step 03 'Susun jadwal shift' 'Selesai' with '7 pola shift'", "step 04 'Buat rute patroli & cetak QR' 'Selesai'", "sidebar widget 'Lanjutkan setup 5/6'"]
+  },
+  {
+    "file": "web-dashboard.png",
+    "role": "admin",
+    "what": "Admin 'Hari ini' dashboard for Gudang Cikarang with the red SOS banner on top, the setup reminder, four KPI cards and the 'Perlu tindakan' list.",
+    "notable": ["red banner 'Peringatan SOS · 2 SOS belum ditanggapi' with 'Tanggapi' buttons", "SOS rows 'Rina Wulandari menekan SOS · Gudang Cikarang · Buka peta' and 'Yusuf Maulana menekan SOS · Kantor Pusat Sudirman · Tanpa posisi GPS'", "'Selamat pagi' greeting and green 'Langsung' (live) pill", "KPI 'Kehadiran hari ini 2/6', 'Patroli berjalan 1', 'Insiden terbuka 2' (2 tinggi atau kritis), 'Kerusakan terbuka 2'", "setup card 'Selesaikan setup Gudang Cikarang' with 'Lengkapi PIN' button", "'Perlu tindakan: 2 kehadiran perlu ditinjau' with 'Tinjau'", "'Insiden terbaru' panel: Penyusupan (Tinggi), Pencurian (Kritis)"]
+  },
+  {
+    "file": "web-sos-banner.png",
+    "role": "admin",
+    "what": "Close-up of the red SOS alert banner that appears on every page while an SOS is unacknowledged.",
+    "notable": ["title 'Peringatan SOS · 2 SOS belum ditanggapi'", "'Rina Wulandari menekan SOS', site 'Gudang Cikarang', time, 'Buka peta' link", "'Yusuf Maulana menekan SOS', 'Kantor Pusat Sudirman', 'Tanpa posisi GPS'", "white 'Tanggapi' (acknowledge) button per alert", "'Suara mati' (sound muted) toggle and 'Notifikasi desktop' button"]
+  },
+  {
+    "file": "web-attendance.png",
+    "role": "admin",
+    "what": "Attendance page, daily tab ('Harian') for today with status filter chips and the per-guard table.",
+    "notable": ["tabs 'Harian' and 'Perlu ditinjau' with red badge 2", "filter chips 'Semua 6, Hadir 1, Terlambat 1, Tidak hadir 0, Belum masuk 4, Perlu ditinjau 0'", "Budi Santoso 07:00–15:00 'Hadir' masuk 06:59, 'Sedang bertugas', 'Lihat foto'", "Agus Pratama 'Terlambat' 07:30 with '+30 mnt' chip", "night shifts 23:00–07:00 with moon icon, 'Belum masuk · Mulai 23:00'", "'Unduh' download button and date picker; 'Koreksi' button per row (partly cut at the right edge)"]
+  },
+  {
+    "file": "web-attendance-review.png",
+    "role": "admin",
+    "what": "Attendance review queue ('Perlu ditinjau') listing clock-ins that arrived late from offline tablets or were flagged by the server.",
+    "notable": ["explanation box 'Mengapa data ini perlu ditinjau?'", "Budi Santoso, Jumat 9 Oktober: 'Terlambat' + flag 'Sinkron terlambat', masuk 07:31 '+31 mnt', diterima 09 Okt 07.31", "Siti Rahmawati, Minggu 11 Oktober: 'Hadir' + flags 'Waktu mundur' and 'Sinkron terlambat'", "'Lihat foto' selfie links and 'Tandai di…' (mark reviewed) buttons"]
+  },
+  {
+    "file": "web-attendance-override.png",
+    "role": "admin",
+    "what": "'Koreksi kehadiran' (attendance correction) dialog opened on Budi Santoso's shift with a reason filled in.",
+    "notable": ["header 'Budi Santoso · Rabu, 14 Oktober 2026 · 07:00–15:00', 'SAAT INI: Hadir'", "note that corrections are recorded in the audit log with name and reason and flow into payroll reports", "status choice 'Hadir / Terlambat / Tidak hadir'", "Masuk 06:59, Pulang empty, 'waktu Asia/Jakarta'", "required reason 'Tablet pos mati pagi ini; jam masuk dikonfirmasi supervisor lewat buku mutasi.'", "'Simpan koreksi' button"]
+  },
+  {
+    "file": "web-attendance-history.png",
+    "role": "admin",
+    "what": "Correction history drawer ('Riwayat koreksi — Budi Santoso') for yesterday's shift showing two overrides in order.",
+    "notable": ["'2 koreksi, terlama lebih dulu. Waktu menurut zona waktu lokasi.'", "correction 1 by admin.rina: 'Terlambat → Hadir', reason 'Terlambat karena mengantar korban kecelakaan ke klinik — disetujui supervisor'", "correction 2 by admin.rina: 'Pulang 15:07 → 15:05' (old value struck through), reason 'Absen pulang tercatat terlalu cepat, tablet mati; dikonfirmasi lewat buku mutasi'", "'Alasan koreksi sebelumnya' line under the second entry"]
+  },
+  {
+    "file": "web-schedules-templates.png",
+    "role": "admin",
+    "what": "Schedules page, 'Pola shift' tab: recurring shift patterns as cards per guard.",
+    "notable": ["info 'Pola shift berulang setiap minggu… Shift dibuat otomatis 14 hari ke depan'", "cards: Agus Pratama 07:00–15:00 'Pagi', Budi Santoso 07:00–15:00 'Pagi', Dedi Kurniawan 15:00–23:00 'Siang'", "'Shift 8 jam · 7× seminggu', weekday chips S S R K J S M", "'Berlaku 03 Sep 2026 → tanpa batas'", "'Ubah' / 'Hapus' actions; header buttons 'Shift sekali' and 'Buat pola shift'"]
+  },
+  {
+    "file": "web-schedules-roster.png",
+    "role": "admin",
+    "what": "Schedules page, 'Roster mingguan' tab: the weekly roster grid (Mon 12 – Sun 18 Oct 2026) with today highlighted.",
+    "notable": ["week header '12 – 18 Okt 2026 · 44 shift · 352 jam · 1 petugas tanpa shift'", "legend Pagi 05–11, Siang 11–17, Malam 17–05, Sekali, 'selesai besok'", "today column RAB 14 highlighted blue", "Agus Pratama and Budi Santoso 07:00–15:00 every day, Dedi Kurniawan 15:00–23:00", "Fajar Nugroho only Sat/Sun 07:00–15:00"]
+  },
+  {
+    "file": "web-guards.png",
+    "role": "admin",
+    "what": "Guards list ('Petugas') of Gudang Cikarang with PIN and status columns and a missing-PIN warning.",
+    "notable": ["yellow notice '1 petugas aktif belum punya PIN, jadi belum bisa masuk di tablet' with 'Tampilkan'", "filter chips 'Semua 8, Aktif 8, Nonaktif 0, Belum ada PIN 1'", "search 'Cari nama atau NIK…' and checkbox 'Tampilkan petugas semua lokasi'", "rows with 'PIN aktif' and 'Aktif' badges; Budi Santoso tagged 'Supervisor'", "'Tambah petugas' button"]
+  },
+  {
+    "file": "web-guard-pin.png",
+    "role": "admin",
+    "what": "'Atur PIN — Hendra Saputra' dialog for the guard that has no PIN yet, both PIN fields filled (masked).",
+    "notable": ["explanation: guards type this PIN on the tablet to unlock, clock in and start patrols", "fields 'PIN' and 'Ulangi PIN' showing six dots each", "hint '4–6 angka. PIN mudah seperti 1234 ditolak.'", "'Tampilkan PIN' toggle and 'Simpan PIN' button", "behind the dialog: Hendra Saputra row with 'Belum ada PIN' and 'Atur PIN'"]
+  },
+  {
+    "file": "web-patrol-live.png",
+    "role": "admin",
+    "what": "Live patrol cards ('Langsung' tab) for site Kantor Pusat Sudirman with one running round that has an overdue checkpoint.",
+    "notable": ["tab badge 'Langsung 1' and chip '1 dengan titik terlambat'", "card Wahyu Hidayat · Patroli Lantai Kantor with orange 'Lewat batas' badge", "segmented progress bar green/yellow/orange/grey, '2/4 titik', 50%", "'Berikutnya: Tangga Darurat', start time and minutes running", "orange alert 'Tangga Darurat terlambat 1 mnt'", "view toggle 'Kartu / Denah', 'Diperbarui sekarang', colour legend Tepat waktu / Terlambat / Lewat batas / Terlewat / Menunggu"]
+  },
+  {
+    "file": "web-patrol-plan.png",
+    "role": "admin",
+    "what": "Live patrol on the floor plan ('Denah' view) of Gudang Cikarang: Agus Pratama's round drawn over the warehouse plan.",
+    "notable": ["patrol selector 'Agus Pratama — Patroli Keliling Gudang'", "'Pindai terakhir … · 3/6 titik' and 'Lihat linimasa' button", "checkpoints 1–3 green with check marks joined by a solid line (scanned)", "checkpoint 4 (Ruang panel) highlighted blue as next, 5 and 6 grey with dashed path", "rooms labelled Gerbang & pos, Dock bongkar muat, Gudang bahan baku, Ruang panel, Kantor gudang, Parkir truk; north arrow 'U'"]
+  },
+  {
+    "file": "web-route-editor.png",
+    "role": "admin",
+    "what": "Route editor dialog 'Ubah rute' for 'Patroli Keliling Gudang', checkpoints tab.",
+    "notable": ["tabs 'Titik periksa 6', 'Denah 6', 'Jadwal 2'", "checkbox 'Aktif (bisa dimulai dari tablet)'", "SLA explanation box", "ordered checkpoints Gerbang Utama 10 mnt, Dock Bongkar Muat 15, Gudang Bahan Baku 15, Ruang Panel Listrik 10", "green QR badge 'Bertanda tangan · v1' (signed QR) per checkpoint", "reorder arrows, map-pin and delete icons; 'Buat ulang kode QR' link"]
+  },
+  {
+    "file": "web-route-plan.png",
+    "role": "admin",
+    "what": "Route editor, 'Denah' tab: placing the route's checkpoints on the floor plan 'Gudang – lantai dasar'.",
+    "notable": ["selects 'Denah: Gudang – lantai dasar' and 'Titik yang ditempatkan: 1. Gerbang Utama'", "X (%) 17 / Y (%) 20 fields and 'Hapus dari denah'", "numbered markers 1–6 connected in route order over the plan, marker 1 selected (filled blue)"]
+  },
+  {
+    "file": "web-route-schedule.png",
+    "role": "admin",
+    "what": "Route editor, 'Jadwal' tab: two schedule windows that define when the route must be patrolled.",
+    "notable": ["explanation that a scheduled patrol not started within the grace time counts as missed and triggers 'Patroli terjadwal belum dimulai'", "'Rentang 1': all days, 'Berulang' from 22:00 to 06:00, every 120 mnt, toleransi 15 mnt", "summary 'Setiap 2 jam dari 22:00 sampai 06:00, setiap hari, toleransi 15 mnt → 4 patroli/malam'", "'Rentang 2' Mon–Fri only", "quick picks 'Setiap hari', 'Sen–Jum', 'Akhir pekan'"]
+  },
+  {
+    "file": "web-qr-sheet.png",
+    "role": "admin",
+    "what": "QR print sheet dialog 'Kode QR — Patroli Keliling Gudang' with one QR code per checkpoint.",
+    "notable": ["instruction 'Cetak di kertas A4, gunting, lalu tempel… Laminasi kode yang dipasang di luar ruangan'", "six QR codes: 1. Gerbang Utama, 2. Dock Bongkar Muat, 3. Gudang Bahan Baku, 4. Ruang Panel Listrik, 5. Parkir Truk, 6. Pagar Belakang", "signed code text under each ('SP1:…')", "'Cetak / Simpan PDF' button and 'Buat ulang kode QR'"]
+  },
+  {
+    "file": "web-session-timeline.png",
+    "role": "admin",
+    "what": "Patrol history with the 'Detail patroli' drawer open: Budi Santoso's completed round of Patroli Keliling Gudang as a timeline.",
+    "notable": ["status 'Selesai'", "tiles 'Penyelesaian 100% (6/6 titik)', 'Durasi 1 jam 13 mnt', 'Terlambat / terlewat 0 – semua tepat waktu'", "all-green progress bar", "timeline 'Patroli dimulai pukul …' → 6 checkpoints each 'Tepat waktu' with 'Dipindai … · QR' and 'Batas …'", "checkpoint 03 scanned 'Manual'", "checkpoint 05 Parkir Truk flagged 'Terlalu cepat'", "'Patroli selesai pukul …'; toggle 'Linimasa / Denah'"]
+  },
+  {
+    "file": "web-incidents.png",
+    "role": "admin",
+    "what": "Incidents page, 'Insiden' tab: filters and the incident list grouped by day.",
+    "notable": ["tabs with badges 'Insiden 2', 'SOS 1', 'Kerusakan 2', 'Tamu'", "period 'Hari ini / 7 hari / 30 hari', status and severity ('Tingkat') filters, 'Kategori' select, 'Unduh' button", "'Menampilkan 50 dari 58 insiden'", "'Penyusupan' (Tinggi, Terbuka, Pagar Belakang, Dedi Kurniawan, 2 foto)", "'Pencurian' (Kritis, Diproses, 3 foto) with 'Diubah' and 'Sinkron terlambat' badges", "'Medis' (Sedang, Selesai, Dock Bongkar Muat)"]
+  },
+  {
+    "file": "web-incident-detail.png",
+    "role": "admin",
+    "what": "Incident drawer 'Detail insiden' of the amended theft report (Pencurian), including the amendment table, three photos and the history (taller 1366x1180 shot).",
+    "notable": ["badges 'Kritis', 'Diproses', 'Diubah', 'Sinkron terlambat' and 'Unduh PDF' button", "handling status switch 'Terbuka / Diproses / Selesai' ('klien melihat status yang sama')", "description 'Satu palet kabel tembaga hilang dari Gudang Bahan Baku. Segel pintu rusak.'", "location 'Gudang Bahan Baku – Rak C4', reported by Agus Pratama, GPS '-6.294310, 107.153020' with 'Salin'", "box 'Dikoreksi setelah dilaporkan': Tingkat Tinggi → Kritis, Lokasi 'Gudang Bahan Baku' → 'Gudang Bahan Baku – Rak C4'", "'Foto (3)' — demo placeholders labelled 'Demo incident photo'", "'Riwayat' with 'Tambah amandemen' and 'Laporan dibuat oleh Agus Pratama'"]
+  },
+  {
+    "file": "web-sos-tab.png",
+    "role": "admin",
+    "what": "Incidents page, 'SOS' tab for Gudang Cikarang (SOS banner also visible on top).",
+    "notable": ["filter 'Semua 1 / Belum ditanggapi 1'", "yellow hint 'Segera hubungi petugas, lalu tekan Tanggapi setelah ada yang menangani.'", "alert row 'Rina Wulandari menekan SOS · 3 menit yang lalu · Buka peta'", "'Menunggu 3 mnt' and red 'Tanggapi' button", "note 'Menampilkan 30 hari terakhir. Peringatan yang belum ditanggapi selalu tampil.'"]
+  },
+  {
+    "file": "web-defects.png",
+    "role": "admin",
+    "what": "Defects board ('Kerusakan' tab): facility issues as cards in three columns.",
+    "notable": ["columns 'Terbuka 1', 'Diproses 1', 'Selesai 0' (empty 'Kosong')", "card CCTV · Parkir Truk 'Kamera CCTV #7 tidak menampilkan gambar.' by Joko Susilo, 'Lihat foto', button 'Mulai perbaikan'", "card Lampu · Pagar Belakang 'Lampu sorot padam di sisi timur.' with 'Buka lagi' and 'Tandai selesai'"]
+  },
+  {
+    "file": "web-visitors.png",
+    "role": "admin",
+    "what": "Visitor log ('Tamu' tab) for the last 7 days with masked ID numbers and plates.",
+    "notable": ["status filter 'Semua 3 / Masih di dalam 2'", "Teknisi PLN — 'Pemeriksaan gardu', plate 'B 1772 PLN', 'Masih di dalam', 30 mnt", "Hasan Basri — 'Pengiriman bahan baku', plate 'B 9123 KXA', 'Masih di dalam'", "Lina Marlina — 'Audit stok bulanan', 06:05–09:05, 3 jam", "ID shown masked e.g. 'KTP 3272********5423'", "'Dicatat oleh' column (Budi Santoso, Agus Pratama)"]
+  },
+  {
+    "file": "web-reports.png",
+    "role": "admin",
+    "what": "Reports overview: six report cards with who uses them and the export formats.",
+    "notable": ["'Kehadiran harian' (Supervisor · Klien, Excel · CSV)", "'Rekap bulanan untuk penggajian' (HR · Penggajian)", "'Kepatuhan patroli'", "'Kepatuhan jadwal patroli' (Operasional, klien)", "'Log insiden' (Excel · CSV · PDF)", "'KPI petugas' (Supervisor · HR)", "tip card 'bagikan ke klien atau bagian penggajian'"]
+  },
+  {
+    "file": "web-report-daily.png",
+    "role": "admin",
+    "what": "Daily attendance report ('Kehadiran harian') for 14/10/2026 with KPI tiles and the table.",
+    "notable": ["tiles 'Hadir 100%' (2 dari 2 shift yang sudah dimulai), 'Terlambat 1', 'Tidak hadir 0' (4 shift belum dimulai), 'Jam kerja 0,0'", "table columns Petugas, Shift, Status, Masuk, Pulang, Terlambat (mnt), Pulang awal (mnt), Jam, Catatan", "Agus Pratama 'Terlambat' 07:30, 30 mnt late", "'Unduh' and 'Cetak' buttons"]
+  },
+  {
+    "file": "web-report-compliance.png",
+    "role": "admin",
+    "what": "Patrol schedule compliance report ('Kepatuhan jadwal patroli') for the last 7 days.",
+    "notable": ["tiles 'Kepatuhan 74,2%' (tepat waktu dari 31 patroli), 'Terjadwal 33' (2 masih akan datang), 'Mulai terlambat 6', 'Terlewat 2'", "quick periods '7 hari / 30 hari / Bulan ini / Bulan lalu'", "daily rows for 'Patroli Keliling Gudang' with per-day compliance bars (e.g. 80,0%)"]
+  },
+  {
+    "file": "web-report-kpi.png",
+    "role": "admin",
+    "what": "Guard KPI report ('KPI petugas') for the last 30 days.",
+    "notable": ["tiles 'Petugas 7' (4 perlu dibina < 75%), 'Rata-rata kehadiran 90,0%', 'Rata-rata tepat waktu 79,7%', 'Rata-rata kelengkapan patroli 32,1%'", "per-guard bars: Agus Pratama 87,5% / 85,7% / 50,0%, Budi Santoso 100% / 87,5% / 100%, Dedi Kurniawan 100% / 71,4% / 0,0%", "columns Insiden, Pelanggaran SLA, Patroli terjadwal"]
+  },
+  {
+    "file": "web-report-monthly.png",
+    "role": "admin",
+    "what": "Monthly payroll recap ('Rekap bulanan untuk penggajian') for October 2026, admin view.",
+    "notable": ["tiles 'Hari terjadwal 94' (94 shift · 7 petugas), 'Tingkat kehadiran 89,1%' (9 hari terlambat · 5 hari absen), 'Total jam kerja 310,1', 'Ronde patroli 3'", "compliance strip 'Kepatuhan jadwal patroli: 68,8%. 44 tepat waktu, 15 terlambat, dan 5 terlewat dari 74 patroli terjadwal.' with 'Rincian'", "note on counting per day in the site time zone", "table columns Hari, Hadir, Terlambat, Tidak hadir, Hari pulang awal, Belum berjalan, Jam, Shift, Patroli"]
+  },
+  {
+    "file": "web-report-export.png",
+    "role": "admin",
+    "what": "Incident log report ('Log insiden') with the 'Unduh' download menu open offering Excel, CSV and PDF.",
+    "notable": ["menu items 'Excel (.xlsx) — Lembar rapi dengan angka dan tanggal…', 'CSV (.csv) — Tabel polos untuk aplikasi spreadsheet atau impor penggajian', 'PDF (.pdf) — Dokumen siap cetak (maks. 2.000 baris)'", "tiles 'Insiden 58', 'Tinggi / kritis 2', 'Belum s(elesai) 2'", "rows Penyusupan (Tinggi, Terbuka), Pencurian (Kritis, Diproses, 'Diubah'), Medis (Sedang, Selesai)", "filters Dari/Sampai, Kategori, Tingkat, Status; 'Cetak' button"]
+  },
+  {
+    "file": "web-rules.png",
+    "role": "admin",
+    "what": "Settings → 'Aturan peringatan' (notification rules): who gets which alert by e-mail or WhatsApp at Gudang Cikarang.",
+    "notable": ["'4 dari 9 kejadian mengirim peringatan di lokasi ini.'", "'Tombol SOS ditekan' → ops@logistiknusantara.co.id (e-mail) and +6281234567890 (WhatsApp), 'Penerima aktif: 2'", "'Insiden tinggi atau kritis' → +6281234567890", "'Insiden dilaporkan (semua tingkat)' — 'Belum dikirim ke siapa pun'", "per-recipient on/off toggles and '+ Tambah'; 'Tambah penerima' button", "settings nav: Lokasi, Tablet (badge 1), Aturan peringatan, Riwayat notifikasi (badge 1)"]
+  },
+  {
+    "file": "web-devices.png",
+    "role": "admin",
+    "what": "Settings → 'Tablet': pending approval, active tablets with health badges, and tablet accounts.",
+    "notable": ["yellow box '1 tablet menunggu persetujuan': 'Tablet Pos Belakang', site select 'Gudang Cikarang', 'Setujui' / 'Tolak'", "'Tablet aktif (2)': 'Tablet Pos Utama Cikarang' with 'Sehat' and 'Online'", "'Tablet Lobby Sudirman' with yellow '3 peringatan' and 'Online'", "'Ubah' and red 'Cabut' (revoke) actions", "'Akun tablet (0)' section with 'Akun tablet baru' button"]
+  },
+  {
+    "file": "web-device-health.png",
+    "role": "admin",
+    "what": "Tablet health drawer 'Kesehatan tablet — Tablet Lobby Sudirman' with three warnings, diagnostics and recent errors (1366x1080 shot).",
+    "notable": ["'Perlu perhatian' badge, account 'device-tablet-lobby-sudirman'", "warnings 'Sebagian data tidak dapat dikirim', 'Jam tablet selisih lebih dari 2 menit', 'Tablet melaporkan kesalahan'", "'Versi aplikasi 1.3.2 (37) · android 12'", "'Menunggu dikirim 3 menunggu · 2 gagal', 'Selisih jam +3 mnt 12 dtk', 'PIN salah (terakhir) 2'", "'Salin diagnostik untuk tim dukungan' button", "error log lines 'SocketException: Connection reset by peer' and 'item parked after 50 attempts (POST /incidents)'"]
+  },
+  {
+    "file": "web-device-account.png",
+    "role": "admin",
+    "what": "Dialog 'Akun tablet untuk Pos Gerbang Timur' showing the generated tablet password once, with sign-in instructions.",
+    "notable": ["yellow 'Hanya ditampilkan sekali' warning", "24-character password field with 'Salin' button", "'Cara masuk di tablet' 3 steps", "'Alamat server patroli.contoh.co.id' (placeholder: the script replaces the local test address), 'Kode organisasi demo', 'Nama pengguna device-pos-gerbang-timur'", "'Selesai, sudah saya salin' button"]
+  },
+  {
+    "file": "web-users.png",
+    "role": "admin",
+    "what": "'Pengguna & akses' list of dashboard users with roles, site scope and sign-in security status.",
+    "notable": ["Dimas Prakoso — Administrator, 'Wajib ganti kata sandi', 'Wajib pasang autentikator'", "Rina Kusuma — 'Anda', Administrator, 'Autentikator terpasang'", "Maya Sari — 'HR / Penggajian'", "Hendra Wijaya — 'Klien (hanya lihat)', only 'Gudang Cikarang', 'Hanya kata sandi'", "Operator Platform — 'Operator platform' + Administrator", "Andi Firmansyah — red 'Nonaktif', Supervisor, Kantor Pusat Sudirman", "note 'Setiap perubahan tercatat di log audit.'; 'Kelola' per row; 'Tambah pengguna'"]
+  },
+  {
+    "file": "web-user-create.png",
+    "role": "admin",
+    "what": "'Tambah pengguna' dialog scrolled to roles and site scope: a new Supervisor limited to Gudang Cikarang.",
+    "notable": ["role cards Administrator, Supervisor (checked), HR / Penggajian, Klien (hanya lihat) each with a one-line explanation", "'Lokasi': 'Hanya lokasi berikut' selected with 'Gudang Cikarang' checked, 'Kantor Pusat Sudirman' unchecked", "password choice 'Kirim e-mail undangan' (selected, link valid 72 jam) vs 'Atur kata sandi sementara sekarang'", "note 'Admin, supervisor dan HR wajib memasang aplikasi autentikator (OTP) saat pertama masuk.'", "'Buat pengguna' button"]
+  },
+  {
+    "file": "web-audit.png",
+    "role": "admin",
+    "what": "Audit log filtered to 'guards' with the 'Catatan audit' detail drawer of a PUT /api/v1/guards/:id entry open.",
+    "notable": ["'PUT /api/v1/guards/:id' by admin.rina, role admin, result 200", "IP '10.0.0.24', browser 'Mozilla/5.0 (Windows NT 10.0) Chrome/141', request ID", "'Sebelum / sesudah' table: employee_id GS-0180 → GS-0108, status inactive → active", "'Tampilkan 3 kolom yang tidak berubah'", "'Data yang dikirim' with note 'Kata sandi, token, PIN, dan nomor identitas dihapus sebelum disimpan.'"]
+  },
+  {
+    "file": "web-channels.png",
+    "role": "platform-admin",
+    "what": "Install-wide Settings → 'Kanal pengiriman' (delivery channels) as platform operator, WhatsApp Business section.",
+    "notable": ["sidebar shows only 'Pengaturan' for the operator role", "settings nav 'Seluruh instalasi (operator)': Kanal pengiriman, Alert operasional, Log alert operasional (badge 1), Cadangan data", "'WhatsApp Business — Sudah diatur', 'Mengirim peringatan lewat WhatsApp Cloud API resmi dari Meta'", "green box 'Butuh templat pesan yang sudah disetujui'", "'URL API https://graph.facebook.com/v18.0', token shown as dots, 'ID nomor telepon'", "note that secrets are stored encrypted and shown as ********"]
+  },
+  {
+    "file": "web-ops-alerts.png",
+    "role": "platform-admin",
+    "what": "Install-wide 'Alert operasional': who is told when backups or SOS delivery fail.",
+    "notable": ["warning 'E-mail belum diatur, jadi peringatan ini tidak terkirim. Atur kanal pengiriman'", "'SOS tidak terkirim' → WhatsApp +6281100002222 (Penerima aktif: 1)", "'Pencadangan gagal' → noc@operator.example", "'Pencadangan terlambat' (no successful backup for more than 26 hours) — recipient switched off (struck through)"]
+  },
+  {
+    "file": "web-backups.png",
+    "role": "platform-admin",
+    "what": "Install-wide 'Cadangan data' (backups) with the last-backup status and history.",
+    "notable": ["green 'Cadangan terakhir berhasil 8 jam yang lalu · Selesai 14 Okt 2026, 02.01 · 17.5 MB'", "tiles 'Ukuran 17.5 MB', 'Jadwal Setiap malam', 'Riwayat 60 terakhir'", "history rows 14 Okt 02.00 and 13 Okt 02.00, 'Otomatis', 'Berhasil', files 'postgres/securepatrol-daily.dump' and Keycloak 'Database login' dump", "'Cadangkan sekarang' button"]
+  },
+  {
+    "file": "web-supervisor-dashboard.png",
+    "role": "supervisor",
+    "what": "Supervisor 'Hari ini' dashboard with the SOS banner; same KPIs as admin but no setup reminder and a shorter menu.",
+    "notable": ["red SOS banner with 2 unacknowledged alerts and 'Tanggapi' buttons", "KPI 'Kehadiran hari ini 2/6', 'Patroli berjalan 1', 'Insiden terbuka 2', 'Kerusakan terbuka 2'", "'Perlu tindakan': '2 kehadiran perlu ditinjau', 'Insiden Tinggi: Penyusupan', 'Insiden Kritis: Pencurian'", "menu without Administrasi section; user 'demo.supervisor · Supervisor'"]
+  },
+  {
+    "file": "web-hr-monthly.png",
+    "role": "hr",
+    "what": "Monthly payroll recap as the HR role (menu limited to Hari ini, Kehadiran, Jadwal, Petugas, Laporan).",
+    "notable": ["'Rekap bulanan untuk penggajian', month 'October 2026'", "tiles 94 hari terjadwal, 89,1% kehadiran, 310,1 jam, 3 ronde patroli", "compliance strip 68,8%", "rows Agus Pratama 15 hari / 6 hadir / 1 terlambat / 1 tidak hadir / 49,2 jam; Budi Santoso 55,1 jam; Dedi Kurniawan 55,8 jam", "user 'demo.hr · HR / Penggajian'"]
+  },
+  {
+    "file": "web-client-dashboard.png",
+    "role": "client-readonly",
+    "what": "Client (read-only) 'Hari ini' dashboard: no SOS banner, no actions, highlights and the running patrol.",
+    "notable": ["KPI 'Kehadiran hari ini 2/6', 'Patroli berjalan 1', 'Insiden terbuka 2'", "'Sorotan': 'Insiden Tinggi: Penyusupan', 'Insiden Kritis: Pencurian' with 'Lihat'", "'Patroli berlangsung': Agus Pratama · Patroli Keliling Gudang, 'Diproses', 3/6 titik, 'Berikutnya: Ruang Panel Listrik'", "'Insiden terbaru' list (Penyusupan, Pencurian, Medis, Aktivitas mencurigakan, Vandalisme)", "menu: Hari ini, Patroli, Insiden, Kehadiran, Laporan; user 'Klien (hanya lihat)'"]
+  },
+  {
+    "file": "web-client-patrol.png",
+    "role": "client-readonly",
+    "what": "Client view of the live patrol on the floor plan (tabs only 'Langsung' and 'Riwayat', no route editing).",
+    "notable": ["subtitle 'Pantau petugas yang sedang berpatroli secara langsung dan tinjau riwayat patroli per titik periksa.'", "'1 patroli berjalan', view toggle 'Kartu / Denah' on Denah", "selector 'Agus Pratama — Patroli Keliling Gudang', '3/6 titik'", "floor plan with scanned checkpoints 1–3 (green) and next checkpoint 4 (blue)"]
+  },
+  {
+    "file": "web-phone-dashboard.png",
+    "role": "admin",
+    "what": "Admin dashboard at phone width (390x844) with the SOS banner stacked and the KPI cards in two columns (setup guide completed beforehand so no setup card).",
+    "notable": ["hamburger menu and site picker 'Gudang Cikarang'", "SOS banner with two alerts and 'Tanggapi' buttons", "'Selamat pagi' and 'Langsung' pill", "KPI cards 'Kehadiran hari ini 2/6', 'Patroli berjalan 1', 'Insiden terbuka 2', 'Kerusakan terbuka 2'"]
+  },
+  {
+    "file": "web-phone-menu.png",
+    "role": "admin",
+    "what": "Phone width (390x844) with the navigation drawer open over the dashboard.",
+    "notable": ["drawer 'SecurePatrol · PT Logistik Nusantara' with close X", "sections Operasional (Patroli, Insiden, Kehadiran), Personel (Jadwal, Petugas), Analisis (Laporan), Administrasi (Panduan setup, Pengaturan, Pengguna & akses, Log audit)", "'Lanjutkan setup 5/6' widget", "user 'demo.admin · Administrator'"]
+  },
+  {
+    "file": "tab-setup.png",
+    "role": "device (tablet, first start)",
+    "what": "Tablet first-run screen 'Hubungkan tablet ke server' (step 1 of 3 of 'Pengaturan tablet pos jaga').",
+    "notable": ["left panel steps 1 'Hubungkan tablet ke server', 2 'Masuk sebagai perangkat', 3 'Menunggu persetujuan'", "fields 'Alamat server https://patrol.test' and 'Kode organisasi demo'", "'Pengaturan lanjutan' expander, 'Lanjut' button", "language switch 'Indonesia / English'"]
+  },
+  {
+    "file": "tab-pending.png",
+    "role": "device (tablet, first start)",
+    "what": "Tablet waiting for admin approval (step 3 of 3).",
+    "notable": ["steps 1 and 2 ticked green", "'Menunggu persetujuan': 'Tablet \"Tablet Pos Utama\" sudah terdaftar. Minta administrator menyetujuinya di web: Pengaturan → Tablet, lalu pilih lokasinya.'", "spinner 'Memeriksa setiap 10 detik…'", "'Keluarkan perangkat' button"]
+  },
+  {
+    "file": "tab-lock.png",
+    "role": "device (locked tablet)",
+    "what": "Tablet lock screen 'Siapa yang bertugas?' with the guard grid of Gudang Cikarang.",
+    "notable": ["header 'Gudang Cikarang · Tablet Pos Utama', clock and 'Online' chip, settings gear", "guard tiles Budi Santoso (Supervisor), Agus Pratama GS-0102, Dedi Kurniawan GS-0103, Rina Wulandari GS-0104, Joko Susilo GS-0105", "Hendra Saputra GS-0108 greyed out (no PIN yet)", "right panel 'Pilih nama Anda lalu masukkan PIN.'"]
+  },
+  {
+    "file": "tab-pin.png",
+    "role": "device (locked tablet)",
+    "what": "PIN entry on the lock screen after selecting Budi Santoso, with the SOS button available without a PIN.",
+    "notable": ["'Halo, Budi' and 'Masukkan PIN' with 6 dots (2 filled)", "large numeric keypad 0–9 with backspace and arrow", "red round 'SOS' button and 'Darurat? Tahan tombol SOS — tanpa PIN.'", "selected tile highlighted, '← Kembali'"]
+  },
+  {
+    "file": "tab-home.png",
+    "role": "device (guard Budi Santoso, supervisor)",
+    "what": "Tablet home of a verified, clocked-in guard: shift card, next scheduled patrol and the four field actions, SOS on the right.",
+    "notable": ["'Budi Santoso', green 'Terverifikasi', 'Supervisor · Gudang Cikarang', 'Online' chip, 'Kunci' (lock) button", "'Shift 07:00–15:00' with 'Sudah masuk 06:52' and 'Absen pulang' button (times are relative to when the shot is taken)", "'Jadwal patroli berikutnya: Patroli Keliling Gudang, pukul 11:00'", "tiles 'Patroli — Pindai titik patroli', 'Lapor insiden', 'Lapor kerusakan', 'Buku tamu'", "big red 'SOS' button 'Tahan 2 detik untuk SOS' — 'Supervisor akan langsung menerima peringatan beserta lokasi Anda.'"]
+  },
+  {
+    "file": "tab-clock.png",
+    "role": "device (guard Budi Santoso)",
+    "what": "Tablet clock-in screen 'Absen masuk' with optional selfie and a GPS fix.",
+    "notable": ["card 'Budi Santoso · Shift 07:00–15:00', current time large, 'Gudang Cikarang'", "'Swafoto (opsional)' with 'Ambil foto' tile and hint 'Ambil swafoto sebagai bukti kehadiran.'", "'Lokasi GPS' green 'Lokasi didapat (±8 m)'", "blue 'Konfirmasi absen masuk' button"]
+  },
+  {
+    "file": "tab-patrol-routes.png",
+    "role": "device (guard Budi Santoso)",
+    "what": "Tablet route picker 'Pilih rute patroli' with scheduled times; routes and QR codes are stored on the tablet for offline patrols.",
+    "notable": ["subtitle 'Rute dan kode QR tersimpan di tablet — patroli tetap bisa dilakukan tanpa internet.'", "'Patroli Keliling Gudang': '5 titik', '± 65 mnt per putaran', 'Jadwal 11:00', checkpoints Gerbang Utama 10 mnt, Dock Bongkar Muat 15, Gudang Bahan Baku 15, '+2 titik lainnya'", "'Patroli Malam Perimeter': '2 titik', '± 35 mnt', 'Jadwal 20:00' (relative to capture time)", "'Mulai patroli' buttons, SOS bar at the bottom, 'Online' chip"]
+  },
+  {
+    "file": "tab-patrol-active.png",
+    "role": "device (guard Budi Santoso)",
+    "what": "Active patrol of 'Patroli Keliling Gudang', 2 of 5 checkpoints done, the next one overdue.",
+    "notable": ["'Progres patroli 2 dari 5 titik', '45 mnt berjalan', coloured segment bar", "next checkpoint card 'Gudang Bahan Baku' with orange 'Terlambat 5 mnt · Batas …'", "big 'Pindai QR' button and 'Tanpa QR (foto)' fallback", "checkpoint list: Gerbang Utama 'Tepat waktu', Dock Bongkar Muat 'Manual' + 'Terlambat', Gudang Bahan Baku 'Lewat batas', Ruang Panel Listrik and Parkir Truk 'Belum'", "'Selesaikan patroli' button and SOS button"]
+  },
+  {
+    "file": "tab-incident.png",
+    "role": "device (guard Budi Santoso)",
+    "what": "Filled incident report form 'Lapor insiden' (tall 1280x1500 capture showing the whole form).",
+    "notable": ["context chips 'Budi Santoso', 'Gudang Cikarang', time", "category grid with 'Penyusupan' selected (others: Pencurian, Mencurigakan, Vandalisme, Bahaya kebakaran, Medis, Kecelakaan, Lainnya)", "severity 'Tinggi — Perlu bantuan segera' selected; note 'Tinggi & kritis langsung dikirim ke supervisor.'", "description 'Dua orang memanjat pagar belakang dekat dock bongkar muat, lalu lari ke arah jalan raya. Satu memakai jaket hitam.'", "location 'Pagar belakang, dekat Dock Bongkar Muat'", "'Foto 2 dari 5 foto' with two thumbnails and 'Ambil foto'", "'Kirim laporan' button"]
+  },
+  {
+    "file": "tab-defect.png",
+    "role": "device (guard Budi Santoso)",
+    "what": "Filled defect report form 'Lapor kerusakan' (1280x1100 capture).",
+    "notable": ["type chips CCTV, Lampu (selected), Pintu, Pagar, Listrik, Air, Lainnya", "'Jenis kerusakan: Lampu'", "'Di mana? Parkir truk sisi utara'", "'Keterangan: Lampu sorot tiang 3 mati sejak semalam, area parkir gelap.'", "one photo attached, 'Kirim laporan' button"]
+  },
+  {
+    "file": "tab-visitors.png",
+    "role": "device (guard Budi Santoso)",
+    "what": "Tablet visitor book 'Buku tamu' with visitors inside and those who have left.",
+    "notable": ["'3 tamu masih di dalam · 5 tercatat di tablet ini dalam 24 jam terakhir'", "'Tamu masuk' button", "Andi Wijaya — 'Antar barang — PT Sinar Logistik', plate 'B 9123 KXT', host 'Bpk. Hartono (Gudang)', 'Catat keluar'", "Siti Rahmawati — 'Wawancara kerja', host HRD", "Teknisi AC — Yusuf, plate 'B 4410 FAA'", "'Sudah keluar (2)': Rudi Hermawan, Kurir JNE"]
+  },
+  {
+    "file": "tab-sos.png",
+    "role": "device (guard Budi Santoso, supervisor)",
+    "what": "Tablet home while another guard's SOS is open: red alert card on top that the supervisor can acknowledge, plus the SOS button.",
+    "notable": ["red card 'SOS · Rina Wulandari menekan SOS' with time and white 'Tanggapi' button", "shift card 'Sudah masuk' and next-patrol banner below", "big red 'SOS' button 'Tahan 2 detik untuk SOS'"]
+  },
+  {
+    "file": "tab-outbox.png",
+    "role": "device (guard Budi Santoso)",
+    "what": "Tablet outbox 'Antrean kirim' while offline: three reports stored on the tablet waiting to be sent.",
+    "notable": ["orange cloud-off icon, '3 menunggu', 'Terakhir sinkron …' (12 min before capture)", "'Kirim sekarang' button", "'Semua laporan tersimpan dulu di tablet, lalu dikirim otomatis saat ada internet.'", "items 'Absen masuk · Budi Santoso', 'Pindai titik · Gerbang Utama', 'Insiden · Penyusupan', each 'Tidak ada koneksi ke server.'"]
+  }
+]
