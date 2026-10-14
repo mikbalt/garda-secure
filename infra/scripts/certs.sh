@@ -67,8 +67,8 @@ distinguished_name = dn
 prompt = no
 x509_extensions = v3_ca
 [dn]
-O = SecurePatrol
-CN = SecurePatrol Private CA ($host)
+O = GARDA
+CN = GARDA Private CA ($host)
 [v3_ca]
 basicConstraints = critical,CA:TRUE,pathlen:0
 keyUsage = critical,keyCertSign,cRLSign
@@ -85,7 +85,7 @@ cat > "$work/server.cnf" <<EOF
 distinguished_name = dn
 prompt = no
 [dn]
-O = SecurePatrol
+O = GARDA
 CN = $host
 EOF
 cat > "$work/server.ext" <<EOF

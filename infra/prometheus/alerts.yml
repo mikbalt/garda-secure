@@ -1,4 +1,4 @@
-# SecurePatrol alert rules (INF-M1). Routed by Alertmanager to ALERT_EMAIL_TO.
+# GARDA alert rules (INF-M1). Routed by Alertmanager to ALERT_EMAIL_TO.
 # Severity: critical = act now (guards' safety / data loss), warning = today.
 # Metric contract with the backend: docs/runbook.md §8.
 groups:

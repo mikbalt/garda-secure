@@ -1,6 +1,7 @@
 #!/bin/sh
 # Generate the realm import file for a new client company (D-005).
 #   ./new-realm.sh securepatrol-client3 "PT Contoh Tiga" [--dev]
+#   (display name becomes "GARDA — PT Contoh Tiga")
 # Redirect URIs of the web client come from PUBLIC_URL in infra/.env
 # (https://<SERVER_HOST>/*). --dev also allows the Vite dev server
 # (http://localhost:5173/*) — never for a production realm.
@@ -31,6 +32,12 @@ esac
 dir="$INFRA_DIR/keycloak"
 out="$dir/realms/$realm.json"
 [ -e "$out" ] && die "$out already exists"
+
+# Shown on the Keycloak login page as "GARDA — <client>" (product name).
+case "$display" in
+  GARDA*) ;;
+  *) display="GARDA — $display" ;;
+esac
 
 jq --arg realm "$realm" --arg display "$display" --arg url "$public_url" --argjson dev "$dev" '
   .realm = $realm

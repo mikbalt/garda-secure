@@ -1,6 +1,6 @@
 {
   "uid": "sp-jobs",
-  "title": "SecurePatrol — Jobs, backups, certificates",
+  "title": "GARDA — Jobs, backups, certificates",
   "description": "Scheduler jobs, database/off-site backups, TLS",
   "tags": [
     "securepatrol",

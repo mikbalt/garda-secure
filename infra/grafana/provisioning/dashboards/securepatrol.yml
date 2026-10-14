@@ -4,7 +4,7 @@ apiVersion: 1
 # Edits in the UI are not saved back: export the JSON and commit it.
 providers:
   - name: securepatrol
-    folder: SecurePatrol
+    folder: GARDA
     type: file
     disableDeletion: true
     allowUiUpdates: false

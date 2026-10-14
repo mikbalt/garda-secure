@@ -1,7 +1,7 @@
 {
   "realm": "securepatrol-client2",
   "enabled": true,
-  "displayName": "SecurePatrol Client 2",
+  "displayName": "GARDA — Client 2",
   "loginWithEmailAllowed": true,
   "registrationAllowed": false,
   "resetPasswordAllowed": true,
@@ -38,7 +38,7 @@
   "clients": [
     {
       "clientId": "securepatrol-web",
-      "name": "SecurePatrol Web",
+      "name": "GARDA Web",
       "description": "Public OIDC client for the web dashboard (authorization code + PKCE)",
       "enabled": true,
       "publicClient": true,
@@ -77,7 +77,7 @@
     },
     {
       "clientId": "securepatrol-tablet",
-      "name": "SecurePatrol Tablet",
+      "name": "GARDA Tablet",
       "description": "Public client for shared site tablets (device accounts, password grant + offline token)",
       "enabled": true,
       "publicClient": true,

@@ -225,7 +225,7 @@ jobs:
           server_port: ${{ secrets.SMTP_PORT || 587 }}
           username: ${{ secrets.SMTP_USER }}
           password: ${{ secrets.SMTP_PASSWORD }}
-          subject: "SecurePatrol deployed: ${{ env.VERSION }}"
+          subject: "GARDA deployed: ${{ env.VERSION }}"
           to: ${{ secrets.DEPLOY_NOTIFY_EMAIL }}
           from: ${{ secrets.SMTP_FROM }}
           body: |
@@ -242,7 +242,7 @@ jobs:
           server_port: ${{ secrets.SMTP_PORT || 587 }}
           username: ${{ secrets.SMTP_USER }}
           password: ${{ secrets.SMTP_PASSWORD }}
-          subject: "SecurePatrol deploy FAILED: ${{ env.VERSION }}"
+          subject: "GARDA deploy FAILED: ${{ env.VERSION }}"
           to: ${{ secrets.DEPLOY_NOTIFY_EMAIL }}
           from: ${{ secrets.SMTP_FROM }}
           body: |

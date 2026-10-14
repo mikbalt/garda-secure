@@ -34,4 +34,4 @@ receivers:
       - to: "__YAML_ALERT_EMAIL_TO__"
         send_resolved: true
         headers:
-          Subject: '[SecurePatrol __SERVER_HOST__] {{ .Status | toUpper }} {{ .CommonLabels.alertname }} ({{ .CommonLabels.severity }})'
+          Subject: '[GARDA __SERVER_HOST__] {{ .Status | toUpper }} {{ .CommonLabels.alertname }} ({{ .CommonLabels.severity }})'
