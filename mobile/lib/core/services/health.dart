@@ -73,6 +73,7 @@ class HealthSnapshot {
     this.rosterSyncedAt,
     this.pinFailures = const {},
     this.dbKeyReset = false,
+    this.push,
   });
 
   final int outboxPending;
@@ -83,6 +84,9 @@ class HealthSnapshot {
   final DateTime? rosterSyncedAt;
   final Map<String, int> pinFailures;
   final bool dbKeyReset;
+
+  /// Push status: `active`, `unconfigured`, `denied` or `error`.
+  final String? push;
 }
 
 /// Compact device health beacon (MOB-7): app version, outbox depth, failed
@@ -135,6 +139,7 @@ class HealthBeacon {
       'private_ca': TrustStore.hasPrivateCa,
       if (s.pinFailures.isNotEmpty) 'pin_failures': s.pinFailures,
       if (s.dbKeyReset) 'db_key_reset': true,
+      if (s.push != null) 'push': s.push,
       'errors': errors.entries.length > 10 ? errors.entries.sublist(errors.entries.length - 10) : errors.entries,
       'sent_at': AppClock.now().toIso8601String(),
     };

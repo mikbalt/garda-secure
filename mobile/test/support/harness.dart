@@ -14,6 +14,7 @@ import 'package:securepatrol/core/database/sync_service.dart';
 import 'package:securepatrol/core/services/clock.dart';
 import 'package:securepatrol/core/services/location_service.dart';
 import 'package:securepatrol/core/services/photo_service.dart';
+import 'package:securepatrol/core/services/push_service.dart';
 import 'package:securepatrol/core/storage/secure_store.dart';
 import 'package:securepatrol/features/field_actions.dart';
 import 'package:securepatrol/shared/models/models.dart';
@@ -26,7 +27,7 @@ import 'fake_api.dart';
 /// screenshots. Nothing talks to a network: the API is a [FakeApi] (offline
 /// by default) and the outbox is never started.
 class Harness {
-  Harness._(this.db, this.session, this.outbox, this.actions, this.api, this.store);
+  Harness._(this.db, this.session, this.outbox, this.actions, this.api, this.store, this.push);
 
   final LocalDb db;
   final DeviceSession session;
@@ -34,6 +35,9 @@ class Harness {
   final FieldActions actions;
   final FakeApi api;
   final MemorySecureStore store;
+
+  /// Push as in a build without the SP_FCM_* values (unconfigured).
+  final PushService push;
 
   static Future<Harness> create({FakeApi? api}) async {
     sqfliteFfiInit();
@@ -51,7 +55,8 @@ class Harness {
       onGuardTokenInvalid: session.onGuardTokenInvalid,
     );
     final actions = FieldActions(session: session, outbox: outbox, db: db, location: LocationService(), photos: PhotoService());
-    return Harness._(db, session, outbox, actions, fake, store);
+    final push = PushService(session: session, config: const PushConfig(), flags: MemoryPushFlagStore());
+    return Harness._(db, session, outbox, actions, fake, store, push);
   }
 
   /// A typical active tablet at "Gudang Cikarang".
@@ -96,12 +101,13 @@ class Harness {
 }
 
 /// Wraps [child] in the providers, theme and localisation of the real app.
-Widget wrap(Harness h, Widget child, {Locale locale = const Locale('id')}) {
+Widget wrap(Harness h, Widget child, {Locale locale = const Locale('id'), PushService? push}) {
   return MultiProvider(
     providers: [
       ChangeNotifierProvider<DeviceSession>.value(value: h.session),
       ChangeNotifierProvider<Outbox>.value(value: h.outbox),
       ChangeNotifierProvider<FieldActions>.value(value: h.actions),
+      ChangeNotifierProvider<PushService>.value(value: push ?? h.push),
     ],
     child: MaterialApp(
       debugShowCheckedModeBanner: false,

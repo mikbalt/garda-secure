@@ -136,6 +136,10 @@ class ApiClient {
   Future<dynamic> post(String path, {Object? body, String? guardId, String? guardToken, Duration? timeout}) =>
       send('POST', path, body: body ?? const {}, guardId: guardId, guardToken: guardToken, timeout: timeout);
 
+  Future<dynamic> put(String path, {Object? body, Duration? timeout}) => send('PUT', path, body: body ?? const {}, timeout: timeout);
+
+  Future<dynamic> delete(String path, {Duration? timeout}) => send('DELETE', path, timeout: timeout);
+
   /// Uploads a photo with a client ID so the stored key is deterministic
   /// (`sites/<site>/<kind>/<id>.jpg`, D-012).
   Future<String> uploadPhoto({required String filePath, required String id, required String kind, String? guardId, String? guardToken}) async {

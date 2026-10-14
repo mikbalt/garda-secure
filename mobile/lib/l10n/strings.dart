@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import 'strings_patrol.dart';
+import 'strings_push.dart';
 import 'strings_reports.dart';
 import 'strings_security.dart';
 
@@ -32,8 +33,8 @@ class S {
   }
 
   /// Feature modules keep their strings in their own files (merged here).
-  static const allId = <String, String>{...id, ...patrolStringsId, ...reportStringsId, ...securityStringsId};
-  static const allEn = <String, String>{...en, ...patrolStringsEn, ...reportStringsEn, ...securityStringsEn};
+  static const allId = <String, String>{...id, ...patrolStringsId, ...reportStringsId, ...securityStringsId, ...pushStringsId};
+  static const allEn = <String, String>{...en, ...patrolStringsEn, ...reportStringsEn, ...securityStringsEn, ...pushStringsEn};
 
   static const id = <String, String>{
     'app.name': 'SecurePatrol',
