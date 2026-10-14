@@ -14,7 +14,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
-    "guide:shots": "playwright test -c playwright.guide.config.ts"
+    "guide:shots": "playwright test -c playwright.guide.config.ts",
+    "icons": "node scripts/brand-icons.mjs"
   },
   "dependencies": {
     "@fontsource-variable/inter": "5.1.0",
