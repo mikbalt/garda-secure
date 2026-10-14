@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Resources looked up by name at run time (flutter_local_notifications:
+     the notification icon); without this, release resource shrinking removes
+     them and notifications fail silently. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_stat_garda" />

@@ -18,12 +18,38 @@ if (hasReleaseKey) {
 }
 def allowDebugSigning = (project.findProperty("allowDebugSigning") ?: System.getenv("SP_ALLOW_DEBUG_SIGNING") ?: "false").toString().toBoolean()
 
+// Push (Firebase Cloud Messaging) is configured with --dart-define values
+// (SP_FCM_*), not with google-services.json / the Google Services plugin.
+// Flutter hands the defines to Gradle base64-encoded in `dart-defines`. The
+// Android values are also written as the string resources that plugin would
+// generate, so Firebase's init provider creates the default app when a push
+// starts the process (app not running). Without the defines nothing is added
+// and the app runs without push.
+def dartDefines = [:]
+if (project.hasProperty("dart-defines")) {
+    project.property("dart-defines").toString().split(",").each { entry ->
+        if (entry) {
+            def pair = new String(entry.decodeBase64(), "UTF-8").split("=", 2)
+            if (pair.length == 2) dartDefines[pair[0]] = pair[1]
+        }
+    }
+}
+def fcmResources = [
+    google_app_id      : dartDefines["SP_FCM_APP_ID"],
+    google_api_key     : dartDefines["SP_FCM_API_KEY"],
+    gcm_defaultSenderId: dartDefines["SP_FCM_SENDER_ID"],
+    project_id         : dartDefines["SP_FCM_PROJECT_ID"],
+]
+def hasFcm = fcmResources.values().every { it }
+
 android {
     namespace = "id.co.garda.tablet"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        // flutter_local_notifications needs core library desugaring.
+        coreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
     }
@@ -39,6 +65,9 @@ android {
         // From pubspec `version:` (name+code) or --build-name/--build-number (CI).
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        if (hasFcm) {
+            fcmResources.each { name, value -> resValue "string", name, value }
+        }
     }
 
     signingConfigs {
@@ -54,6 +83,8 @@ android {
 
     buildTypes {
         release {
+            // R8 keep rules of flutter_local_notifications (Gson).
+            proguardFiles "proguard-rules.pro"
             if (hasReleaseKey) {
                 signingConfig = signingConfigs.release
             } else if (allowDebugSigning) {
@@ -74,4 +105,8 @@ gradle.taskGraph.whenReady { graph ->
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:1.2.2"
 }

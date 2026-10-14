@@ -6,6 +6,7 @@ import '../../core/auth/auth_provider.dart';
 import '../../core/database/sync_service.dart';
 import '../../core/services/clock.dart';
 import '../../core/services/health.dart';
+import '../../core/services/push_service.dart';
 import '../../l10n/strings.dart';
 import '../../shared/widgets/ui.dart';
 import '../../theme/app_theme.dart';
@@ -66,6 +67,65 @@ Future<void> showOutboxBlocked(BuildContext context, String text) async {
   }
 }
 
+/// Push status (FCM) with a way to fix it: ask for the notification
+/// permission again or resend the token.
+class _PushRow extends StatelessWidget {
+  const _PushRow({required this.push, required this.label});
+
+  final PushService push;
+  final String label;
+
+  Future<void> _fix(BuildContext context) async {
+    final s = S.of(context);
+    if (push.state == PushState.denied) {
+      final p = await push.requestPermission();
+      if (p != PushPermission.granted && !await push.openSettings() && context.mounted) showMessage(context, s.t('push.deniedSettings'));
+    } else {
+      await push.register();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    final state = push.state;
+    final (text, color) = switch (state) {
+      PushState.active => (s.t('push.active'), AppColors.ok),
+      PushState.unconfigured => (s.t('push.unconfigured'), AppColors.textMuted),
+      PushState.denied => (s.t('push.denied'), AppColors.warn),
+      PushState.tokenPending => (s.t('push.tokenPending'), AppColors.warn),
+      PushState.error => (s.t('push.error'), AppColors.danger),
+    };
+    final action = switch (state) {
+      PushState.denied => s.t('push.askAgain'),
+      PushState.tokenPending || PushState.error => s.t('push.retry'),
+      _ => null,
+    };
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SizedBox(width: 160, child: Text(label, style: const TextStyle(color: AppColors.textMuted))),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(text, style: TextStyle(fontWeight: FontWeight.w600, color: color)),
+            const SizedBox(height: 2),
+            Text(s.t(state == PushState.active ? 'push.hintActive' : 'push.hintFallback'), style: const TextStyle(color: AppColors.textMuted, fontSize: 13, height: 1.4)),
+            if (action != null && push.canRetry) ...[
+              const SizedBox(height: 6),
+              TextButton.icon(
+                style: TextButton.styleFrom(padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
+                onPressed: () => _fix(context),
+                icon: Icon(state == PushState.denied ? Icons.notifications_active_outlined : Icons.refresh, size: 18),
+                label: Text(action),
+              ),
+            ],
+          ]),
+        ),
+      ]),
+    );
+  }
+}
+
 /// Tablet details, language, and signing the device out (from the lock screen).
 class DeviceInfoScreen extends StatelessWidget {
   const DeviceInfoScreen({super.key});
@@ -75,6 +135,7 @@ class DeviceInfoScreen extends StatelessWidget {
     final s = S.of(context);
     final session = context.watch<DeviceSession>();
     final outbox = context.watch<Outbox>();
+    final push = context.watch<PushService>();
     final offset = AppClock.offset;
     Widget row(String label, String value) => Padding(
           padding: const EdgeInsets.symmetric(vertical: 10),
@@ -101,6 +162,8 @@ class DeviceInfoScreen extends StatelessWidget {
                 row(s.t('dev.secureLink'), TrustStore.hasPrivateCa ? s.t('dev.privateCa') : s.t('dev.systemCa')),
                 const Divider(),
                 row(s.t('sync.title'), outbox.pending + outbox.failed == 0 ? s.t('sync.allSent') : s.t('sync.pending', {'n': outbox.pending + outbox.failed})),
+                const Divider(),
+                _PushRow(push: push, label: s.t('push.title')),
                 const Divider(),
                 row(s.t('dev.clockOffset'), '${offset.isNegative ? '−' : '+'}${(offset.inMilliseconds.abs() / 1000).toStringAsFixed(1)} s'),
                 const Divider(),

@@ -11,11 +11,39 @@ import 'features/field_actions.dart';
 import 'features/home/home_screen.dart';
 import 'features/setup/pending_screen.dart';
 import 'features/setup/setup_screen.dart';
+import 'features/sos/sos_alerts_screen.dart';
 import 'shared/widgets/brand.dart';
 import 'shared/widgets/sos_button.dart';
 import 'theme/app_theme.dart';
 
 final rootNavigator = GlobalKey<NavigatorState>();
+
+/// Opens what a tapped notification points at: `sos:<id>` → the SOS alerts
+/// (only for an unlocked tablet — the lock screen shows the SOS strip and
+/// details need a PIN), `home` → back to the home screen.
+void openPushTarget(DeviceSession session, String payload) {
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    final nav = rootNavigator.currentState;
+    if (nav == null || session.phase != Phase.unlocked) {
+      if (payload.startsWith('sos')) unawaited(session.refreshSos());
+      return;
+    }
+    if (payload.startsWith('sos')) {
+      unawaited(session.refreshSos());
+      String? top;
+      nav.popUntil((r) {
+        top = r.settings.name;
+        return true;
+      });
+      if (top != SosAlertsScreen.routeName) {
+        unawaited(nav.push(MaterialPageRoute<void>(settings: const RouteSettings(name: SosAlertsScreen.routeName), builder: (_) => const SosAlertsScreen())));
+      }
+    } else {
+      nav.popUntil((r) => r.isFirst);
+    }
+  });
+  WidgetsBinding.instance.scheduleFrame();
+}
 
 class GardaApp extends StatelessWidget {
   const GardaApp({super.key});

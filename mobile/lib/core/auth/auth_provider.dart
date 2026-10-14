@@ -82,6 +82,21 @@ class DeviceSession extends ChangeNotifier with WidgetsBindingObserver {
   /// Lifted the outbox pause (wired in main: the device is active again).
   VoidCallback? onDeviceActive;
 
+  /// Push hooks (PushService.attach): push is configured, allowed and
+  /// registered; the tablet registered itself; an admin approved it; the
+  /// device is about to sign out (still authenticated).
+  bool Function()? pushHealthy;
+  VoidCallback? onRegistered;
+  VoidCallback? onApproved;
+  Future<void> Function()? beforeSignOut;
+
+  /// SOS of other tablets is polled every 15 s while someone works on the
+  /// tablet and every 30 s on the lock screen (MOB-11). With healthy push it
+  /// relaxes to [sosPollPush] — never slower: SOS never relies on push alone.
+  static const sosPollUnlocked = Duration(seconds: 15);
+  static const sosPollLocked = Duration(seconds: 30);
+  static const sosPollPush = Duration(seconds: 60);
+
   /// No unlock without a roster sync in this period (MOB-6). SOS still works.
   static const maxOfflineAge = Duration(days: 7);
 
@@ -148,6 +163,7 @@ class DeviceSession extends ChangeNotifier with WidgetsBindingObserver {
     final res = await api.post('/device/register', body: {'name': deviceName.trim()});
     device = Device.fromJson((res as Map).cast<String, dynamic>());
     await db.put(CacheKeys.device, device!.toJson());
+    onRegistered?.call();
     _startTicker();
     await refreshDevice();
     if (phase == Phase.login) _go(Phase.pending);
@@ -179,6 +195,7 @@ class DeviceSession extends ChangeNotifier with WidgetsBindingObserver {
         if (phase == Phase.pending || phase == Phase.revoked || phase == Phase.login || phase == Phase.booting) {
           await syncReference();
           _go(Phase.locked);
+          onApproved?.call();
         }
       }
     } on ApiException catch (e) {
@@ -188,6 +205,7 @@ class DeviceSession extends ChangeNotifier with WidgetsBindingObserver {
         // Registration was deleted on the server: register again.
         try {
           await api.post('/device/register', body: {'name': device!.name});
+          onRegistered?.call();
         } catch (_) {}
       }
       // Offline: keep using the cache.
@@ -444,9 +462,18 @@ class DeviceSession extends ChangeNotifier with WidgetsBindingObserver {
 
   // ── timers ─────────────────────────────────────────────────────────────────
 
+  /// How often SOS alerts of the site are polled now (null: not polled).
+  Duration? get sosPollInterval {
+    if (phase != Phase.unlocked && phase != Phase.locked) return null;
+    if (pushHealthy?.call() ?? false) return sosPollPush;
+    return phase == Phase.unlocked ? sosPollUnlocked : sosPollLocked;
+  }
+
+  static const _tickSeconds = 5;
+
   void _startTicker() {
     _ticker?.cancel();
-    _ticker = Timer.periodic(const Duration(seconds: 5), (_) => _onTick());
+    _ticker = Timer.periodic(const Duration(seconds: _tickSeconds), (_) => _onTick());
   }
 
   void _onTick() {
@@ -454,9 +481,9 @@ class DeviceSession extends ChangeNotifier with WidgetsBindingObserver {
     if (phase == Phase.unlocked && DateTime.now().difference(_lastActivity) > idleLimit) lock();
     if (phase == Phase.pending && _tick % 2 == 0) unawaited(refreshDevice()); // every 10 s
     if (phase == Phase.revoked && _tick % 12 == 0) unawaited(refreshDevice()); // re-activated by an admin?
-    // Supervisors on duty see SOS of other tablets: every 15 s while someone
-    // works on the tablet, every 30 s on the lock screen (MOB-11).
-    if ((phase == Phase.unlocked && _tick % 3 == 0) || (phase == Phase.locked && _tick % 6 == 0)) unawaited(refreshSos());
+    // Supervisors on duty see SOS of other tablets ([sosPollInterval]).
+    final sosEvery = sosPollInterval;
+    if (sosEvery != null && _tick % (sosEvery.inSeconds ~/ _tickSeconds) == 0) unawaited(refreshSos());
     if ((phase == Phase.locked || phase == Phase.unlocked) && _tick % 60 == 0) unawaited(syncReference()); // every 5 min
     if (phase == Phase.unlocked && _tick % 12 == 0) unawaited(refreshGuardStatus()); // every minute
   }
@@ -498,6 +525,9 @@ class DeviceSession extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> signOutDevice() async {
     final n = await db.outboxCount();
     if (n > 0) throw OutboxNotEmpty(n);
+    try {
+      await beforeSignOut?.call();
+    } catch (_) {}
     await auth.signOut();
     await guardSessions.clearAll();
     await db.wipe();

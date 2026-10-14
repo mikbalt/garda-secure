@@ -13,6 +13,8 @@ import '../home/home_screen.dart' show hm;
 class SosAlertsScreen extends StatelessWidget {
   const SosAlertsScreen({super.key});
 
+  static const routeName = 'sos-alerts';
+
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);

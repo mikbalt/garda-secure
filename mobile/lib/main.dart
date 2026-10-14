@@ -14,6 +14,7 @@ import 'core/database/sync_service.dart';
 import 'core/services/health.dart';
 import 'core/services/location_service.dart';
 import 'core/services/photo_service.dart';
+import 'core/services/push_service.dart';
 import 'core/storage/field_cipher.dart';
 import 'core/storage/secure_store.dart';
 import 'features/field_actions.dart';
@@ -60,6 +61,11 @@ Future<void> _main() async {
     onGuardTokenInvalid: session.onGuardTokenInvalid,
   );
   session.onDeviceActive = outbox.resume;
+  // Firebase Cloud Messaging when the build has the SP_FCM_* values;
+  // otherwise disabled and polling works as before.
+  final push = PushService(session: session)..attach();
+  push.onOpen = (payload) => openPushTarget(session, payload);
+  push.onError = (e, st) => errors.record(e, st, source: 'push');
   final actions = FieldActions(session: session, outbox: outbox, db: db, location: LocationService(), photos: PhotoService());
   final beacon = HealthBeacon(
     api: session.api,
@@ -74,6 +80,7 @@ Future<void> _main() async {
       rosterSyncedAt: session.referenceSyncedAt,
       pinFailures: session.pinAttempts.failureCounts,
       dbKeyReset: db.keyReset,
+      push: push.beaconStatus,
     ),
   );
 
@@ -82,6 +89,7 @@ Future<void> _main() async {
       ChangeNotifierProvider<DeviceSession>.value(value: session),
       ChangeNotifierProvider<Outbox>.value(value: outbox),
       ChangeNotifierProvider<FieldActions>.value(value: actions),
+      ChangeNotifierProvider<PushService>.value(value: push),
     ],
     child: const GardaApp(),
   ));
@@ -89,6 +97,7 @@ Future<void> _main() async {
   await session.boot();
   await outbox.start();
   beacon.start();
+  unawaited(push.start());
   // Photos of reports that were never queued (app killed mid-form) or whose
   // item is gone: nothing refers to them any more (MOB-11).
   unawaited(outbox.photoPaths().then(PhotoService.cleanOrphans).catchError((Object _) => 0));
