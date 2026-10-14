@@ -19,7 +19,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # ── Stage 2: Run ─────────────────────────────────────────────────────────────
 # Alpine (not distroless) because the worker runs pg_dump for backups (D-015);
 # pg_dump must match the server's major version (PostgreSQL 16).
-FROM alpine:3.22
+FROM alpine:3.24
 
 RUN apk add --no-cache ca-certificates tzdata postgresql16-client \
     && addgroup -S app && adduser -S -G app -H -h /app app
