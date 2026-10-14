@@ -9,8 +9,6 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
-| Push notifications backend + web (Web Push VAPID, FCM sender, subscriptions, per-user preferences, `sos_unacknowledged`) | `muhamhad-pc1/claude-push` | 2026-10-14 | branch `agent/muhamhad-pc1/push-web`; migration 008 |
-| Push notifications tablet app (Firebase Cloud Messaging) | `muhamhad-pc1/claude-push-mobile` | 2026-10-14 | branch `agent/muhamhad-pc1/push-mobile` |
 
 ## Migration numbers
 
@@ -23,7 +21,7 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 | 005 | be_security (audit append-only, received_at/flags, per-site employee_id) | `muhamhad-pc1/claude-be-sec` | pushed |
 | 006 | be_field (guard sessions, signed QR, patrol schedules) | `muhamhad-pc1/claude-be-field` | pushed |
 | 007 | be_features (overrides history, route snapshots, floor plans, channels, retention, telemetry, incident GPS) | `muhamhad-pc1/claude-be-features` | pushed |
-| 008 | push (subscriptions, preferences, device push tokens) | `muhamhad-pc1/claude-push` | reserved |
+| 008 | push (subscriptions, preferences, device push tokens, SOS escalations) | `muhamhad-pc1/claude-push` | pushed |
 | 009 | *(next free)* | | |
 
 ## Milestones (PRD §11)
@@ -48,6 +46,8 @@ Backend
 - [ ] WebSocket live patrol updates (D-014 follow-up)
 
 Web
+- [ ] HR receives `attendance_review` push but `/attendance?tab=review` is admin/supervisor only — drop HR from the event or give HR a read-only review view
+- [ ] e2e `push.spec.ts` was flaky once (passed on rerun) — stabilise
 - [ ] Tailwind 4 migration (dev-only `npm audit` findings in tailwind 3 build deps)
 - [ ] Manual UI pass against a running stack (all roles, both languages)
 - [ ] Promote page-local kits to `components/ui`: Avatar/PersonCell, FilterChips/ChipGroup, Segmented, PeriodStepper/DateRangeFilter, ConfirmDialog, Switch, Stat tiles, LiveIndicator (see `pages/guards/PeopleKit.tsx`, `pages/patrol/kit.tsx`, `pages/reports/ReportKit.tsx`, `pages/settings/kit.tsx`)
@@ -56,6 +56,7 @@ Web
 - [ ] Device dialog: "set back to pending" action
 
 Infra / Ops
+- [ ] Create the Firebase project (Android app `id.co.garda.tablet`), install the service-account file on the server and the 4 `SP_FCM_*` values as GitHub secrets (runbook: Push notifications)
 - [ ] Rehearse the Keycloak 24→26 DB migration on a copy of the production Keycloak dump before upgrading production (runbook §2/§5)
 - [ ] Configure the `production` environment secrets and do a first tagged deploy (runbook §7)
 - [ ] Let's Encrypt / production TLS notes
@@ -90,3 +91,4 @@ Mobile (D-024) — open audit items, see docs/audit-2026-10.md
 | Monthly recap per guard-day (F13): backend report + totals, CSV/XLSX total row, recap e-mail/WA in site language, web table + totals (D-051) | `muhamhad-pc1/claude-recap-days` | 2026-10-13 | merge recap-days |
 | Keycloak 24.0.5 → 26.8.0: hostname v2, management port 9000, bootstrap admin vars, token contract (full scope off, `basic` scope), keycloak-js 26.2.4, `make keycloak-smoke`, `RESTORE_FRESH` rollback, CI stack checks, runbook upgrade procedure (D-052) | `muhamhad-pc1/claude-kc26` | 2026-10-13 | merge keycloak-26 |
 | Rebrand SecurePatrol → GARDA: all user-visible names (web, tablet, e-mail/WA, exports, Keycloak display names, alerts, docs, sales guide), app id `id.co.garda.tablet`, single icon source `branding/` + generator, PWA manifest (D-053) | `muhamhad-pc1/claude-rebrand` | 2026-10-14 | merge rebrand-garda |
+| Push notifications: Web Push (VAPID) + FCM sender, subscriptions & per-user preferences, Notifications page + service worker, `sos_unacknowledged` reminders, `attendance_review`/`device_pending`/`device_unhealthy`; tablet FCM client with local notifications and push-aware polling (D-054..D-057) | `muhamhad-pc1/claude-push`, `claude-push-mobile` | 2026-10-14 | merges 60141be, ea33a13 |
