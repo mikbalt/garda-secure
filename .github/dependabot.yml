@@ -50,6 +50,7 @@ updates:
       # Flutter 3.24 + AGP 8.1 (D-057); upgrade together with Flutter.
       - dependency-name: "firebase_*"
       - dependency-name: "flutter_local_notifications"
+      - dependency-name: "geolocator_android"
     groups:
       pub-minor:
         update-types: [minor, patch]
