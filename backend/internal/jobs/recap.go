@@ -21,13 +21,13 @@ var recapLabelsByLang = map[string]recapLabels{
 	"en": {
 		guard: "Guard", employee: "Employee ID", days: "Days", present: "Present", late: "Late", absent: "Absent",
 		upcoming: "Upcoming", earlyOut: "Early-out days", hours: "Hours", shifts: "Shifts", patrol: "Patrol %",
-		total: "Total", guards: "guards", open: "Open in SecurePatrol", title: "Attendance recap",
+		total: "Total", guards: "guards", open: "Open in GARDA", title: "Attendance recap",
 		perDay: "Counted per day (site time zone; a night shift counts on the day it starts). A day is absent if any shift was missed, else late if any clock-in was late.",
 	},
 	"id": {
 		guard: "Petugas", employee: "No. karyawan", days: "Hari", present: "Hadir", late: "Terlambat", absent: "Absen",
 		upcoming: "Belum berjalan", earlyOut: "Hari pulang awal", hours: "Jam", shifts: "Shift", patrol: "Patroli %",
-		total: "Total", guards: "petugas", open: "Buka di SecurePatrol", title: "Rekap absensi",
+		total: "Total", guards: "petugas", open: "Buka di GARDA", title: "Rekap absensi",
 		perDay: "Dihitung per hari (zona waktu lokasi; shift malam dihitung pada hari mulainya). Satu hari dihitung absen bila ada shift yang tidak dihadiri, terlambat bila ada absen masuk yang terlambat.",
 	},
 }
