@@ -1,4 +1,4 @@
-# SecurePatrol — tablet app
+# GARDA — tablet app
 
 Flutter 3.24 app for the **shared post tablet** at a site (DECISIONS.md D-001, D-024).
 
@@ -91,7 +91,11 @@ flutter test screenshots/ --update-goldens   # writes screenshots/out/*.png (git
 
 ## Release build
 
-- Package / bundle id: `id.co.securepatrol.tablet`; version from `pubspec.yaml`
+- App name **GARDA**; launcher icons and the in-app brand mark are generated from
+  `branding/icon.svg` (`branding/generate.sh`, see [branding/README.md](../branding/README.md)).
+  The Dart package name (`securepatrol`), method channel `securepatrol/app` and local
+  database `securepatrol.db` are internal identifiers and keep the old name.
+- Package / bundle id: `id.co.garda.tablet`; version from `pubspec.yaml`
   (`version:`) or `--build-name/--build-number` (CI uses the tag and run number).
 - Signing: `android/key.properties` (never committed) with `storeFile` (relative to
   `android/app`), `storePassword`, `keyAlias`, `keyPassword` — the CI release job

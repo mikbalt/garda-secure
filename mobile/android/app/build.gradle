@@ -19,7 +19,7 @@ if (hasReleaseKey) {
 def allowDebugSigning = (project.findProperty("allowDebugSigning") ?: System.getenv("SP_ALLOW_DEBUG_SIGNING") ?: "false").toString().toBoolean()
 
 android {
-    namespace = "id.co.securepatrol.tablet"
+    namespace = "id.co.garda.tablet"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -33,7 +33,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "id.co.securepatrol.tablet"
+        applicationId = "id.co.garda.tablet"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         // From pubspec `version:` (name+code) or --build-name/--build-number (CI).

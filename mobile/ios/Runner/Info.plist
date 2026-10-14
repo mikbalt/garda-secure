@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>SecurePatrol</string>
+	<string>GARDA</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Kamera dipakai untuk memindai QR titik patroli dan mengambil foto laporan.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
@@ -19,7 +19,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>securepatrol</string>
+	<string>GARDA</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

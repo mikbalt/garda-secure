@@ -6,6 +6,7 @@ import 'package:securepatrol/core/auth/auth_provider.dart';
 import 'package:securepatrol/features/auth/pin_screen.dart';
 import 'package:securepatrol/features/setup/pending_screen.dart';
 import 'package:securepatrol/features/setup/setup_screen.dart';
+import 'package:securepatrol/shared/widgets/brand.dart';
 
 import '../test/support/harness.dart';
 
@@ -20,6 +21,9 @@ void main() {
   Future<void> shot(WidgetTester tester, Widget w, String name, {Size size = tabletSize, Future<void> Function()? act, bool settle = true}) async {
     await setSurface(tester, size);
     await tester.pumpWidget(wrap(h, w));
+    // Decode the brand mark (an asset image) outside the fake clock.
+    final ctx = tester.element(find.byType(MaterialApp));
+    await tester.runAsync(() => precacheImage(const AssetImage(BrandMark.asset), ctx));
     settle ? await tester.pumpAndSettle(const Duration(milliseconds: 300)) : await tester.pump(const Duration(milliseconds: 500));
     if (act != null) {
       await act();

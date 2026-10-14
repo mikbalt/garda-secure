@@ -51,7 +51,7 @@ class OnboardingFrame extends StatelessWidget {
                       const Row(children: [
                         BrandMark(),
                         SizedBox(width: 14),
-                        Text('SecurePatrol', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w600)),
+                        Text('GARDA', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w600)),
                       ]),
                       const Spacer(),
                       Text(
