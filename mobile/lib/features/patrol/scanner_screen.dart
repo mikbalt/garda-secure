@@ -175,7 +175,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
                     const SizedBox(height: 14),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                      decoration: BoxDecoration(color: Colors.white.withOpacity(0.14), borderRadius: BorderRadius.circular(999)),
+                      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(999)),
                       child: Text(s.t('pat2.nextLabel', {'name': next.name}),
                           style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15)),
                     ),
@@ -296,7 +296,7 @@ class _PillButton extends StatelessWidget {
       opacity: onTap == null ? 0.4 : 1,
       child: Material(
         color: active ? Colors.white : Colors.black54,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: Colors.white.withOpacity(0.35))),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: Colors.white.withValues(alpha: 0.35))),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
@@ -332,7 +332,7 @@ class _FramePainter extends CustomPainter {
     final rect = Rect.fromCenter(center: center, width: side, height: side);
     final window = RRect.fromRectAndRadius(rect, const Radius.circular(24));
     final scrim = Path.combine(PathOperation.difference, Path()..addRect(Offset.zero & size), Path()..addRRect(window));
-    canvas.drawPath(scrim, Paint()..color = Colors.black.withOpacity(0.55));
+    canvas.drawPath(scrim, Paint()..color = Colors.black.withValues(alpha: 0.55));
 
     final corner = Paint()
       ..color = Colors.white

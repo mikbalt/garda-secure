@@ -65,8 +65,8 @@ class _PinScreenState extends State<PinScreen> {
                 hintStyle: const TextStyle(color: Colors.white38),
                 prefixIcon: const Icon(Icons.search, color: Colors.white54),
                 filled: true,
-                fillColor: Colors.white.withOpacity(0.06),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.white.withOpacity(0.1))),
+                fillColor: Colors.white.withValues(alpha: 0.06),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1))),
                 focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primary400)),
               ),
             ),
@@ -103,7 +103,7 @@ class _PinScreenState extends State<PinScreen> {
                           SizedBox(
                             width: 380,
                             child: Container(
-                              decoration: BoxDecoration(color: Colors.white.withOpacity(0.04), borderRadius: BorderRadius.circular(24), border: Border.all(color: Colors.white.withOpacity(0.08))),
+                              decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.04), borderRadius: BorderRadius.circular(24), border: Border.all(color: Colors.white.withValues(alpha: 0.08))),
                               child: _selected == null
                                   ? _PickHint()
                                   : PinPanel(key: ValueKey(_selected!.id), guard: _selected!, onCancel: () => setState(() => _selected = null)),
@@ -244,10 +244,10 @@ class _GuardCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = S.of(context);
     return Material(
-      color: selected ? AppColors.primary.withOpacity(0.25) : Colors.white.withOpacity(0.05),
+      color: selected ? AppColors.primary.withValues(alpha: 0.25) : Colors.white.withValues(alpha: 0.05),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
-        side: BorderSide(color: selected ? AppColors.primary400 : Colors.white.withOpacity(0.08), width: selected ? 2 : 1),
+        side: BorderSide(color: selected ? AppColors.primary400 : Colors.white.withValues(alpha: 0.08), width: selected ? 2 : 1),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
@@ -284,7 +284,7 @@ class _PickHint extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(32),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Icon(Icons.touch_app_outlined, size: 44, color: Colors.white.withOpacity(0.3)),
+            Icon(Icons.touch_app_outlined, size: 44, color: Colors.white.withValues(alpha: 0.3)),
             const SizedBox(height: 12),
             Text(S.of(context).t('lock.subtitle'), textAlign: TextAlign.center, style: const TextStyle(color: Colors.white54)),
           ]),
@@ -304,7 +304,7 @@ class _EmptyRoster extends StatelessWidget {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 420),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.group_off_outlined, size: 48, color: Colors.white.withOpacity(0.35)),
+          Icon(Icons.group_off_outlined, size: 48, color: Colors.white.withValues(alpha: 0.35)),
           const SizedBox(height: 14),
           Text(s.t('lock.empty'), textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70, fontSize: 15, height: 1.45)),
           const SizedBox(height: 18),
@@ -503,7 +503,7 @@ class _Keypad extends StatelessWidget {
     Widget key(Widget child, VoidCallback? onTap, {Color? bg}) => Padding(
           padding: const EdgeInsets.all(6),
           child: Material(
-            color: bg ?? Colors.white.withOpacity(0.07),
+            color: bg ?? Colors.white.withValues(alpha: 0.07),
             shape: const CircleBorder(),
             child: InkWell(
               customBorder: const CircleBorder(),

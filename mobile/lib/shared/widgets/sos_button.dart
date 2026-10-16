@@ -74,7 +74,7 @@ class _SosButtonState extends State<SosButton> with SingleTickerProviderStateMix
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         gradient: const LinearGradient(colors: [Color(0xFFF43F5E), Color(0xFFDC2626)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-                        boxShadow: [BoxShadow(color: AppColors.sos.withOpacity(0.35 + 0.3 * _hold.value), blurRadius: 18 + 18 * _hold.value, spreadRadius: 2)],
+                        boxShadow: [BoxShadow(color: AppColors.sos.withValues(alpha: 0.35 + 0.3 * _hold.value), blurRadius: 18 + 18 * _hold.value, spreadRadius: 2)],
                       ),
                     ),
                     SizedBox(

@@ -46,6 +46,11 @@ android {
     namespace = "id.co.garda.tablet"
     compileSdk = flutter.compileSdkVersion
 
+    // AGP 9 disables resValue by default; the FCM resources below need it.
+    buildFeatures {
+        resValues = true
+    }
+
     compileOptions {
         // flutter_local_notifications needs core library desugaring.
         coreLibraryDesugaringEnabled = true
