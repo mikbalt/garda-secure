@@ -34,13 +34,11 @@ updates:
         update-types: [minor, patch]
     commit-message: { prefix: "chore(deps)" }
 
-  # Paused (limit 0): new plugin versions need a newer Flutter than 3.24, so
-  # every PR fails. Re-enable (limit 2) right after the Flutter upgrade.
   - package-ecosystem: pub
     directory: /mobile
     target-branch: init
     schedule: { interval: monthly }
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 2
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
@@ -48,11 +46,6 @@ updates:
       # move only with a Flutter upgrade, otherwise `pub get` fails.
       - dependency-name: "path"
       - dependency-name: "intl"
-      # Firebase/notifications are pinned to versions that build with
-      # Flutter 3.24 + AGP 8.1 (D-057); upgrade together with Flutter.
-      - dependency-name: "firebase_*"
-      - dependency-name: "flutter_local_notifications"
-      - dependency-name: "geolocator_android"
     groups:
       pub-minor:
         update-types: [minor, patch]

@@ -197,7 +197,7 @@ class FirebasePushTransport implements PushTransport {
 
   static PushPermission _map(AuthorizationStatus s) => switch (s) {
         AuthorizationStatus.authorized || AuthorizationStatus.provisional => PushPermission.granted,
-        AuthorizationStatus.denied => PushPermission.denied,
+        AuthorizationStatus.denied || AuthorizationStatus.deniedPermanently => PushPermission.denied,
         AuthorizationStatus.notDetermined => PushPermission.notDetermined,
       };
 
@@ -213,10 +213,16 @@ class FirebasePushTransport implements PushTransport {
   @override
   Future<PushPermission> requestPermission() async => _map((await _m.requestPermission(alert: true, badge: true, sound: true)).authorizationStatus);
 
+  // firebase_messaging 17 deprecates registration tokens in favour of
+  // register()/onRegistered (Firebase Installation IDs for "direct send").
+  // The backend sends through the FCM HTTP v1 API with registration tokens
+  // (D-057), so keep them until the backend contract is migrated.
   @override
+  // ignore: deprecated_member_use
   Future<String?> token() => _m.getToken();
 
   @override
+  // ignore: deprecated_member_use
   Stream<String> get tokenRefresh => _m.onTokenRefresh;
 
   @override
@@ -229,6 +235,7 @@ class FirebasePushTransport implements PushTransport {
   Future<Map<String, dynamic>?> initialMessage() async => (await _m.getInitialMessage())?.data;
 
   @override
+  // ignore: deprecated_member_use
   Future<void> deleteToken() => _m.deleteToken();
 }
 
@@ -273,7 +280,7 @@ class LocalPushNotifier implements PushNotifier {
     _descriptions = channelDescriptions;
     if (!_supported) return;
     await _p.initialize(
-      const InitializationSettings(
+      settings: const InitializationSettings(
         android: AndroidInitializationSettings(icon),
         iOS: DarwinInitializationSettings(requestAlertPermission: false, requestBadgePermission: false, requestSoundPermission: false),
       ),
@@ -296,10 +303,10 @@ class LocalPushNotifier implements PushNotifier {
     final ch = _channel(n.channel, _descriptions);
     final sos = n.channel == PushChannels.sos;
     await _p.show(
-      n.id,
-      n.title,
-      n.body,
-      NotificationDetails(
+      id: n.id,
+      title: n.title,
+      body: n.body,
+      notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
           ch.id,
           ch.name,
@@ -323,7 +330,7 @@ class LocalPushNotifier implements PushNotifier {
 
   @override
   Future<void> cancel(int id) async {
-    if (_supported) await _p.cancel(id);
+    if (_supported) await _p.cancel(id: id);
   }
 
   @override

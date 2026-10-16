@@ -12,7 +12,9 @@ abstract class SecureStore {
 }
 
 class DeviceSecureStore implements SecureStore {
-  DeviceSecureStore() : _s = const FlutterSecureStorage(aOptions: AndroidOptions(encryptedSharedPreferences: true));
+  // flutter_secure_storage 10+ encrypts with its own Keystore-backed ciphers
+  // (EncryptedSharedPreferences was deprecated by AndroidX).
+  DeviceSecureStore() : _s = const FlutterSecureStorage();
 
   final FlutterSecureStorage _s;
 
