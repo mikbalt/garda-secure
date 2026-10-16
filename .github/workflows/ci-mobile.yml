@@ -99,6 +99,18 @@ jobs:
           --dart-define=SP_FCM_APP_ID=1:000000000000:android:0000000000000000
           --dart-define=SP_FCM_PROJECT_ID=ci-dummy
           --dart-define=SP_FCM_SENDER_ID=000000000000
+      # Installable test APK (no push, debug build: also accepts http:// servers
+      # such as http://10.0.2.2 from the Android emulator). Download it from the
+      # run's "Artifacts" and drag it onto the emulator, or `adb install`.
+      - name: flutter build apk --debug (installable test build)
+        run: flutter build apk --debug
+      - name: Upload test APK
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: garda-tablet-debug-apk
+          path: mobile/build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 14
+          if-no-files-found: error
 
   release-apk:
     name: Release APK (signed)
