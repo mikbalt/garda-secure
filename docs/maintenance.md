@@ -52,7 +52,8 @@ selalu sebelum tanggal *end of life*-nya:
 | Node (build web) | 22 LTS | 24 LTS | Node 22 habis dukungan April 2027 |
 | React | 18 | 19 | Bersamaan dengan library UI terkait |
 | Vite / Zod / Tailwind | 7 / 3 / 3 | 8 / 4 / 4 | Tailwind 4 juga menghapus temuan `npm audit` di tools build |
-| Flutter (tablet) | 3.24 | versi stabil terbaru | Membuka update paket Flutter (Dependabot untuk `mobile/` dijeda sampai upgrade ini: set `open-pull-requests-limit` kembali ke 2), `path`, `intl`, Firebase, `geolocator_android` |
+| Flutter (tablet) | 3.47 | rilis stabil berikutnya, ±2× setahun | Samakan `FLUTTER_VERSION` di `ci-mobile.yml` dengan versi di laptop developer (`flutter --version`) |
+| Push tablet (FCM) | registration token | Firebase Installation ID (`register()`) | API lama ditandai usang di firebase_messaging 17; ubah backend + aplikasi bersamaan (D-058) |
 | Redis | 7 | 8 | Uji worker notifikasi |
 | Grafana | 12 | 13 | Dashboard dicek ulang |
 | Go | 1.26 | rilis berikutnya saat 1.26 habis dukungan | Kebijakan D-031 |

@@ -512,3 +512,20 @@ in PRD §9 (OQ-x). New entries go at the bottom with the next free number.
 - One icon source `branding/icon.svg`; `branding/generate.sh` produces every
   web/PWA/launcher icon and the web and tablet brand marks render that icon. The
   web app ships `/manifest.webmanifest` (needed for iOS web push).
+
+### D-058 — Flutter 3.47 toolchain (supersedes the Flutter 3.24 pins of D-039/D-057)
+- **Date:** 2026-10-16 · **Status:** Accepted
+- Tablet app on Flutter 3.47.7 (Dart 3.13), AGP 9 / Gradle 9.1 / Kotlin 2.2,
+  Java 17; CI pins the same `FLUTTER_VERSION` — keep it equal to the developers'
+  `flutter --version`. AGP 9 needs `buildFeatures.resValues` for the FCM
+  resources written from the dart-defines.
+- Plugins moved to current majors (Android API 35+): firebase_core 5,
+  firebase_messaging 17, flutter_local_notifications 22, flutter_secure_storage 11
+  (its own Keystore ciphers; EncryptedSharedPreferences is gone — no tablets
+  were deployed, so no data migration), connectivity_plus 7, image_picker 1.2,
+  timezone 0.11; the geolocator_android pin is gone.
+- FCM still uses registration tokens (`getToken`, deprecated in
+  firebase_messaging 17) because the backend sends via the FCM HTTP v1 API with
+  tokens; moving to Firebase Installation IDs (`register()`/`onRegistered`) is a
+  backend + app change for later (docs/maintenance.md).
+- Dependabot for `mobile/` is active again (minor/patch, monthly).

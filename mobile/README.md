@@ -1,6 +1,6 @@
 # GARDA — tablet app
 
-Flutter 3.24 app for the **shared post tablet** at a site (DECISIONS.md D-001, D-024).
+Flutter 3.47 app for the **shared post tablet** at a site (DECISIONS.md D-001, D-024).
 
 ## How it works
 

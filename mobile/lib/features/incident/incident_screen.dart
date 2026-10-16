@@ -215,9 +215,9 @@ class _IncidentScreenState extends State<IncidentScreen> {
                 duration: const Duration(milliseconds: 200),
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
-                  color: escalates ? sevColor!.withOpacity(0.08) : AppColors.bg,
+                  color: escalates ? sevColor!.withValues(alpha: 0.08) : AppColors.bg,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: escalates ? sevColor!.withOpacity(0.35) : AppColors.border),
+                  border: Border.all(color: escalates ? sevColor!.withValues(alpha: 0.35) : AppColors.border),
                 ),
                 child: Row(children: [
                   Icon(escalates ? Icons.notifications_active_outlined : Icons.info_outline, size: 20, color: escalates ? Color.lerp(sevColor, Colors.black, 0.2) : AppColors.textMuted),

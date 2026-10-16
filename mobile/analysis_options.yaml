@@ -6,6 +6,8 @@ analyzer:
     strict-raw-types: true
   exclude:
     - build/**
+    - android/**
+    - ios/**
 
 linter:
   rules:

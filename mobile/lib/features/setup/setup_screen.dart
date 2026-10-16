@@ -95,8 +95,8 @@ class _StepRow extends StatelessWidget {
           alignment: Alignment.center,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: done ? AppColors.ok : (current ? AppColors.primary : Colors.white.withOpacity(0.08)),
-            border: Border.all(color: Colors.white.withOpacity(current || done ? 0 : 0.15)),
+            color: done ? AppColors.ok : (current ? AppColors.primary : Colors.white.withValues(alpha: 0.08)),
+            border: Border.all(color: Colors.white.withValues(alpha: current || done ? 0 : 0.15)),
           ),
           child: done
               ? const Icon(Icons.check, size: 18, color: Colors.white)

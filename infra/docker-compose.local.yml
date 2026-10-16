@@ -8,3 +8,14 @@ services:
     ports: !override
       - "127.0.0.1:9002:9000"  # Zscaler occupies 9000; use 9002 for local S3 access
       - "127.0.0.1:9001:9001"  # console unchanged
+
+  # node-exporter: Docker Desktop on macOS cannot bind-mount / with rslave.
+  # Use the lightweight container-only mode (no host metrics).
+  node-exporter:
+    volumes: !override
+      []
+    command: !override
+      - --collector.disable-defaults
+      - --collector.cpu
+      - --collector.meminfo
+      - --collector.loadavg
