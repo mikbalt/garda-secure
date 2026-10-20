@@ -9,6 +9,7 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
+| Checkpoint GPS learned from scans; manual lat/lng removed from route editor | `muhamhad-pc1/claude` | 2026-10-20 | no migration |
 
 ## Migration numbers
 
