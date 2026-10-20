@@ -4,9 +4,12 @@ package integration
 
 import (
 	"context"
+	"math"
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/securepatrol/backend/internal/repository"
 )
 
 func flagsOf(v any) []string {
@@ -69,12 +72,68 @@ func TestPlausibilityFlags(t *testing.T) {
 	}
 
 	// ── Scans: GPS far from the checkpoint and impossible speed ─────────────
-	route := e.expect(e.do("POST", "/api/v1/patrol/routes", admin, "", map[string]any{
+	// Submitted coordinates are ignored; positions are learned from scans (D-059).
+	routeObj := e.expect(e.do("POST", "/api/v1/patrol/routes", admin, "", map[string]any{
 		"site_id": f.site, "name": "Geo", "checkpoints": []map[string]any{
 			{"name": "Gate", "qr_code": "GEO-1", "order_index": 0, "lat": -6.2000, "lng": 106.8000},
-			{"name": "Warehouse", "qr_code": "GEO-2", "order_index": 1, "lat": -6.2090, "lng": 106.8000},
+			{"name": "Warehouse", "qr_code": "GEO-2", "order_index": 1},
 		},
-	}), 201, "route").str("id")
+	}), 201, "route").obj()
+	route := routeObj["id"].(string)
+	cps := routeObj["checkpoints"].([]any)
+	if _, has := cps[0].(map[string]any)["lat"]; has {
+		t.Fatalf("submitted checkpoint lat must be ignored: %v", cps[0])
+	}
+	gateID, whID := cps[0].(map[string]any)["id"].(string), cps[1].(map[string]any)["id"].(string)
+	seed := func(cp, guard, method string, lat, lng float64, flags []string) {
+		t.Helper()
+		if _, err := e.pool.Exec(ctx, `INSERT INTO checkpoint_scans (route_id, checkpoint_id, guard_id, scanned_at, method, gps_lat, gps_lng, flags)
+			VALUES ($1, $2, $3, now() - interval '1 day', $4, $5, $6, COALESCE($7, '{}'::text[]))`, route, cp, guard, method, lat, lng, flags); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i, g := range []string{f.guard, f.guard, f.guard, f.guard2, f.guard2} {
+		d := float64(i) * 0.00001
+		seed(gateID, g, "qr", -6.2000+d-0.00002, 106.8000, nil)
+		seed(whID, g, "qr", -6.2090, 106.8000+d-0.00002, nil)
+	}
+	seed(gateID, f.guard, "qr", -6.3000, 106.9000, nil)                    // outlier: median ignores it
+	seed(gateID, f.guard, "manual", -7.0000, 107.0000, nil)                // manual entries do not count
+	seed(gateID, f.guard, "qr", -7.0000, 107.0000, []string{"qr_invalid"}) // forged QR does not count
+	seed(whID, f.guard, "qr", -6.2090, 106.8000, nil)
+	learn := func() int64 {
+		t.Helper()
+		n, err := repository.LearnCheckpointPositions(ctx, e.pool, now.Add(-30*24*time.Hour), 5, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if n := learn(); n != 1 {
+		t.Fatalf("learned routes = %d, want 1", n)
+	}
+	if n := learn(); n != 0 {
+		t.Fatalf("unchanged positions rewrote %d routes", n)
+	}
+	var gLat, gLng, wLat, wLng float64
+	if err := e.pool.QueryRow(ctx, `SELECT (checkpoints->0->>'lat')::float8, (checkpoints->0->>'lng')::float8,
+		(checkpoints->1->>'lat')::float8, (checkpoints->1->>'lng')::float8 FROM routes WHERE id = $1`, route).Scan(&gLat, &gLng, &wLat, &wLng); err != nil {
+		t.Fatal(err)
+	}
+	near := func(a, b float64) bool { return math.Abs(a-b) < 0.00002 } // ~2 m
+	if !near(gLat, -6.2) || !near(gLng, 106.8) || !near(wLat, -6.209) || !near(wLng, 106.8) {
+		t.Fatalf("learned positions gate=(%v,%v) warehouse=(%v,%v)", gLat, gLng, wLat, wLng)
+	}
+	// An admin edit keeps the learned positions.
+	e.expect(e.do("PUT", "/api/v1/patrol/routes/"+route, admin, "", map[string]any{
+		"name": "Geo", "active": true, "checkpoints": []map[string]any{
+			{"id": gateID, "name": "Gate", "qr_code": "GEO-1", "order_index": 0},
+			{"id": whID, "name": "Warehouse", "qr_code": "GEO-2", "order_index": 1, "lat": 1, "lng": 1},
+		},
+	}), 200, "route edit")
+	if n := e.count(`SELECT COUNT(*) FROM routes WHERE id = $1 AND (checkpoints->1->>'lat')::float8 = -6.209`, route); n != 1 {
+		t.Fatal("route edit dropped or overwrote the learned position")
+	}
 	sess := e.expect(e.do("POST", "/api/v1/patrol/sessions", f.tablet, f.guard, map[string]any{
 		"route_id": route, "started_at": rfc(now.Add(-10 * time.Minute)),
 	}), 201, "session").str("id")

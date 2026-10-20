@@ -28,9 +28,8 @@ interface Row {
   qr_signed?: boolean
   qr_version?: number
   sla: string
-  lat: string
-  lng: string
-  showGps: boolean
+  /** GPS position learned from scans (D-059); read-only. */
+  learned: boolean
   pos: PlanPos | null
 }
 
@@ -46,9 +45,7 @@ function toRows(route: PatrolRoute | null): Row[] {
       qr_signed: c.qr_signed,
       qr_version: c.qr_version,
       sla: c.sla_minutes != null ? String(c.sla_minutes) : '',
-      lat: c.lat != null ? String(c.lat) : '',
-      lng: c.lng != null ? String(c.lng) : '',
-      showGps: false,
+      learned: c.lat != null && c.lng != null,
       pos: planPos(c),
     }))
 }
@@ -138,7 +135,7 @@ export function RouteEditor({
   const add = () => {
     const key = `new-${seq.current++}`
     setFocusKey(key)
-    setRows((rs) => [...rs, { key, name: '', qr_code: '', sla: '', lat: '', lng: '', showGps: false, pos: null }])
+    setRows((rs) => [...rs, { key, name: '', qr_code: '', sla: '', learned: false, pos: null }])
   }
 
   const totalSla = rows.reduce((n, r) => n + (num(r.sla) ?? 0), 0)
@@ -154,8 +151,6 @@ export function RouteEditor({
       ...(r.qr_signed !== true && r.qr_code.trim() ? { qr_code: r.qr_code.trim() } : {}),
       sla_minutes: num(r.sla),
       order_index: i,
-      lat: num(r.lat),
-      lng: num(r.lng),
       ...(r.pos ? { floorplan_id: r.pos.floorplan_id, plan_x: r.pos.plan_x, plan_y: r.pos.plan_y } : {}),
     })),
   })
@@ -284,6 +279,7 @@ export function RouteEditor({
               <legend className="text-sm font-semibold text-gray-900">{t('pat.checkpoints')}</legend>
               <p className="mb-3 mt-0.5 text-sm text-gray-500">{t('ops.pat.cpIntro')}</p>
               <Notice>{t('ops.pat.slaHelp')}</Notice>
+              <p className="-mt-2 mb-3 text-xs text-gray-500">{t('ops.pat.gpsAuto')}</p>
               {legacy > 0 && <Notice tone="warn">{t(stored && onRegenerate ? 'p2.qr.legacyEditor' : 'p2.qr.legacyEditorNew', { n: legacy })}</Notice>}
 
               {rows.length === 0 ? (
@@ -300,7 +296,6 @@ export function RouteEditor({
                   <ol className="space-y-2">
                     {rows.map((r, i) => {
                       const label = r.name || `#${i + 1}`
-                      const hasGps = !!(r.lat || r.lng)
                       return (
                         <li key={r.key} className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
                           <div className="grid grid-cols-[2rem_minmax(0,1fr)] items-start gap-3 sm:grid-cols-[2rem_minmax(0,1fr)_10rem_7.5rem_9.5rem] sm:items-center">
@@ -374,17 +369,14 @@ export function RouteEditor({
                               </div>
                             </div>
                             <div className="col-start-2 flex items-center gap-0.5 sm:col-start-auto sm:justify-end">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className={`${iconBtn} ${hasGps || r.showGps ? 'text-primary-600' : ''}`}
-                                onClick={() => update(i, { showGps: !r.showGps })}
-                                aria-expanded={r.showGps}
-                                aria-label={`${t('ops.pat.gpsToggle')} — ${label}`}
-                                title={t('ops.pat.gpsToggle')}
+                              <span
+                                role="img"
+                                className={`flex h-8 w-8 items-center justify-center ${r.learned ? 'text-primary-600' : 'text-gray-300'}`}
+                                aria-label={`${t(r.learned ? 'ops.pat.gpsLearned' : 'ops.pat.gpsPending')} — ${label}`}
+                                title={t(r.learned ? 'ops.pat.gpsLearned' : 'ops.pat.gpsPending')}
                               >
                                 <MapPin className="h-4 w-4" aria-hidden="true" />
-                              </Button>
+                              </span>
                               <Button size="sm" variant="ghost" className={iconBtn} onClick={() => move(i, -1)} disabled={i === 0} aria-label={`${t('pat.moveUp')} — ${label}`} title={t('pat.moveUp')}>
                                 <ArrowUp className="h-4 w-4" aria-hidden="true" />
                               </Button>
@@ -411,16 +403,6 @@ export function RouteEditor({
                               </Button>
                             </div>
                           </div>
-                          {r.showGps && (
-                            <div className="mt-3 grid grid-cols-2 gap-3 border-t border-gray-100 pt-3 sm:ml-11 sm:max-w-md">
-                              <Field label={t('pat.lat')} optional>
-                                <Input type="number" step="any" min={-90} max={90} value={r.lat} onChange={(e) => update(i, { lat: e.target.value })} placeholder="-6.2944" />
-                              </Field>
-                              <Field label={t('pat.lng')} optional>
-                                <Input type="number" step="any" min={-180} max={180} value={r.lng} onChange={(e) => update(i, { lng: e.target.value })} placeholder="107.1531" />
-                              </Field>
-                            </div>
-                          )}
                         </li>
                       )
                     })}

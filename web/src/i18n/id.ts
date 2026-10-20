@@ -270,8 +270,6 @@ export const id: Dict = {
   'pat.qrAuto': 'dibuat otomatis',
   'pat.sla': 'SLA (mnt)',
   'pat.slaHint': 'Kosong = tanpa SLA',
-  'pat.lat': 'Lintang',
-  'pat.lng': 'Bujur',
   'pat.moveUp': 'Pindah ke atas',
   'pat.moveDown': 'Pindah ke bawah',
   'pat.removeCp': 'Hapus titik',

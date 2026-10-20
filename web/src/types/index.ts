@@ -209,6 +209,7 @@ export interface Checkpoint {
   qr_code: string
   sla_minutes?: number | null
   order_index: number
+  /** GPS position learned from scans (D-059); server-owned. */
   lat?: number | null
   lng?: number | null
   /** Signed `SP1:` code (D-037); false = legacy custom code. */
@@ -235,8 +236,6 @@ export interface CheckpointInput {
   qr_code?: string
   sla_minutes?: number | null
   order_index: number
-  lat?: number | null
-  lng?: number | null
   floorplan_id?: string
   plan_x?: number
   plan_y?: number

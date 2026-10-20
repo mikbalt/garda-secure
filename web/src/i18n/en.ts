@@ -281,8 +281,6 @@ export const en = {
   'pat.qrAuto': 'auto-generated',
   'pat.sla': 'SLA (min)',
   'pat.slaHint': 'Empty = no SLA',
-  'pat.lat': 'Latitude',
-  'pat.lng': 'Longitude',
   'pat.moveUp': 'Move up',
   'pat.moveDown': 'Move down',
   'pat.removeCp': 'Remove checkpoint',

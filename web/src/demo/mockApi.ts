@@ -377,6 +377,8 @@ const normalizeRoute = (body: Body, base?: PatrolRoute): PatrolRoute => {
   const cps = ((body.checkpoints as QRCheckpoint[]) ?? []).map((c, i) => {
     const old = c.id ? stored.get(c.id) : undefined
     const id = c.id || uid()
+    // D-059: GPS positions are learned from scans; submitted values are ignored.
+    c = { ...c, lat: old?.lat ?? null, lng: old?.lng ?? null }
     const custom = !!c.qr_code && !c.qr_code.startsWith('SP1:')
     // D-035: new codes are signed; signed codes stay; custom codes are legacy.
     if (old?.qr_signed || !custom) {

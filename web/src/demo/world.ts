@@ -237,7 +237,11 @@ export function seedWorld(): World {
   }
 
   // Patrol routes.
-  const cp = (name: string, i: number, sla: number | null) => ({ id: uid(), name, qr_code: `SP-${name.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 6)}-${i + 1}`, sla_minutes: sla, order_index: i })
+  // Demo: the first checkpoints already have a GPS position learned from scans (D-059).
+  const cp = (name: string, i: number, sla: number | null) => ({
+    id: uid(), name, qr_code: `SP-${name.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 6)}-${i + 1}`, sla_minutes: sla, order_index: i,
+    ...(i < 3 ? { lat: -6.2944 + i * 0.0004, lng: 107.1531 + i * 0.0003 } : {}),
+  })
   const routeA: PatrolRoute = {
     id: uid(), site_id: siteA.id, name: 'Patroli Keliling Gudang', active: true, created_at: created,
     checkpoints: [cp('Gerbang Utama', 0, 10), cp('Dock Bongkar Muat', 1, 15), cp('Gudang Bahan Baku', 2, 15), cp('Ruang Panel Listrik', 3, 10), cp('Parkir Truk', 4, 15), cp('Pagar Belakang', 5, 20)],

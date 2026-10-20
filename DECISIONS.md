@@ -529,3 +529,20 @@ in PRD §9 (OQ-x). New entries go at the bottom with the next free number.
   tokens; moving to Firebase Installation IDs (`register()`/`onRegistered`) is a
   backend + app change for later (docs/maintenance.md).
 - Dependabot for `mobile/` is active again (minor/patch, monthly).
+
+### D-059 — Checkpoint GPS positions are learned from scans (supersedes the manual `lat/lng` of D-014/D-035)
+- **Date:** 2026-10-20 · **Status:** Accepted (user decision)
+- Admins no longer type checkpoint coordinates; the route editor only places
+  checkpoints on the floor plan (D-048). A floor-plan position is not a GPS
+  position, and a web map would need a foreign tile origin (CSP, on-premise).
+- `lat/lng` on route checkpoints are server-owned: POST/PUT ignore submitted
+  values and an edit keeps the stored ones (same checkpoint `id`).
+- Worker job `checkpoint_positions` (every 6 h) sets each checkpoint to the
+  median GPS fix of its QR scans of the last 30 days, once there are ≥ 5 such
+  scans by ≥ 2 guards; manual check-ins and `qr_invalid` scans are ignored.
+  The median shrugs off outliers and follows a QR sticker that was moved.
+  Sessions keep their route snapshot, so new positions apply to sessions started
+  afterwards. `gps_far`/`too_fast` stay off until a checkpoint is learned.
+- Known limit: if every early scan is made from the wrong place (e.g. a
+  photographed QR scanned at the post), that place is learned. Scan photos,
+  `qr_invalid` and the live patrol view remain the checks for that case.

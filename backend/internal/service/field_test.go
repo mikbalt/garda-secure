@@ -232,3 +232,23 @@ func TestScheduleOccurrences(t *testing.T) {
 		t.Fatalf("utc = %+v", utcOcc)
 	}
 }
+
+// D-059: checkpoint GPS positions are server-owned (learned from scans).
+func TestRouteKeepsLearnedPositions(t *testing.T) {
+	lat, lng := -6.2, 106.8
+	prev := model.Route{Name: "R", Checkpoints: []model.Checkpoint{{ID: "a", Name: "Gate", QRCode: "A", Lat: &lat, Lng: &lng}}}
+	bogus := 1.0
+	upd := model.Route{Name: "R", Checkpoints: []model.Checkpoint{
+		{ID: "a", Name: "Gate", QRCode: "A"},
+		{Name: "New", QRCode: "B", OrderIndex: 1, Lat: &bogus, Lng: &bogus},
+	}}
+	if err := NormalizeRoute(&upd, &prev, nil); err != nil {
+		t.Fatal(err)
+	}
+	if c := upd.Checkpoints[0]; c.Lat == nil || *c.Lat != lat || *c.Lng != lng {
+		t.Fatalf("stored position not kept: %+v", c)
+	}
+	if c := upd.Checkpoints[1]; c.Lat != nil || c.Lng != nil {
+		t.Fatalf("submitted position not ignored: %+v", c)
+	}
+}

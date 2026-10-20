@@ -1,6 +1,6 @@
 // Package jobs runs the periodic background work inside the worker process:
-// shift generation, absent auto-flag, SLA checks, scheduled patrols, monthly
-// recap and backups.
+// shift generation, absent auto-flag, SLA checks, scheduled patrols, checkpoint
+// positions, monthly recap and backups.
 package jobs
 
 import (
@@ -85,6 +85,7 @@ func (s *Scheduler) jobs() []job {
 		{"sla_check", 30 * time.Second, 2 * time.Minute, s.CheckSLA},
 		{"patrol_expectations", time.Hour, 30 * time.Minute, s.MaterialiseExpectations},
 		{"patrol_not_started", time.Minute, 4 * time.Minute, s.CheckPatrolExpectations},
+		{"checkpoint_positions", 6 * time.Hour, 10 * time.Minute, s.LearnCheckpointPositions},
 		{"monthly_recap", 10 * time.Minute, 40 * time.Minute, s.MonthlyRecap},
 		{"backups", time.Minute, backupTimeout, s.Backups},
 		{"retention", time.Hour, 50 * time.Minute, s.Retention},

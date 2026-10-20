@@ -25,7 +25,24 @@ const (
 	// matchSweepWindow: sessions created this recently are re-matched to
 	// scheduled patrols when the API could not (or the patrol appeared later).
 	matchSweepWindow = 24 * time.Hour
+	// Checkpoint positions are learned from the QR scans of the last
+	// positionWindow, once positionMinScans scans by positionMinGuards
+	// guards carry a GPS fix (D-059).
+	positionWindow    = 30 * 24 * time.Hour
+	positionMinScans  = 5
+	positionMinGuards = 2
 )
+
+// LearnCheckpointPositions updates checkpoint GPS positions from recent scans
+// (the gps_far / too_fast checks need them; admins only place checkpoints on
+// the floor plan). Sessions started afterwards use the new positions.
+func (s *Scheduler) LearnCheckpointPositions(ctx context.Context) error {
+	n, err := repository.LearnCheckpointPositions(ctx, s.pool, service.Now().Add(-positionWindow), positionMinScans, positionMinGuards)
+	if n > 0 {
+		s.log.Info().Int64("routes", n).Msg("checkpoint positions learned")
+	}
+	return err
+}
 
 // MaterialiseExpectations stores the scheduled patrols of the next 48 h
 // (idempotent; hourly).

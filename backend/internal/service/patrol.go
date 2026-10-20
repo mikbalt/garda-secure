@@ -63,6 +63,12 @@ func NormalizeRoute(r *model.Route, prev *model.Route, qr *fieldauth.QRSigner) e
 			cp.ID = uuid.NewString()
 		}
 		assignQR(cp, old, existed, qr)
+		// GPS positions are learned from scans (LearnCheckpointPositions, D-059);
+		// submitted values are ignored and a stored position is kept.
+		cp.Lat, cp.Lng = nil, nil
+		if existed {
+			cp.Lat, cp.Lng = old.Lat, old.Lng
+		}
 		if cp.Name == "" {
 			return BadRequest("checkpoint_name_required", "checkpoint %d has no name", i+1)
 		}
