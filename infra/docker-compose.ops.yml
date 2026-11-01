@@ -26,7 +26,7 @@ x-exporter: &exporter
 
 services:
   prometheus:
-    image: prom/prometheus:v3.15.0
+    image: prom/prometheus:v3.15.1
     restart: always
     <<: *hardening
     logging: *logging
@@ -91,7 +91,7 @@ services:
       - securepatrol
 
   grafana:
-    image: grafana/grafana:12.4.12
+    image: grafana/grafana:12.4.14
     restart: always
     <<: *hardening
     logging: *logging
@@ -172,7 +172,7 @@ services:
 
   redis-exporter:
     <<: *exporter
-    image: oliver006/redis_exporter:v1.93.0
+    image: oliver006/redis_exporter:v1.96.0
     logging: *logging
     environment:
       REDIS_ADDR: redis://redis:6379
@@ -183,7 +183,7 @@ services:
 
   blackbox-exporter:
     <<: *exporter
-    image: prom/blackbox-exporter:v0.29.0
+    image: prom/blackbox-exporter:v0.29.1
     logging: *logging
     command: ["--config.file=/etc/blackbox/blackbox.yml"]
     volumes:
