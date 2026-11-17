@@ -44,8 +44,8 @@ Future<String> _render(String path, Color a, Color b) async {
   final c = Canvas(rec);
   const r = Rect.fromLTWH(0, 0, 320, 320);
   c.drawRect(r, Paint()..shader = ui.Gradient.linear(r.topLeft, r.bottomRight, [a, b]));
-  c.drawCircle(const Offset(220, 110), 50, Paint()..color = Colors.white.withOpacity(0.35));
-  c.drawRect(const Rect.fromLTWH(30, 200, 200, 70), Paint()..color = Colors.black.withOpacity(0.25));
+  c.drawCircle(const Offset(220, 110), 50, Paint()..color = Colors.white.withValues(alpha: 0.35));
+  c.drawRect(const Rect.fromLTWH(30, 200, 200, 70), Paint()..color = Colors.black.withValues(alpha: 0.25));
   final img = await rec.endRecording().toImage(320, 320);
   final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
   File(path).writeAsBytesSync(bytes!.buffer.asUint8List());

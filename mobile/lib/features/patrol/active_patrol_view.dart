@@ -292,7 +292,7 @@ class _NextCard extends StatelessWidget {
     return SectionCard(
       padding: const EdgeInsets.all(22),
       color: overdue ? AppColors.overdueBg : null,
-      borderColor: overdue ? AppColors.overdue.withOpacity(0.55) : AppColors.primary100,
+      borderColor: overdue ? AppColors.overdue.withValues(alpha: 0.55) : AppColors.primary100,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -357,7 +357,7 @@ class _AllDoneCard extends StatelessWidget {
     return SectionCard(
       padding: const EdgeInsets.all(22),
       color: AppColors.okBg,
-      borderColor: AppColors.ok.withOpacity(0.45),
+      borderColor: AppColors.ok.withValues(alpha: 0.45),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

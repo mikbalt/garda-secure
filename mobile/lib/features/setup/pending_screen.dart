@@ -26,7 +26,7 @@ class PendingScreen extends StatelessWidget {
             width: 72,
             height: 72,
             alignment: Alignment.center,
-            decoration: BoxDecoration(color: (revoked ? AppColors.danger : AppColors.warn).withOpacity(0.12), shape: BoxShape.circle),
+            decoration: BoxDecoration(color: (revoked ? AppColors.danger : AppColors.warn).withValues(alpha: 0.12), shape: BoxShape.circle),
             child: Icon(revoked ? Icons.block_rounded : Icons.hourglass_top_rounded, size: 34, color: revoked ? AppColors.danger : AppColors.warn),
           ),
           const SizedBox(height: 24),

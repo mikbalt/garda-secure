@@ -122,7 +122,7 @@ class _ManualCheckInSheetState extends State<ManualCheckInSheet> {
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(color: AppColors.warnBg, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.warn.withOpacity(0.35))),
+              decoration: BoxDecoration(color: AppColors.warnBg, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.warn.withValues(alpha: 0.35))),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

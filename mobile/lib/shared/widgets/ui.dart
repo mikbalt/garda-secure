@@ -38,7 +38,7 @@ class IconTile extends StatelessWidget {
   Widget build(BuildContext context) => Container(
         width: size,
         height: size,
-        decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(size * 0.3)),
+        decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(size * 0.3)),
         child: Icon(icon, color: color, size: size * 0.5),
       );
 }
@@ -59,8 +59,8 @@ class ActionTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return SectionCard(
       onTap: onTap,
-      borderColor: highlight ? color.withOpacity(0.5) : null,
-      color: highlight ? color.withOpacity(0.04) : null,
+      borderColor: highlight ? color.withValues(alpha: 0.5) : null,
+      color: highlight ? color.withValues(alpha: 0.04) : null,
       child: Row(
         children: [
           IconTile(icon: icon, color: color, size: 52),
@@ -100,7 +100,7 @@ class Pill extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(999), border: Border.all(color: color.withOpacity(0.25))),
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(999), border: Border.all(color: color.withValues(alpha: 0.25))),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -132,7 +132,7 @@ class Avatar extends StatelessWidget {
         width: size,
         height: size,
         alignment: Alignment.center,
-        decoration: BoxDecoration(color: color.withOpacity(0.12), shape: BoxShape.circle),
+        decoration: BoxDecoration(color: color.withValues(alpha: 0.12), shape: BoxShape.circle),
         child: Text(initials, style: TextStyle(fontSize: size * 0.36, fontWeight: FontWeight.w600, color: color)),
       );
 }

@@ -42,7 +42,7 @@ class SosAlertsScreen extends StatelessWidget {
                 padding: const EdgeInsets.only(bottom: 12),
                 child: Constrained(
                   child: SectionCard(
-                    borderColor: AppColors.sos.withOpacity(0.4),
+                    borderColor: AppColors.sos.withValues(alpha: 0.4),
                     padding: const EdgeInsets.all(20),
                     child: Row(children: [
                       const IconTile(icon: Icons.sos_rounded, color: AppColors.sos, size: 52),

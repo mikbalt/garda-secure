@@ -19,7 +19,7 @@ class BrandMark extends StatelessWidget {
           borderRadius: BorderRadius.circular(size * 0.3),
           // Shown until the image is decoded (and if it is missing).
           gradient: const LinearGradient(colors: [AppColors.primary400, AppColors.primary700], begin: Alignment.topLeft, end: Alignment.bottomRight),
-          boxShadow: [BoxShadow(color: AppColors.primary.withOpacity(0.35), blurRadius: 16, offset: const Offset(0, 6))],
+          boxShadow: [BoxShadow(color: AppColors.primary.withValues(alpha: 0.35), blurRadius: 16, offset: const Offset(0, 6))],
         ),
         clipBehavior: Clip.antiAlias,
         child: Image.asset(asset, width: size, height: size, fit: BoxFit.cover, filterQuality: FilterQuality.medium, excludeFromSemantics: true),

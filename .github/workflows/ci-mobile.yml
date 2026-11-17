@@ -31,7 +31,7 @@ defaults:
     working-directory: mobile
 
 env:
-  FLUTTER_VERSION: '3.24.5'
+  FLUTTER_VERSION: '3.47.7'
 
 # Actions are pinned by commit SHA (INF-C2); Dependabot keeps them current.
 jobs:

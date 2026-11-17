@@ -345,8 +345,8 @@ class _Notice extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SectionCard(
         onTap: onTap,
-        color: Color.alphaBlend(color.withOpacity(0.06), Colors.white),
-        borderColor: color.withOpacity(0.35),
+        color: Color.alphaBlend(color.withValues(alpha: 0.06), Colors.white),
+        borderColor: color.withValues(alpha: 0.35),
         child: Row(children: [
           IconTile(icon: icon, color: color, size: 44),
           const SizedBox(width: 14),

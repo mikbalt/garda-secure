@@ -130,8 +130,8 @@ class ChoiceTile extends StatelessWidget {
         decoration: BoxDecoration(
           color: selected ? color : AppColors.surface,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: selected ? color : (dotColor != null ? color.withOpacity(0.45) : AppColors.border), width: selected ? 2 : 1.2),
-          boxShadow: selected ? [BoxShadow(color: color.withOpacity(0.25), blurRadius: 10, offset: const Offset(0, 3))] : null,
+          border: Border.all(color: selected ? color : (dotColor != null ? color.withValues(alpha: 0.45) : AppColors.border), width: selected ? 2 : 1.2),
+          boxShadow: selected ? [BoxShadow(color: color.withValues(alpha: 0.25), blurRadius: 10, offset: const Offset(0, 3))] : null,
         ),
         child: Material(
           type: MaterialType.transparency,
@@ -158,7 +158,7 @@ class ChoiceTile extends StatelessWidget {
                         textAlign: TextAlign.center,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 12.5, color: selected ? Colors.white.withOpacity(0.9) : AppColors.textMuted)),
+                        style: TextStyle(fontSize: 12.5, color: selected ? Colors.white.withValues(alpha: 0.9) : AppColors.textMuted)),
                   ],
                 ],
               ),
