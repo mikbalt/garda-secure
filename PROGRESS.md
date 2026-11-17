@@ -9,7 +9,6 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
-| Site deactivation / soft-delete (issue #34) | `mokhataq/site-deactivation` | 2026-11-17 | migration 009 |
 
 ## Migration numbers
 
@@ -23,7 +22,7 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 | 006 | be_field (guard sessions, signed QR, patrol schedules) | `muhamhad-pc1/claude-be-field` | pushed |
 | 007 | be_features (overrides history, route snapshots, floor plans, channels, retention, telemetry, incident GPS) | `muhamhad-pc1/claude-be-features` | pushed |
 | 008 | push (subscriptions, preferences, device push tokens, SOS escalations) | `muhamhad-pc1/claude-push` | pushed |
-| 009 | site_active (`sites.active`) | `mokhataq/site-deactivation` | in progress |
+| 009 | site_active (`sites.active`) | `mokhataq/site-deactivation` | pushed |
 | 010 | *(next free)* | | |
 
 ## Milestones (PRD §11)
@@ -71,6 +70,7 @@ Mobile (D-024) — open audit items, see docs/audit-2026-10.md
 
 | Task | Agent | Date | Ref |
 |---|---|---|---|
+| Site deactivation / soft delete (issue #34): migration 009, activate/deactivate API, SitesTab UI, demo mock; D-060 | `mokhataq/site-deactivation` | 2026-11-17 | migration 009 |
 | Checkpoint GPS learned from scans (worker job `checkpoint_positions`), manual lat/lng removed from the route editor; D-059 | `muhamhad-pc1/claude` | 2026-10-20 | no migration |
 | Initial scaffold, infra compose split, backend handlers (first pass) | — | 2026-10-07 | 60b3c05…d189988 |
 | PRD v3 decisions OQ-7/8/9, CLAUDE.md / PROGRESS.md / DECISIONS.md | `muhamhad-pc1/claude` | 2026-10-07 | 928fb4a |

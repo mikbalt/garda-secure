@@ -245,15 +245,27 @@ function monthly(siteId: string, range: [Date, Date]): MonthlyRecapRow[] {
 on('GET', '/me', () => demoMe(w.sites))
 
 // Sites
-on('GET', '/sites', () => visibleSites(w.sites))
+on('GET', '/sites', ({ query }) => visibleSites(w.sites).filter((s) => s.active !== false || (query.include_inactive === 'true' && hasRole('admin'))))
 on('GET', '/sites/:id', ({ params }) => byId(w.sites, params.id))
 on('POST', '/sites', ({ body }) => {
   if (!String(body.name ?? '').trim()) throw bad('name_required', 'name is required')
-  const s = { id: uid(), keycloak_realm: 'demo', created_at: iso(now()), timezone: 'Asia/Jakarta', ...body } as World['sites'][0]
+  const s = { id: uid(), keycloak_realm: 'demo', active: true, created_at: iso(now()), timezone: 'Asia/Jakarta', ...body } as World['sites'][0]
   w.sites.push(s)
   return s
 })
-on('PUT', '/sites/:id', ({ params, body }) => Object.assign(byId(w.sites, params.id), body))
+on('PUT', '/sites/:id', ({ params, body }) => {
+  const s = byId(w.sites, params.id)
+  if (s.active === false) throw new HttpError(409, 'site_inactive', 'site is deactivated')
+  return Object.assign(s, body)
+})
+on('PATCH', '/sites/:id/deactivate', ({ params }) => {
+  const s = byId(w.sites, params.id)
+  if (w.shifts.some((x) => x.site_id === s.id && Date.parse(x.start_time) > Date.now())) throw new HttpError(409, 'site_has_future_shifts', 'upcoming shifts exist')
+  if (w.devices.some((d) => d.site_id === s.id && d.status === 'active')) throw new HttpError(409, 'site_has_active_devices', 'active tablets exist')
+  s.active = false
+  return s
+})
+on('PATCH', '/sites/:id/activate', ({ params }) => Object.assign(byId(w.sites, params.id), { active: true }))
 
 // Guards
 on('GET', '/guards', ({ query }) => w.guards.filter((g) => !query.site_id || g.site_id === query.site_id))

@@ -87,6 +87,8 @@ func (h *Handler) Register(api fiber.Router) {
 	sites.Get("/:id", web(rolesWeb...), h.getSite)
 	sites.Post("/", web(rolesAdmin...), h.createSite)
 	sites.Put("/:id", web(rolesAdmin...), h.updateSite)
+	sites.Patch("/:id/deactivate", web(rolesAdmin...), h.deactivateSite)
+	sites.Patch("/:id/activate", web(rolesAdmin...), h.activateSite)
 	sites.Get("/:id/floorplans", web(rolesWeb...), h.listFloorplans)
 	sites.Post("/:id/floorplans", web(rolesAdmin...), h.uploadFloorplan)
 	sites.Delete("/:id/floorplans/:floorplanId", web(rolesAdmin...), h.deleteFloorplan)

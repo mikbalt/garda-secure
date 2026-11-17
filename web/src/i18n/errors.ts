@@ -203,6 +203,15 @@ export const ERROR_CODES: Record<string, Pair> = {
     id: 'URL API WhatsApp ini tidak diizinkan (bawaan: https://graph.facebook.com/).',
   },
   invalid_phone_number_id: { en: 'The phone number ID must be digits only.', id: 'Phone number ID hanya boleh berisi angka.' },
+  site_has_future_shifts: {
+    en: 'This location still has upcoming shifts. Delete or move them first, then deactivate.',
+    id: 'Lokasi ini masih punya shift mendatang. Hapus atau pindahkan dulu, lalu nonaktifkan.',
+  },
+  site_has_active_devices: {
+    en: 'Active tablets are still assigned to this location. Revoke or move them first, then deactivate.',
+    id: 'Masih ada tablet aktif di lokasi ini. Cabut atau pindahkan dulu, lalu nonaktifkan.',
+  },
+  site_inactive: { en: 'This location is deactivated. Activate it again to edit it.', id: 'Lokasi ini nonaktif. Aktifkan lagi untuk mengubahnya.' },
   ...PATROL_ERROR_CODES,
   ...PUSH_ERROR_CODES,
 }

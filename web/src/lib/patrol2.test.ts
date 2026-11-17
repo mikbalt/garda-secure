@@ -133,7 +133,7 @@ describe('incidents (D-043, D-049)', () => {
 describe('demo mock: schedules and plans', () => {
   const world = (): PatrolWorld => {
     const w = emptyWorld() as PatrolWorld
-    w.sites.push({ id: 's1', name: 'S', timezone: 'Asia/Jakarta', created_at: '2026-01-01T00:00:00Z' })
+    w.sites.push({ id: 's1', name: 'S', timezone: 'Asia/Jakarta', active: true, created_at: '2026-01-01T00:00:00Z' })
     w.routes.push({ id: 'route-000001', site_id: 's1', name: 'R', active: true, created_at: '2026-01-01T00:00:00Z', checkpoints: [] })
     w.floorplans = [{ id: 'f1', site_id: 's1', name: 'P', object_key: 'k', content_type: 'image/png', width: 10, height: 10, size_bytes: 1, created_at: '' }]
     return w

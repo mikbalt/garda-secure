@@ -1,16 +1,18 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Building2, Clock, Globe2, MapPin, Pencil, Plus, Tablet } from 'lucide-react'
-import { apiGet } from '../../api/client'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Building2, Clock, Globe2, MapPin, Pencil, Plus, Power, RotateCcw, Tablet } from 'lucide-react'
+import apiClient, { apiGet } from '../../api/client'
 import { TableSkeleton } from '../../components/LoadingSkeleton'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { EmptyState, ErrorState } from '../../components/ui/States'
+import { useErrorToast, useToast } from '../../components/toast/context'
 import { useSite } from '../../context/site'
+import { useAuth } from '../../hooks/useAuth'
 import { useNewParam } from '../../hooks/useNewParam'
 import { useI18n } from '../../i18n/context'
 import { formatTime } from '../../lib/time'
-import { IconTile, SectionHeader } from './kit'
+import { ConfirmDialog, IconTile, SectionHeader } from './kit'
 import { SiteModal } from './SiteModal'
 import type { Device, Site, SiteConfig } from '../../types'
 
@@ -22,8 +24,24 @@ const DEFAULTS: Omit<SiteConfig, 'language'> = {
   idle_lock_minutes: 5,
 }
 
-function SiteCard({ site, current, tablets, onEdit, onSelect }: { site: Site; current: boolean; tablets: number; onEdit: () => void; onSelect: () => void }) {
+function SiteCard({
+  site,
+  current,
+  tablets,
+  onEdit,
+  onSelect,
+  onToggle,
+}: {
+  site: Site
+  current: boolean
+  tablets: number
+  onEdit: () => void
+  onSelect: () => void
+  onToggle: () => void
+}) {
   const { t } = useI18n()
+  const { can } = useAuth()
+  const inactive = site.active === false
   const cfg = { ...DEFAULTS, ...(site.config_json ?? {}) }
   const rules: { label: string; value: string }[] = [
     { label: t('adm.site.window'), value: t('adm.site.windowVal', { n: cfg.clock_window_minutes }) },
@@ -32,13 +50,14 @@ function SiteCard({ site, current, tablets, onEdit, onSelect }: { site: Site; cu
     { label: t('adm.site.lock'), value: t('adm.site.minutes', { n: cfg.idle_lock_minutes }) },
   ]
   return (
-    <article className={`flex flex-col rounded-2xl border bg-white shadow-card ${current ? 'border-primary-200 ring-4 ring-primary-50' : 'border-gray-200/80'}`}>
+    <article className={`flex flex-col rounded-2xl border shadow-card ${inactive ? 'bg-gray-50 opacity-80' : 'bg-white'} ${current ? 'border-primary-200 ring-4 ring-primary-50' : 'border-gray-200/80'}`}>
       <div className="flex items-start gap-3.5 p-5 pb-4">
-        <IconTile icon={Building2} tone={current ? 'blue' : 'gray'} />
+        <IconTile icon={Building2} tone={current && !inactive ? 'blue' : 'gray'} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-[15px] font-semibold text-gray-900">{site.name}</h3>
-            {current && (
+            {inactive && <Badge tone="gray">{t('adm.site.inactive')}</Badge>}
+            {current && !inactive && (
               <Badge tone="blue" dot>
                 {t('adm.site.current')}
               </Badge>
@@ -74,15 +93,23 @@ function SiteCard({ site, current, tablets, onEdit, onSelect }: { site: Site; cu
         ))}
       </dl>
       <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-gray-100 px-5 py-3">
-        {!current && (
+        {!inactive && !current && (
           <Button variant="ghost" size="sm" onClick={onSelect}>
             {t('adm.site.makeCurrent')}
           </Button>
         )}
-        <Button variant="secondary" size="sm" onClick={onEdit} aria-label={`${t('adm.site.edit')} — ${site.name}`}>
-          <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-          {t('adm.site.edit')}
-        </Button>
+        {can('manageSites') && (
+          <Button variant="ghost" size="sm" onClick={onToggle} aria-label={`${inactive ? t('adm.site.activate') : t('adm.site.deactivate')} — ${site.name}`}>
+            {inactive ? <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" /> : <Power className="h-3.5 w-3.5" aria-hidden="true" />}
+            {inactive ? t('adm.site.activate') : t('adm.site.deactivate')}
+          </Button>
+        )}
+        {!inactive && (
+          <Button variant="secondary" size="sm" onClick={onEdit} aria-label={`${t('adm.site.edit')} — ${site.name}`}>
+            <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+            {t('adm.site.edit')}
+          </Button>
+        )}
       </div>
     </article>
   )
@@ -93,6 +120,31 @@ export function SitesTab() {
   const { sites, siteId, setSiteId, isLoading, error } = useSite()
   const [editing, setEditing] = useState<Site | 'new' | null>(null)
   useNewParam(() => setEditing('new'))
+
+  const { can } = useAuth()
+  const qc = useQueryClient()
+  const toast = useToast()
+  const errorToast = useErrorToast()
+  const [confirming, setConfirming] = useState<Site | null>(null)
+  // Admins also get the deactivated locations (the selector only has active ones).
+  const all = useQuery({
+    queryKey: ['sites', 'all'],
+    queryFn: () => apiGet<Site[]>('/sites', { include_inactive: 'true' }),
+    enabled: can('manageSites'),
+  })
+  const inactive = (all.data ?? []).filter((s) => s.active === false)
+  const toggle = useMutation({
+    mutationFn: async (s: Site) => (await apiClient.patch<Site>(`/sites/${s.id}/${s.active === false ? 'activate' : 'deactivate'}`)).data,
+    onSuccess: (s) => {
+      toast.success(t(s.active ? 'adm.site.activated' : 'adm.site.deactivated'))
+      setConfirming(null)
+      qc.invalidateQueries({ queryKey: ['sites'] })
+    },
+    onError: (e) => {
+      setConfirming(null)
+      errorToast(e)
+    },
+  })
 
   const devices = useQuery({ queryKey: ['devices'], queryFn: () => apiGet<Device[]>('/devices') })
   const tabletsAt = (id: string) => (devices.data ?? []).filter((d) => d.site_id === id && d.status === 'active').length
@@ -125,7 +177,7 @@ export function SitesTab() {
       ) : (
         <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
           {sites.map((s) => (
-            <SiteCard key={s.id} site={s} current={s.id === siteId} tablets={tabletsAt(s.id)} onEdit={() => setEditing(s)} onSelect={() => setSiteId(s.id)} />
+            <SiteCard key={s.id} site={s} current={s.id === siteId} tablets={tabletsAt(s.id)} onEdit={() => setEditing(s)} onSelect={() => setSiteId(s.id)} onToggle={() => setConfirming(s)} />
           ))}
           <button
             type="button"
@@ -137,6 +189,25 @@ export function SitesTab() {
           </button>
         </div>
       )}
+      {inactive.length > 0 && (
+        <section className="mt-8">
+          <h3 className="mb-3 text-sm font-semibold text-gray-700">{t('adm.site.inactiveHeading')}</h3>
+          <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
+            {inactive.map((s) => (
+              <SiteCard key={s.id} site={s} current={false} tablets={0} onEdit={() => undefined} onSelect={() => undefined} onToggle={() => toggle.mutate(s)} />
+            ))}
+          </div>
+        </section>
+      )}
+      <ConfirmDialog
+        open={!!confirming}
+        title={t('adm.site.deactivateTitle')}
+        message={confirming ? t('adm.site.deactivateBody', { name: confirming.name }) : ''}
+        confirmLabel={t('adm.site.deactivate')}
+        loading={toggle.isPending}
+        onConfirm={() => confirming && toggle.mutate(confirming)}
+        onClose={() => setConfirming(null)}
+      />
       {editing && <SiteModal site={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
     </>
   )

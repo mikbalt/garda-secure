@@ -8,7 +8,7 @@ import { LivePlan } from './LivePlan'
 import { PlanPlacement } from './PlanPlacement'
 import type { CheckpointProgress, Floorplan, SessionProgress, Site } from '../../../types'
 
-const site: Site = { id: 's1', name: 'Gudang', timezone: 'Asia/Jakarta', created_at: '2026-01-01T00:00:00Z' }
+const site: Site = { id: 's1', name: 'Gudang', timezone: 'Asia/Jakarta', active: true, created_at: '2026-01-01T00:00:00Z' }
 const plan: Floorplan = {
   id: 'f1',
   site_id: 's1',

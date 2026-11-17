@@ -12,9 +12,9 @@ import (
 
 // visibleSites returns the sites of the caller's realm, limited to the
 // caller's allowed sites when the token restricts them (F4, D-035).
-func (h *Handler) visibleSites(c *fiber.Ctx) ([]model.Site, error) {
+func (h *Handler) visibleSites(c *fiber.Ctx, includeInactive bool) ([]model.Site, error) {
 	p := middleware.GetPrincipal(c)
-	sites, err := repository.ListSitesByRealm(c.Context(), h.DB, p.Realm)
+	sites, err := repository.ListSitesByRealm(c.Context(), h.DB, p.Realm, includeInactive)
 	if err != nil {
 		return nil, err
 	}
@@ -26,7 +26,7 @@ func (h *Handler) visibleSites(c *fiber.Ctx) ([]model.Site, error) {
 
 // visibleSiteIDs is visibleSites as IDs.
 func (h *Handler) visibleSiteIDs(c *fiber.Ctx) ([]string, error) {
-	sites, err := h.visibleSites(c)
+	sites, err := h.visibleSites(c, false)
 	if err != nil {
 		return nil, err
 	}
