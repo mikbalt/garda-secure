@@ -2,9 +2,8 @@
  * Smoke tests: each role can reach their key pages without errors.
  * Uses saved auth state — no Keycloak login prompt.
  */
-import { test, expect, openAs, settle } from './fixtures'
+import { test, expect, openAs } from './fixtures'
 import type { RealRole } from './fixtures'
-import { BASE_URL } from '../../playwright.real.config'
 
 type RolePages = { role: RealRole; paths: string[] }
 

@@ -9,7 +9,7 @@
 import { test as setup, expect } from '@playwright/test'
 import path from 'path'
 import fs from 'fs'
-import { BASE_URL, KC_URL, REALM } from '../../playwright.real.config'
+import { BASE_URL, REALM } from '../../playwright.real.config'
 
 const AUTH_DIR = path.join(process.cwd(), '.playwright-auth')
 

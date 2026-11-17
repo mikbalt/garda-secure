@@ -1,3 +1,5 @@
+/* eslint-disable react-hooks/rules-of-hooks */
+/* eslint-disable no-empty-pattern */
 /**
  * Shared Playwright fixtures for real-stack E2E tests.
  *
@@ -10,7 +12,7 @@
 import { test as base, expect, type BrowserContext, type Page } from '@playwright/test'
 import path from 'path'
 import { BASE_URL, REALM } from '../../playwright.real.config'
-import { getAdminToken, type Site, type Guard, seedSite, seedGuard, cleanupE2ESites } from './api'
+import { getAdminToken, type Site, type Guard, seedSite, seedGuard } from './api'
 
 export type RealRole = 'admin' | 'supervisor' | 'hr' | 'client' | 'platform-admin'
 
