@@ -39,6 +39,8 @@ export interface Site {
   address?: string
   timezone: string
   config_json?: Partial<SiteConfig>
+  /** false = deactivated (soft delete); history is kept. */
+  active: boolean
   created_at: string
 }
 

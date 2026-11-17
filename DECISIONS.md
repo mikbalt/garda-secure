@@ -546,3 +546,14 @@ in PRD §9 (OQ-x). New entries go at the bottom with the next free number.
 - Known limit: if every early scan is made from the wrong place (e.g. a
   photographed QR scanned at the post), that place is learned. Scan photos,
   `qr_invalid` and the live patrol view remain the checks for that case.
+
+### D-060 — Sites are deactivated (soft delete), never hard-deleted
+- **Date:** 2026-11-17 · **Status:** Accepted (issue #34)
+- `sites.active` (migration 009). Hard delete would cascade over attendance,
+  patrol and incident history, so there is no `DELETE /sites/:id`.
+- `PATCH /sites/:id/deactivate|activate` (admin). Deactivating is refused (409)
+  while the site has shifts starting in the future or active tablets.
+- `GET /sites` returns active sites only; admins can pass `include_inactive=true`.
+  Inactive sites are read-only (PUT answers 409 `site_inactive`) and skipped by
+  scheduler jobs (`ListAllSites`). `GET /sites/:id` still works for history.
+

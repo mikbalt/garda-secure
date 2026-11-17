@@ -127,10 +127,12 @@ Denials: `403 {code: device_unregistered | device_pending | device_revoked | gua
 
 | Method | Path | Body |
 |---|---|---|
-| GET | `/sites` | — |
+| GET | `/sites` | active sites only; admin may add `?include_inactive=true` to also get deactivated ones (`active: false`) |
 | GET | `/sites/:id` | — |
 | POST | `/sites` | `{name, client_id?, address?, timezone (IANA, default Asia/Jakarta), config_json?}` |
-| PUT | `/sites/:id` | same |
+| PUT | `/sites/:id` | same; 409 `site_inactive` on a deactivated site |
+| PATCH | `/sites/:id/deactivate` | admin; soft delete (history is kept; the site leaves lists, selectors and background jobs) → site; 409 `site_has_future_shifts` / `site_has_active_devices` |
+| PATCH | `/sites/:id/activate` | admin; reactivates → site |
 | GET | `/sites/:id/floorplans` | web roles: `[{id, site_id, name, object_key, content_type, width, height (px, as displayed), size_bytes, created_by?, created_at, url (pre-signed, 15 min)}]` |
 | POST | `/sites/:id/floorplans` | admin, multipart `file` (JPEG/PNG/WebP ≤ 10 MB) + `name` → 201 floor plan; metadata stripped, stored write-once as `sites/<site>/floorplan/<uuid>.<ext>`; ≤ 20 per site (409 `too_many_floorplans`); 400 `name_required`, `file_required`, `file_too_large`, `invalid_file_type`, `invalid_image` |
 | DELETE | `/sites/:id/floorplans/:floorplanId` | admin → 204; 409 `floorplan_in_use` while a checkpoint of the site's routes is placed on it |

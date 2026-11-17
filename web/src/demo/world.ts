@@ -122,13 +122,13 @@ export function seedWorld(): World {
     id: uid(), name: 'Gudang Cikarang', client_id: 'PT Logistik Nusantara', keycloak_realm: 'demo',
     address: 'Kawasan Industri Jababeka Blok C-12, Cikarang', timezone: 'Asia/Jakarta',
     config_json: { clock_window_minutes: 15, late_grace_minutes: 5, early_out_grace_minutes: 5, absent_after_minutes: 30, idle_lock_minutes: 5, language: 'id' },
-    created_at: created,
+    active: true, created_at: created,
   }
   const siteB: Site = {
     id: uid(), name: 'Kantor Pusat Sudirman', client_id: 'PT Logistik Nusantara', keycloak_realm: 'demo',
     address: 'Jl. Jend. Sudirman Kav. 52, Jakarta Selatan', timezone: 'Asia/Jakarta',
     config_json: { clock_window_minutes: 15, late_grace_minutes: 5, early_out_grace_minutes: 5, absent_after_minutes: 30, idle_lock_minutes: 5, language: 'id' },
-    created_at: created,
+    active: true, created_at: created,
   }
   w.sites.push(siteA, siteB)
 

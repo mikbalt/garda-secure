@@ -90,7 +90,9 @@ func (b *siteBody) validate() error {
 }
 
 func (h *Handler) listSites(c *fiber.Ctx) error {
-	sites, err := h.visibleSites(c)
+	// Deactivated sites are listed only for admins who ask (?include_inactive=true).
+	all := c.QueryBool("include_inactive") && middleware.GetPrincipal(c).HasRole(middleware.RoleAdmin)
+	sites, err := h.visibleSites(c, all)
 	if err != nil {
 		return h.fail(c, err)
 	}
@@ -129,6 +131,9 @@ func (h *Handler) updateSite(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	if !site.Active {
+		return h.fail(c, service.Conflict("site_inactive", "this location is deactivated; activate it first"))
+	}
 	middleware.SetAuditBefore(c, site)
 	var b siteBody
 	if err := parse(c, &b); err != nil {
@@ -143,6 +148,52 @@ func (h *Handler) updateSite(c *fiber.Ctx) error {
 		return h.fail(c, err)
 	}
 	markSync(c, &out.ID) // site config (language, grace minutes ...) lives on the tablets
+	return c.JSON(out)
+}
+
+// deactivateSite soft-deletes a site: history stays, the site leaves lists and
+// jobs. Refused while future shifts or active tablets remain.
+func (h *Handler) deactivateSite(c *fiber.Ctx) error {
+	site, err := h.siteFor(c, c.Params("id"))
+	if err != nil {
+		return h.fail(c, err)
+	}
+	if site.Active {
+		shifts, err := repository.CountFutureShifts(c.Context(), h.DB, site.ID)
+		if err != nil {
+			return h.fail(c, err)
+		}
+		if shifts > 0 {
+			return h.fail(c, service.Conflict("site_has_future_shifts", "%d upcoming shift(s) exist at this location", shifts))
+		}
+		devices, err := repository.CountActiveDevices(c.Context(), h.DB, site.ID)
+		if err != nil {
+			return h.fail(c, err)
+		}
+		if devices > 0 {
+			return h.fail(c, service.Conflict("site_has_active_devices", "%d active tablet(s) are still assigned to this location", devices))
+		}
+	}
+	middleware.SetAuditBefore(c, site)
+	out, err := repository.SetSiteActive(c.Context(), h.DB, site.ID, false)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	markSync(c, &out.ID)
+	return c.JSON(out)
+}
+
+func (h *Handler) activateSite(c *fiber.Ctx) error {
+	site, err := h.siteFor(c, c.Params("id"))
+	if err != nil {
+		return h.fail(c, err)
+	}
+	middleware.SetAuditBefore(c, site)
+	out, err := repository.SetSiteActive(c.Context(), h.DB, site.ID, true)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	markSync(c, &out.ID)
 	return c.JSON(out)
 }
 

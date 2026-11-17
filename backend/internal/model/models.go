@@ -42,6 +42,7 @@ type Site struct {
 	Address       *string         `json:"address,omitempty"`
 	Timezone      string          `json:"timezone"`
 	ConfigJSON    json.RawMessage `json:"config_json,omitempty"`
+	Active        bool            `json:"active"`
 	CreatedAt     time.Time       `json:"created_at"`
 }
 
