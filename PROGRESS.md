@@ -9,6 +9,7 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
+| Site deactivation / soft-delete (issue #34) | `mokhataq/site-deactivation` | 2026-11-17 | migration 009 |
 
 ## Migration numbers
 
@@ -22,7 +23,8 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 | 006 | be_field (guard sessions, signed QR, patrol schedules) | `muhamhad-pc1/claude-be-field` | pushed |
 | 007 | be_features (overrides history, route snapshots, floor plans, channels, retention, telemetry, incident GPS) | `muhamhad-pc1/claude-be-features` | pushed |
 | 008 | push (subscriptions, preferences, device push tokens, SOS escalations) | `muhamhad-pc1/claude-push` | pushed |
-| 009 | *(next free)* | | |
+| 009 | site_active (`sites.active`) | `mokhataq/site-deactivation` | in progress |
+| 010 | *(next free)* | | |
 
 ## Milestones (PRD §11)
 
