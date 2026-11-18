@@ -1,118 +1,22 @@
 /**
  * Small building blocks shared by the Patrol and Incidents pages (date range
  * filter, chip/segmented controls, live indicator, checkpoint bar, avatar).
- * Candidates for promotion to components/ui once other pages need them.
+ * General-purpose components are promoted to components/ui and re-exported
+ * here for backward compatibility.
  */
 import { useId, type ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { Dot, type Tone } from '../../components/ui/Badge'
 import { Input } from '../../components/ui/Form'
 import { useI18n } from '../../i18n/context'
-import { cpTone, initials, matchPreset, presetRange, relTime, useNow, type RangePreset } from './format'
+import { cpTone, matchPreset, presetRange, type RangePreset } from './format'
 import type { CheckpointProgress } from '../../types'
 
+// Re-exports from components/ui — import directly from there in new code.
+export { Segmented, ChipGroup, type ChipOption } from '../../components/ui/FilterChips'
+export { LiveIndicator } from '../../components/ui/LiveIndicator'
+export { Avatar } from '../../components/ui/Avatar'
+
 const groupLabel = 'mb-1.5 block text-sm font-medium text-gray-700'
-
-// ── Segmented control / chips ────────────────────────────────────────────────
-
-export interface ChipOption<V extends string> {
-  value: V
-  label: string
-  count?: number
-  tone?: Tone
-}
-
-/** Single-select segmented control (pill group). Buttons use aria-pressed. */
-export function Segmented<V extends string>({
-  label,
-  options,
-  value,
-  onChange,
-  hideLabel = false,
-  size = 'md',
-  disabled = false,
-}: {
-  label: string
-  options: ChipOption<V>[]
-  value: V
-  onChange: (v: V) => void
-  hideLabel?: boolean
-  size?: 'sm' | 'md'
-  disabled?: boolean
-}) {
-  const id = useId()
-  return (
-    <div>
-      <span id={id} className={hideLabel ? 'sr-only' : groupLabel}>
-        {label}
-      </span>
-      <div role="group" aria-labelledby={id} className="inline-flex max-w-full flex-wrap gap-0.5 rounded-lg bg-gray-100 p-0.5 ring-1 ring-inset ring-gray-200/70">
-        {options.map((o) => {
-          const on = o.value === value
-          return (
-            <button
-              key={o.value}
-              type="button"
-              aria-pressed={on}
-              disabled={disabled}
-              onClick={() => onChange(o.value)}
-              className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-md font-medium disabled:cursor-wait disabled:opacity-60 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
-                size === 'sm' ? 'h-7 px-2.5 text-xs' : 'h-8 px-3 text-sm'
-              } ${on ? 'bg-white text-gray-900 shadow-card' : 'text-gray-600 hover:text-gray-900'}`}
-            >
-              {o.tone && <Dot tone={o.tone} />}
-              {o.label}
-              {o.count !== undefined && (
-                <span className={`rounded-full px-1.5 text-[11px] tabular-nums ${on ? 'bg-gray-100 text-gray-700' : 'bg-gray-200/70 text-gray-500'}`}>{o.count}</span>
-              )}
-            </button>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-/** Toggle chips (single select with "all"), e.g. severity filter. */
-export function ChipGroup<V extends string>({
-  label,
-  options,
-  value,
-  onChange,
-}: {
-  label: string
-  options: ChipOption<V>[]
-  value: V
-  onChange: (v: V) => void
-}) {
-  const id = useId()
-  return (
-    <div>
-      <span id={id} className={groupLabel}>
-        {label}
-      </span>
-      <div role="group" aria-labelledby={id} className="flex flex-wrap gap-1.5">
-        {options.map((o) => {
-          const on = o.value === value
-          return (
-            <button
-              key={o.value}
-              type="button"
-              aria-pressed={on}
-              onClick={() => onChange(o.value)}
-              className={`inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-sm font-medium ring-1 ring-inset transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
-                on ? 'bg-gray-900 text-white ring-gray-900' : 'bg-white text-gray-700 ring-gray-300 hover:bg-gray-50'
-              }`}
-            >
-              {o.tone && <Dot tone={o.tone} />}
-              {o.label}
-            </button>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
 
 // ── Date range ───────────────────────────────────────────────────────────────
 
@@ -183,23 +87,6 @@ export function DateRangeFilter({
   )
 }
 
-// ── Live indicator ───────────────────────────────────────────────────────────
-
-/** Pulsing dot + "Updated 4 seconds ago" (ticks every second). */
-export function LiveIndicator({ updatedAt, fetching }: { updatedAt: number; fetching?: boolean }) {
-  const { t, lang } = useI18n()
-  const now = useNow(1000)
-  return (
-    <span className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-xs font-medium text-gray-600 shadow-card ring-1 ring-gray-200/80">
-      <Dot tone="green" pulse />
-      <span aria-live="off">
-        {updatedAt ? t('ops.live.updated', { when: relTime(updatedAt, lang, Math.max(now, updatedAt)) }) : t('ops.live.connecting')}
-      </span>
-      {fetching && <span className="sr-only">{t('app.loading')}</span>}
-    </span>
-  )
-}
-
 // ── Checkpoint progress ──────────────────────────────────────────────────────
 
 /** One segment per checkpoint, coloured by status. */
@@ -248,17 +135,6 @@ export function MiniBar({ pct, label }: { pct: number; label: string }) {
     <div role="progressbar" aria-valuenow={v} aria-valuemin={0} aria-valuemax={100} aria-label={label} className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
       <div className={`h-full rounded-full ${tone}`} style={{ width: `${v}%` }} />
     </div>
-  )
-}
-
-export function Avatar({ name, className = '' }: { name?: string; className?: string }) {
-  return (
-    <span
-      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary-50 to-primary-100 text-xs font-semibold text-primary-700 ring-1 ring-primary-100 ${className}`}
-      aria-hidden="true"
-    >
-      {initials(name)}
-    </span>
   )
 }
 
