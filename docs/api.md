@@ -158,6 +158,7 @@ check). Responses always contain the full effective config.
 |---|---|---|
 | GET | `/devices` | devices of the realm (site-scoped admins: their sites + unassigned) incl. `health?` (the latest `/device/telemetry` beacon plus `received_at`), `health_at?` and `push_enabled` (the tablet registered an FCM token) |
 | PUT | `/devices/:id` | `{name?, site_id, status: pending\|active\|revoked}` — `active` requires `site_id`. A changed status or site sends the tablet an FCM `device_status` message; `revoked` then clears its push token |
+| POST | `/devices/:id/reset` | `admin` or `platform-admin`. Resets a device back to `pending`: clears `last_seen_at`, `online_since` and `push_token`. Realm-scoped. Idempotent (200 if already pending). 404 if not found or belongs to a different realm → `{device}` |
 
 ## Schedules — read `admin, supervisor, hr`; write `admin`
 
