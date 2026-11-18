@@ -9,6 +9,7 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
+| WebSocket live patrol updates (#38, D-014 follow-up) | mokhataq/ws-live-patrol | 2026-11-18 | branch `mokhataq/websocket-live-patrol-updates-d-014`; no migration |
 
 ## Migration numbers
 
@@ -44,9 +45,6 @@ Planned major upgrades (Node 24, React 19, Vite 8, Zod 4, Tailwind 4, Flutter, R
 Verification
 - [ ] Smoke-test the full Docker stack (`make up`): Keycloak `start` under `/auth`, realm import, login, MinIO via :9443, backup job (`pg_dump` in image)
 - [ ] Real SMTP + WhatsApp template delivery test
-
-Backend
-- [ ] WebSocket live patrol updates (D-014 follow-up)
 
 Web
 - [ ] HR receives `attendance_review` push but `/attendance?tab=review` is admin/supervisor only — drop HR from the event or give HR a read-only review view
