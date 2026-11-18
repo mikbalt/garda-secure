@@ -441,6 +441,10 @@ on('PUT', '/patrol/routes/:id/schedules', ({ params, body }) => {
   const ahead = expectations(pw, r.site_id, Date.now(), Date.now() + 48 * 3600_000).filter((e) => e.route_id === r.id).length
   return { route_id: r.id, schedules: list, generated_expectations: ahead }
 })
+// Live socket (#38): demo has no backend, so no ticket — the Live tab keeps polling.
+on('POST', '/ws/ticket', () => {
+  throw notFound()
+})
 on('GET', '/patrol/live', ({ query }) =>
   w.sessions
     .filter((s) => s.site_id === query.site_id && s.status === 'in_progress')

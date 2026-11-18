@@ -7,6 +7,7 @@ import { CardSkeleton } from '../../components/LoadingSkeleton'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { EmptyState, ErrorState } from '../../components/ui/States'
+import { LIVE_POLL_CONNECTED_MS, LIVE_POLL_FALLBACK_MS, usePatrolLive } from '../../hooks/usePatrolLive'
 import { useI18n } from '../../i18n/context'
 import { formatTime } from '../../lib/time'
 import { fmtDuration, useNow } from './format'
@@ -153,10 +154,12 @@ export function LiveTab({ site, onShowHistory }: { site: Site; onShowHistory: ()
       },
       { replace: true }
     )
+  const { connected } = usePatrolLive(site.id)
   const { data, isLoading, error, refetch, dataUpdatedAt, isFetching } = useQuery({
     queryKey: ['patrol-live', site.id],
     queryFn: () => apiGet<LivePatrol[]>('/patrol/live', { site_id: site.id }),
-    refetchInterval: 10_000,
+    // Pushed nudges refresh it; polling is the safety net / fallback (#38).
+    refetchInterval: connected ? LIVE_POLL_CONNECTED_MS : LIVE_POLL_FALLBACK_MS,
   })
 
   if (error) return <ErrorState error={error} onRetry={() => refetch()} />
