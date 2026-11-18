@@ -29,9 +29,12 @@ interface Props {
   date: string
   today: string
   onDateChange: (date: string) => void
+  /** Total pending-review count across ALL days (from parent query). When provided,
+   *  the "Needs review" chip badge matches the tab badge instead of the day-local count. */
+  totalReviewCount?: number
 }
 
-export function DailyTab({ site, date, today, onDateChange }: Props) {
+export function DailyTab({ site, date, today, onDateChange, totalReviewCount }: Props) {
   const { t, lang } = useI18n()
   const { can } = useAuth()
   const tz = site.timezone
@@ -76,7 +79,7 @@ export function DailyTab({ site, date, today, onDateChange }: Props) {
     { key: 'late', label: t('status.late'), count: counts.late, dot: 'bg-amber-500' },
     { key: 'absent', label: t('status.absent'), count: counts.absent, dot: 'bg-red-500' },
     { key: 'pending', label: t('ppl.att.notIn'), count: counts.pending, dot: 'bg-gray-400' },
-    { key: 'review', label: t('att.needsReview'), count: counts.review, dot: 'bg-violet-500' },
+    { key: 'review', label: t('att.needsReview'), count: totalReviewCount ?? counts.review, dot: 'bg-violet-500' },
     ...(counts.flagged > 0 ? [{ key: 'flagged' as const, label: t('flag.filter'), count: counts.flagged, dot: 'bg-amber-500' }] : []),
   ]
 

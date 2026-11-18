@@ -69,7 +69,7 @@ function AttendanceContent({ site }: { site: Site }) {
       )}
       <MaybeTabPanel tabbed={canReview} idBase="att" active={tab}>
         {tab === 'daily' ? (
-          <DailyTab site={site} date={date} today={today} onDateChange={(d) => setDate(d)} />
+          <DailyTab site={site} date={date} today={today} onDateChange={(d) => setDate(d)} totalReviewCount={canReview ? review.data?.length : undefined} />
         ) : (
           <ReviewTab site={site} query={review} onOpenDay={(d) => setDate(d, true)} />
         )}

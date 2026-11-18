@@ -31,10 +31,12 @@ interface TableProps<T> {
   rowClassName?: (row: T) => string
   /** Optional totals row (<tfoot>), keyed by column key. */
   footer?: Partial<Record<string, ReactNode>>
+  /** When provided, each row becomes clickable: cursor-pointer + hover state, calls handler on click. */
+  onRowClick?: (row: T) => void
 }
 
 /** Simple responsive data table with loading / error / empty states. */
-export function Table<T>({ columns, rows, rowKey, isLoading, error, empty, caption, onRetry, rowClassName, footer }: TableProps<T>) {
+export function Table<T>({ columns, rows, rowKey, isLoading, error, empty, caption, onRetry, rowClassName, footer, onRowClick }: TableProps<T>) {
   if (isLoading) return <TableSkeleton cols={Math.min(columns.length, 6)} />
   if (error) return <ErrorState error={error} onRetry={onRetry} />
   if (!rows || rows.length === 0) return <EmptyState message={empty} />
@@ -65,7 +67,11 @@ export function Table<T>({ columns, rows, rowKey, isLoading, error, empty, capti
         </thead>
         <tbody className="divide-y divide-gray-100">
           {rows.map((row) => (
-            <tr key={rowKey(row)} className={`group/row transition-colors hover:bg-gray-50/80 ${rowClassName?.(row) ?? ''}`}>
+            <tr
+              key={rowKey(row)}
+              className={`group/row transition-colors hover:bg-gray-50/80 ${onRowClick ? 'cursor-pointer' : ''} ${rowClassName?.(row) ?? ''}`}
+              onClick={onRowClick ? () => onRowClick(row) : undefined}
+            >
               {columns.map((c) => (
                 <td
                   key={c.key}
