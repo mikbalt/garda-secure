@@ -199,6 +199,10 @@ export const adminId: Record<keyof typeof adminEn, string> = {
   'adm.dev.how2Body': 'Dalam beberapa detik tablet muncul di halaman ini dengan status "menunggu persetujuan".',
   'adm.dev.how3': 'Setujui & pilih lokasi',
   'adm.dev.how3Body': 'Pilih lokasi lalu klik Setujui. Petugas kemudian membuka tablet dengan PIN masing-masing.',
+  'adm.dev.resetTitle': 'Reset {name} ke pending?',
+  'adm.dev.resetBody': 'Ini akan menghapus waktu terakhir dilihat dan push token. Tablet harus di-pair ulang sebelum petugas bisa menggunakannya kembali.',
+  'adm.dev.reset': 'Reset ke pending',
+  'adm.dev.resetDone': 'Tablet direset ke pending.',
 
   'adm.ev.sos': 'Tombol SOS ditekan',
   'adm.ev.sosDesc': 'Petugas menekan tombol darurat di tablet. Kirim ke orang yang bisa langsung bertindak, siang maupun malam.',

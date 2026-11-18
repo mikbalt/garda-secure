@@ -93,6 +93,22 @@ func UpdateDevice(ctx context.Context, db DBTX, id, name string, siteID *string,
 	return &d, nil
 }
 
+// ResetDevice sets a device back to pending, clearing last_seen_at and
+// push_token so it must be re-paired. Idempotent: works even when already
+// pending.
+func ResetDevice(ctx context.Context, db DBTX, id string) (*model.Device, error) {
+	d, err := scanDevice(db.QueryRow(ctx, `
+		UPDATE devices
+		SET status = 'pending', last_seen_at = NULL, push_token = NULL,
+		    online_since = NULL, updated_at = now()
+		WHERE id = $1
+		RETURNING `+deviceColumns, id))
+	if err != nil {
+		return nil, mapNoRows(err)
+	}
+	return &d, nil
+}
+
 // TouchDevice records that a device was just seen. Writes are throttled to
 // one per minute to avoid a row update on every request. A gap of more than
 // 3 minutes starts a new online period (online_since), which the SLA check

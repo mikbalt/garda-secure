@@ -463,6 +463,25 @@ func (h *Handler) updateDevice(c *fiber.Ctx) error {
 	return c.JSON(out)
 }
 
+// resetDevice sets a device back to pending so it can be re-paired.
+// Status, last_seen_at and push_token are cleared. Idempotent.
+func (h *Handler) resetDevice(c *fiber.Ctx) error {
+	d, err := repository.GetDevice(c.Context(), h.DB, c.Params("id"))
+	if err != nil {
+		return h.fail(c, err)
+	}
+	p := middleware.GetPrincipal(c)
+	if d.KeycloakRealm != p.Realm {
+		return h.fail(c, repository.ErrNotFound)
+	}
+	middleware.SetAuditBefore(c, d)
+	out, err := repository.ResetDevice(c.Context(), h.DB, d.ID)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	return c.JSON(out)
+}
+
 // ── Tablet bootstrap ─────────────────────────────────────────────────────────
 
 func (h *Handler) registerDevice(c *fiber.Ctx) error {

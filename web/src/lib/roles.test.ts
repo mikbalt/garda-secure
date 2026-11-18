@@ -38,6 +38,7 @@ const EXPECTED: Record<Capability, Role[]> = {
   manageSites: ['admin'],
   manageUsers: ['admin'],
   manageDeviceAccounts: ['admin'],
+  resetDevice: ['admin', 'platform-admin'],
   viewAttendanceHistory: ['admin', 'supervisor', 'hr'],
   viewVisitorDetail: ['admin', 'supervisor'],
 }

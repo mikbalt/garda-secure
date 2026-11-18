@@ -107,6 +107,7 @@ func (h *Handler) Register(api fiber.Router) {
 	devices := api.Group("/devices", web(rolesAdmin...))
 	devices.Get("/", h.listDevices)
 	devices.Put("/:id", h.updateDevice)
+	devices.Post("/:id/reset", web(middleware.RoleAdmin, middleware.RolePlatformAdmin), h.resetDevice)
 
 	tpl := api.Group("/shift-templates")
 	tpl.Get("/", web(rolesStaff...), h.listTemplates)
