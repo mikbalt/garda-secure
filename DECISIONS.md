@@ -560,3 +560,20 @@ in PRD §9 (OQ-x). New entries go at the bottom with the next free number.
 
 ### D-061 — HR no longer receives `attendance_review` pushes
 The review queue (`/attendance?tab=review`, `reviewAttendance`) is admin/supervisor only, so the push linked to a page HR cannot open (#40). HR is dropped from the `attendance_review` default audience; HR keeps `absent` and `late_clock_in`. Supersedes the HR default of D-007's push matrix.
+
+### D-062 — Live patrol updates: WebSocket nudge (supersedes the "polling first" of D-014)
+- **Date:** 2026-11-18 · **Status:** Accepted
+- `GET /api/v1/ws/patrol?ticket=` pushes `{"type":"patrol_changed","site_id"}` when a
+  patrol of the site starts, gets a new scan or ends. No patrol data travels on the
+  socket: the web client refetches `GET /patrol/live`, so permissions and payload stay
+  in one place.
+- Auth: browsers cannot set `Authorization` on a WebSocket and a JWT in the URL would
+  reach proxy logs, so `POST /ws/ticket {site_id}` (Bearer, same roles and realm/site
+  check as `/patrol/live`) returns a 30 s single-use ticket. The socket route sits
+  outside the JWT chain; the ticket is its credential.
+- Cost: an in-process hub (`internal/livehub`), no new service. Limit: single API
+  instance (the worker does not publish; its automatic session closing is covered by
+  polling). To scale out, swap the hub for Redis pub/sub behind the same API.
+- Polling stays as the fallback: 60 s while connected (safety net), 10 s while not.
+  Max 50 sockets per site. CSP `connect-src 'self'` covers same-origin `wss:` in
+  current browsers, so the CSP is unchanged.
