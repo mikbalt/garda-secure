@@ -9,7 +9,6 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
-| Promote page-local UI kits ke components/ui (issue #41) | `mokhataq/ui-kits` | 2026-11-18 | web refactor |
 
 ## Migration numbers
 
@@ -49,7 +48,7 @@ Verification
 Web
 - [ ] HR receives `attendance_review` push but `/attendance?tab=review` is admin/supervisor only — drop HR from the event or give HR a read-only review view
 - [ ] Manual UI pass against a running stack (all roles, both languages)
-- [ ] Promote page-local kits to `components/ui`: Avatar/PersonCell, FilterChips/ChipGroup, Segmented, PeriodStepper/DateRangeFilter, ConfirmDialog, Switch, Stat tiles, LiveIndicator (see `pages/guards/PeopleKit.tsx`, `pages/patrol/kit.tsx`, `pages/reports/ReportKit.tsx`, `pages/settings/kit.tsx`)
+- [x] Promote page-local kits to `components/ui`: Avatar/PersonCell, FilterChips/ChipGroup, Segmented, PeriodStepper, ConfirmDialog, Switch, Stat/StatRow, LiveIndicator, IconTile — done in #41 (DateRangeFilter kept in patrol/kit: coupled to patrol preset logic)
 - [ ] `Table`: optional row-click prop (Patrol history uses its own table markup)
 - [ ] Attendance "Perlu ditinjau" chip counts only the selected day while the tab counts all days — align or label
 - [ ] Device dialog: "set back to pending" action
@@ -68,6 +67,7 @@ Mobile (D-024) — open audit items, see docs/audit-2026-10.md
 
 | Task | Agent | Date | Ref |
 |---|---|---|---|
+| Promote page-local UI kits to components/ui (issue #41): Avatar/PersonCell, FilterChips/ChipGroup, Segmented, PeriodStepper, ConfirmDialog, Switch, Stat/StatRow, LiveIndicator, IconTile; lib/avatar.ts; kit files re-export for compat | `mokhataq/ui-kits` | 2026-11-18 | no migration |
 | Device dialog reset to pending (issue #42): `POST /devices/:id/reset`, `resetDevice` capability, confirm dialog, demo mock | `mokhataq/device-reset` | 2026-11-18 | no migration |
 | Attendance chip count fix (issue #44): chip now shows total review count (all days) + Table `onRowClick` prop (issue #43) | `mokhataq/attendance-chip-fix` | 2026-11-18 | no migration |
 | WebSocket live patrol updates (issue #38): in-process hub, ticket auth, `usePatrolLive`, nginx upgrade location; D-062. Follow-ups: Redis pub/sub for multi-instance; worker-side session closing does not nudge (60 s poll covers it) | `mokhataq/ws-live-patrol` | 2026-11-18 | no migration |
