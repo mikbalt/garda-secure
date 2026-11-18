@@ -7,8 +7,10 @@ toolchain go1.26.11
 require (
 	github.com/SherClockHolmes/webpush-go v1.4.0
 	github.com/alicebob/miniredis/v2 v2.40.0
+	github.com/fasthttp/websocket v1.5.8
 	github.com/fergusstrange/embedded-postgres v1.34.0
 	github.com/go-pdf/fpdf v0.9.0
+	github.com/gofiber/contrib/websocket v1.3.4
 	github.com/gofiber/fiber/v2 v2.52.15
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/golang-migrate/migrate/v4 v4.20.1
@@ -49,6 +51,7 @@ require (
 	github.com/richardlehane/mscfb v1.0.9 // indirect
 	github.com/richardlehane/msoleps v1.0.6 // indirect
 	github.com/rs/xid v1.6.0 // indirect
+	github.com/savsgio/gotils v0.0.0-20240303185622-093b76447511 // indirect
 	github.com/tiendc/go-deepcopy v1.7.2 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
