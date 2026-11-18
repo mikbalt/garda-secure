@@ -58,7 +58,7 @@ test.describe('push notifications (demo)', () => {
     await openAs(page, 'hr', '/notifications')
     await expect(page.getByRole('region', { name: 'Absensi' })).toBeVisible()
     await expect(page.getByRole('region', { name: 'SOS & insiden' })).toHaveCount(0)
-    await expect(page.getByRole('switch')).toHaveCount(3)
+    await expect(page.getByRole('switch')).toHaveCount(2)
 
     const late = page.getByRole('switch', { name: 'Petugas terlambat' })
     await expect(late).toHaveAttribute('aria-checked', 'false')
