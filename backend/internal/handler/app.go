@@ -9,6 +9,7 @@ import (
 
 	"github.com/securepatrol/backend/internal/config"
 	"github.com/securepatrol/backend/internal/fieldauth"
+	"github.com/securepatrol/backend/internal/livehub"
 	"github.com/securepatrol/backend/internal/middleware"
 )
 
@@ -85,6 +86,12 @@ func ErrorHandler(log zerolog.Logger) fiber.ErrorHandler {
 func (h *Handler) Mount(app *fiber.App, v *middleware.Validator) {
 	h.limiter = middleware.NewLimiter(h.Redis, h.Log)
 	h.guardTokens, h.qr = FieldAuth(h.Cfg)
+	if h.Live == nil {
+		h.Live = livehub.New()
+	}
+	// The socket authenticates with a single-use ticket (browsers cannot send
+	// an Authorization header), so it is registered before the JWT chain below.
+	app.Get("/api/v1/ws/patrol", h.wsPatrol()...)
 	api := app.Group("/api/v1",
 		middleware.LimitAuthFailures(h.limiter, h.Cfg.RateLimitAuthFailures),
 		middleware.JWT(v),

@@ -16,6 +16,7 @@ import (
 
 	"github.com/securepatrol/backend/internal/config"
 	"github.com/securepatrol/backend/internal/fieldauth"
+	"github.com/securepatrol/backend/internal/livehub"
 	"github.com/securepatrol/backend/internal/middleware"
 	"github.com/securepatrol/backend/internal/model"
 	"github.com/securepatrol/backend/internal/notification"
@@ -34,6 +35,9 @@ type Handler struct {
 	Settings *settings.Store
 	Cfg      *config.Config
 	Log      zerolog.Logger
+	// Live fans patrol changes out to WebSocket subscribers; Mount creates it
+	// when nil. Single-instance (see internal/livehub).
+	Live *livehub.Hub
 
 	limiter     *middleware.Limiter    // set by Mount
 	guardTokens *fieldauth.GuardTokens // set by Mount (D-035)
@@ -135,6 +139,7 @@ func (h *Handler) Register(api fiber.Router) {
 	pat.Get("/routes/:id/schedules", web(rolesOps...), h.getRouteSchedules)
 	pat.Put("/routes/:id/schedules", web(rolesAdmin...), h.putRouteSchedules)
 	pat.Get("/live", web(rolesOpsCli...), h.livePatrols)
+	api.Post("/ws/ticket", web(rolesOpsCli...), h.wsTicket)
 	pat.Get("/sessions", web(rolesOpsCli...), h.listSessions)
 	pat.Get("/sessions/:id", webOrField(rolesOpsCli...), h.getSession)
 	pat.Post("/sessions", append(field, h.startSession)...)

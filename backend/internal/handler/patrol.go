@@ -231,6 +231,7 @@ func (h *Handler) startSession(c *fiber.Ctx) error {
 		return h.fail(c, err)
 	}
 	if isNew {
+		h.publishPatrol(site.ID)
 		// Satisfy the scheduled patrol (by event time). A failure here only
 		// delays it: the worker's matching sweep retries.
 		if _, err := service.MatchSession(c.Context(), h.DB, s); err != nil {
@@ -279,6 +280,9 @@ func (h *Handler) recordScan(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	if isNew {
+		h.publishPatrol(site.ID)
+	}
 	return created(c, isNew, scan)
 }
 
@@ -301,5 +305,6 @@ func (h *Handler) endSession(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
+	h.publishPatrol(site.ID)
 	return c.JSON(s)
 }

@@ -45,9 +45,6 @@ Verification
 - [ ] Smoke-test the full Docker stack (`make up`): Keycloak `start` under `/auth`, realm import, login, MinIO via :9443, backup job (`pg_dump` in image)
 - [ ] Real SMTP + WhatsApp template delivery test
 
-Backend
-- [ ] WebSocket live patrol updates (D-014 follow-up)
-
 Web
 - [ ] HR receives `attendance_review` push but `/attendance?tab=review` is admin/supervisor only — drop HR from the event or give HR a read-only review view
 - [ ] Manual UI pass against a running stack (all roles, both languages)
@@ -70,6 +67,7 @@ Mobile (D-024) — open audit items, see docs/audit-2026-10.md
 
 | Task | Agent | Date | Ref |
 |---|---|---|---|
+| WebSocket live patrol updates (issue #38): in-process hub, ticket auth, `usePatrolLive`, nginx upgrade location; D-061. Follow-ups: Redis pub/sub for multi-instance; worker-side session closing does not nudge (60 s poll covers it) | `mokhataq/ws-live-patrol` | 2026-11-18 | no migration |
 | Site deactivation / soft delete (issue #34): migration 009, activate/deactivate API, SitesTab UI, demo mock; D-060 | `mokhataq/site-deactivation` | 2026-11-17 | migration 009 |
 | Checkpoint GPS learned from scans (worker job `checkpoint_positions`), manual lat/lng removed from the route editor; D-059 | `muhamhad-pc1/claude` | 2026-10-20 | no migration |
 | Initial scaffold, infra compose split, backend handlers (first pass) | — | 2026-10-07 | 60b3c05…d189988 |

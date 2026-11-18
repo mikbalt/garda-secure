@@ -40,6 +40,7 @@ import (
 	"github.com/securepatrol/backend/internal/db"
 	"github.com/securepatrol/backend/internal/handler"
 	"github.com/securepatrol/backend/internal/jobs"
+	"github.com/securepatrol/backend/internal/livehub"
 	"github.com/securepatrol/backend/internal/middleware"
 	"github.com/securepatrol/backend/internal/notification"
 	"github.com/securepatrol/backend/internal/push"
@@ -96,6 +97,7 @@ type env struct {
 	settings *settings.Store
 	cfg      *config.Config
 	notifier *notification.Notifier
+	live     *livehub.Hub  // h.Live of the mounted handler
 	push     *push.Service // transports from cfg.Push (disabled unless a test configures them)
 
 	// Guard tokens from POST /device/guard-sessions by "tablet|guard";
@@ -176,7 +178,7 @@ func newEnv(t *testing.T, opts ...func(*config.Config)) *env {
 	h.Mount(app, validator)
 
 	return &env{t: t, app: app, pool: pool, mr: mr, key: key, settings: st, cfg: cfg, guardTokens: map[string]string{},
-		notifier: notifier, push: pushSvc,
+		notifier: notifier, push: pushSvc, live: h.Live,
 		sched: jobs.NewScheduler(pool, rdb, notifier, stg, cfg, log)}
 }
 
