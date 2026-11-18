@@ -9,9 +9,6 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
-| Attendance chip "Perlu ditinjau" count fix (issue #44) | `mokhataq/attendance-chip-fix` | 2026-11-18 | web only |
-| Table: optional row-click prop (issue #43) | `mokhataq/table-row-click` | 2026-11-18 | web only |
-| Device dialog: set back to pending (issue #42) | `mokhataq/device-reset` | 2026-11-18 | backend + web |
 
 ## Migration numbers
 
@@ -70,7 +67,9 @@ Mobile (D-024) — open audit items, see docs/audit-2026-10.md
 
 | Task | Agent | Date | Ref |
 |---|---|---|---|
-| WebSocket live patrol updates (issue #38): in-process hub, ticket auth, `usePatrolLive`, nginx upgrade location; D-061. Follow-ups: Redis pub/sub for multi-instance; worker-side session closing does not nudge (60 s poll covers it) | `mokhataq/ws-live-patrol` | 2026-11-18 | no migration |
+| Device dialog reset to pending (issue #42): `POST /devices/:id/reset`, `resetDevice` capability, confirm dialog, demo mock | `mokhataq/device-reset` | 2026-11-18 | no migration |
+| Attendance chip count fix (issue #44): chip now shows total review count (all days) + Table `onRowClick` prop (issue #43) | `mokhataq/attendance-chip-fix` | 2026-11-18 | no migration |
+| WebSocket live patrol updates (issue #38): in-process hub, ticket auth, `usePatrolLive`, nginx upgrade location; D-062. Follow-ups: Redis pub/sub for multi-instance; worker-side session closing does not nudge (60 s poll covers it) | `mokhataq/ws-live-patrol` | 2026-11-18 | no migration |
 | Site deactivation / soft delete (issue #34): migration 009, activate/deactivate API, SitesTab UI, demo mock; D-060 | `mokhataq/site-deactivation` | 2026-11-17 | migration 009 |
 | Checkpoint GPS learned from scans (worker job `checkpoint_positions`), manual lat/lng removed from the route editor; D-059 | `muhamhad-pc1/claude` | 2026-10-20 | no migration |
 | Initial scaffold, infra compose split, backend handlers (first pass) | — | 2026-10-07 | 60b3c05…d189988 |
