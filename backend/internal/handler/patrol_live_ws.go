@@ -73,6 +73,13 @@ func (h *Handler) wsPatrol() []fiber.Handler {
 				}
 			}
 		}()
+		// The connection wrapper is recycled once this handler returns, so the
+		// reader must be finished first: close the socket (which fails its
+		// read) and wait for it on every exit path.
+		defer func() {
+			_ = conn.Close()
+			<-gone
+		}()
 
 		tick := time.NewTicker(wsPingEvery)
 		defer tick.Stop()

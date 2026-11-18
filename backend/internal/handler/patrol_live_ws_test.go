@@ -105,3 +105,43 @@ func TestWsPatrolPlainHTTPIsRefused(t *testing.T) {
 		t.Fatalf("status = %d, want 426", res.StatusCode)
 	}
 }
+
+// Review I1: when the handler exits on its own (slow subscriber dropped) while
+// the client keeps sending, the reader goroutine must not outlive the handler
+// (the connection wrapper is recycled). Run with -race.
+func TestWsPatrolDroppedSubscriberStopsReader(t *testing.T) {
+	hub := livehub.New()
+	h, addr := wsServer(t, hub)
+	conn, _, err := dial(addr, hub.IssueTicket("site-a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() { // chatty client
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				if conn.WriteMessage(websocket.TextMessage, []byte("x")) != nil {
+					return
+				}
+				time.Sleep(time.Millisecond)
+			}
+		}
+	}()
+	time.Sleep(100 * time.Millisecond)
+	for i := 0; i < 5000; i++ { // overflow the send buffer: the hub drops the subscriber
+		h.publishPatrol("site-a")
+	}
+	// The server closes the connection once the handler returns.
+	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	for {
+		if _, _, err := conn.ReadMessage(); err != nil {
+			break
+		}
+	}
+	time.Sleep(200 * time.Millisecond) // let a stray reader touch the recycled conn
+}
