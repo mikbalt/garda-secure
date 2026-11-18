@@ -9,6 +9,7 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
+| Promote page-local UI kits ke components/ui (issue #41) | `mokhataq/ui-kits` | 2026-11-18 | web refactor |
 
 ## Migration numbers
 
