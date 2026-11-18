@@ -53,7 +53,7 @@ var pushEvents = []pushEvent{
 	{EventSLAMissed, staffOn},
 	{EventAbsent, map[string]bool{roleAdmin: true, roleSupervisor: true, roleHR: true}},
 	{EventLateClockIn, map[string]bool{roleAdmin: false, roleSupervisor: false, roleHR: false}},
-	{EventAttendanceReview, map[string]bool{roleAdmin: true, roleSupervisor: true, roleHR: true}},
+	{EventAttendanceReview, map[string]bool{roleAdmin: true, roleSupervisor: true}},
 	{EventDefectOpened, staffOn},
 	{EventDevicePending, map[string]bool{roleAdmin: true}},
 	{EventDeviceUnhealthy, map[string]bool{roleAdmin: true}},

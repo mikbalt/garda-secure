@@ -20,7 +20,7 @@ func TestAvailablePushEventsByRole(t *testing.T) {
 		roleAdmin: all,
 		roleSupervisor: {EventSOS, EventSOSUnacknowledged, EventIncidentHigh, EventIncidentFiled, EventPatrolNotStarted,
 			EventSLAMissed, EventAbsent, EventLateClockIn, EventAttendanceReview, EventDefectOpened},
-		roleHR:           {EventAbsent, EventLateClockIn, EventAttendanceReview},
+		roleHR:           {EventAbsent, EventLateClockIn},
 		roleClient:       {EventIncidentHigh, EventPatrolNotStarted},
 		"platform-admin": {},
 	}
@@ -31,7 +31,7 @@ func TestAvailablePushEventsByRole(t *testing.T) {
 	}
 	// Roles add up, in catalogue order.
 	if got := AvailablePushEvents([]string{roleHR, roleClient}); !slices.Equal(got,
-		[]string{EventIncidentHigh, EventPatrolNotStarted, EventAbsent, EventLateClockIn, EventAttendanceReview}) {
+		[]string{EventIncidentHigh, EventPatrolNotStarted, EventAbsent, EventLateClockIn}) {
 		t.Errorf("hr+client = %v", got)
 	}
 }
@@ -64,7 +64,7 @@ func TestPushDefaultsAndPreferences(t *testing.T) {
 		t.Error("admin default lost with an extra client role")
 	}
 	eff := EffectivePushPrefs([]string{roleHR}, map[string]bool{EventLateClockIn: true, EventSOS: true})
-	if len(eff) != 3 || !eff[EventLateClockIn] || !eff[EventAbsent] || !eff[EventAttendanceReview] {
+	if len(eff) != 2 || !eff[EventLateClockIn] || !eff[EventAbsent] || eff[EventAttendanceReview] {
 		t.Errorf("effective hr prefs = %v", eff)
 	}
 }

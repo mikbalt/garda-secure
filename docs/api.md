@@ -402,7 +402,7 @@ only for their sites; defaults in brackets, users override per event):
 | | `sla_missed` | admin, supervisor (on) | `/patrol` | high |
 | Attendance | `absent` | admin, supervisor, hr (on) | `/attendance` | high |
 | | `late_clock_in` | admin, supervisor, hr (off) | `/attendance` | normal |
-| | `attendance_review` | admin, supervisor, hr (on) | `/attendance?tab=review` | normal |
+| | `attendance_review` | admin, supervisor (on) | `/attendance?tab=review` | normal |
 | Operations | `defect_opened` | admin, supervisor (on) | `/incidents?tab=defects` | normal |
 | | `device_pending` | admin (on) | `/settings?tab=devices` | normal |
 | | `device_unhealthy` | admin (on) | `/settings?tab=devices` | high |

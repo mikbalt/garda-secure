@@ -439,8 +439,8 @@ func TestPushNotifications(t *testing.T) {
 	if rec["needs_review"] != true {
 		t.Fatalf("unverified clock-in not queued for review: %v", rec)
 	}
-	if got := e.recipients("attendance_review:"+rec["id"].(string), "webpush"); !sameSet(got, adminSub, supSub, hrSub) {
-		t.Fatalf("attendance_review to %v", got)
+	if got := e.recipients("attendance_review:"+rec["id"].(string), "webpush"); !sameSet(got, adminSub, supSub) || slices.Contains(got, hrSub) {
+		t.Fatalf("attendance_review to %v (hr must not get it, #40)", got)
 	}
 
 	// ── tablet sync, debounced per site ──────────────────────────────────────

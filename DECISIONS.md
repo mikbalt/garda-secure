@@ -557,3 +557,6 @@ in PRD §9 (OQ-x). New entries go at the bottom with the next free number.
   Inactive sites are read-only (PUT answers 409 `site_inactive`) and skipped by
   scheduler jobs (`ListAllSites`). `GET /sites/:id` still works for history.
 
+
+### D-061 — HR no longer receives `attendance_review` pushes
+The review queue (`/attendance?tab=review`, `reviewAttendance`) is admin/supervisor only, so the push linked to a page HR cannot open (#40). HR is dropped from the `attendance_review` default audience; HR keeps `absent` and `late_clock_in`. Supersedes the HR default of D-007's push matrix.

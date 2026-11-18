@@ -628,7 +628,7 @@ const pushSubs: PushSubscriptionRow[] = [
 function pushAvailable(): string[] {
   if (hasRole('admin')) return PUSH_EVENTS
   if (hasRole('supervisor')) return PUSH_EVENTS.filter((e) => e !== 'device_pending' && e !== 'device_unhealthy')
-  if (hasRole('hr')) return ['absent', 'late_clock_in', 'attendance_review']
+  if (hasRole('hr')) return ['absent', 'late_clock_in']
   if (hasRole('client-readonly')) return ['incident_high', 'patrol_not_started']
   return []
 }
