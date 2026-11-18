@@ -12,6 +12,7 @@ import { useErrorToast, useToast } from '../../components/toast/context'
 import { useSite } from '../../context/site'
 import { useI18n } from '../../i18n/context'
 import { errorText } from '../../i18n/errors'
+import { useAuth } from '../../hooks/useAuth'
 import { formatDateTime } from '../../lib/time'
 import { isOnline, relativeTime } from './format'
 import { ConfirmDialog, IconTile, SectionHeader } from './kit'
@@ -155,12 +156,14 @@ function HowTo() {
 export function DevicesTab() {
   const { t, lang } = useI18n()
   const { sites, site } = useSite()
+  const { can } = useAuth()
   const tz = site?.timezone ?? 'Asia/Jakarta'
   const qc = useQueryClient()
   const toast = useToast()
   const onError = useErrorToast()
   const [editing, setEditing] = useState<Device | null>(null)
   const [revoking, setRevoking] = useState<Device | null>(null)
+  const [resetting, setResetting] = useState<Device | null>(null)
   const [healthOf, setHealthOf] = useState<Device | null>(null)
 
   const { data, isLoading, error, refetch } = useQuery({
@@ -177,6 +180,16 @@ export function DevicesTab() {
       toast.success(d.status === 'pending' ? t('adm.dev.rejected') : t('dev.revoked'))
       qc.invalidateQueries({ queryKey: ['devices'] })
       setRevoking(null)
+    },
+    onError,
+  })
+
+  const reset = useMutation({
+    mutationFn: (d: Device) => apiClient.post(`/devices/${d.id}/reset`, {}),
+    onSuccess: () => {
+      toast.success(t('adm.dev.resetDone'))
+      qc.invalidateQueries({ queryKey: ['devices'] })
+      setResetting(null)
     },
     onError,
   })
@@ -274,6 +287,12 @@ export function DevicesTab() {
                           <Ban className="h-3.5 w-3.5" aria-hidden="true" />
                           <span className="hidden sm:inline">{t('dev.revoke')}</span>
                         </Button>
+                        {can('resetDevice') && (
+                          <Button size="sm" variant="ghost" className="text-amber-700 hover:bg-amber-50 hover:text-amber-800" onClick={() => setResetting(d)} aria-label={`${t('adm.dev.reset')} — ${d.name}`}>
+                            <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                            <span className="hidden sm:inline">{t('adm.dev.reset')}</span>
+                          </Button>
+                        )}
                       </div>
                     </li>
                   )
@@ -298,6 +317,12 @@ export function DevicesTab() {
                       <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
                       {t('adm.dev.reactivate')}
                     </Button>
+                    {can('resetDevice') && (
+                      <Button size="sm" variant="ghost" className="text-amber-700 hover:bg-amber-50 hover:text-amber-800" onClick={() => setResetting(d)} aria-label={`${t('adm.dev.reset')} — ${d.name}`}>
+                        <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                        {t('adm.dev.reset')}
+                      </Button>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -327,6 +352,15 @@ export function DevicesTab() {
         loading={revoke.isPending}
         onConfirm={() => revoking && revoke.mutate(revoking)}
         onClose={() => setRevoking(null)}
+      />
+      <ConfirmDialog
+        open={!!resetting}
+        title={t('adm.dev.resetTitle', { name: resetting?.name ?? '' })}
+        message={t('adm.dev.resetBody')}
+        confirmLabel={t('adm.dev.reset')}
+        loading={reset.isPending}
+        onConfirm={() => resetting && reset.mutate(resetting)}
+        onClose={() => setResetting(null)}
       />
     </>
   )

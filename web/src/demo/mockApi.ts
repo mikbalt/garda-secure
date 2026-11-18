@@ -291,6 +291,10 @@ on('PUT', '/devices/:id', ({ params, body }) => {
   if (body.status === 'active' && !body.site_id) throw bad('site_required', 'assign a site before activating the device')
   return Object.assign(d, body, { updated_at: iso(now()), approved_at: d.approved_at ?? (body.status === 'active' ? iso(now()) : undefined) })
 })
+on('POST', '/devices/:id/reset', ({ params }) => {
+  const d = byId(w.devices, params.id)
+  return Object.assign(d, { status: 'pending', last_seen_at: null, push_enabled: false, updated_at: iso(now()) })
+})
 
 // Schedules
 on('GET', '/shift-templates', ({ query }) => w.templates.filter((t) => t.site_id === query.site_id))

@@ -197,6 +197,10 @@ export const adminEn = {
   'adm.dev.how2Body': 'Within seconds the tablet shows up on this page as "waiting for approval".',
   'adm.dev.how3': 'Approve & choose location',
   'adm.dev.how3Body': 'Pick the location and approve. Guards then unlock the tablet with their own PIN.',
+  'adm.dev.resetTitle': 'Reset {name} to pending?',
+  'adm.dev.resetBody': 'This will clear the last-seen time and push token. The tablet must be re-paired before guards can use it again.',
+  'adm.dev.reset': 'Reset to pending',
+  'adm.dev.resetDone': 'Tablet reset to pending.',
 
   'adm.ev.sos': 'SOS button pressed',
   'adm.ev.sosDesc': 'A guard pressed the emergency button on the tablet. Send this to someone who can respond immediately, day and night.',

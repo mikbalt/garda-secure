@@ -65,6 +65,8 @@ export const CAPABILITIES = {
   // people & access (F1): web users and tablet accounts of the realm
   manageUsers: ADMIN,
   manageDeviceAccounts: ADMIN,
+  /** Reset a device back to pending (re-pairing). */
+  resetDevice: ['admin', 'platform-admin'] as Role[],
   /** Attendance override history (GET /attendance/:id/history). */
   viewAttendanceHistory: STAFF,
   /** Full visitor ID number + photos (GET /visitors/:id, audited). */
