@@ -9,6 +9,9 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
+| Attendance chip "Perlu ditinjau" count fix (issue #44) | `mokhataq/attendance-chip-fix` | 2026-11-18 | web only |
+| Table: optional row-click prop (issue #43) | `mokhataq/table-row-click` | 2026-11-18 | web only |
+| Device dialog: set back to pending (issue #42) | `mokhataq/device-reset` | 2026-11-18 | backend + web |
 
 ## Migration numbers
 
