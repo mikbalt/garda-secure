@@ -9,7 +9,6 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
-| Mobile outbox: a waiting or rejected SOS no longer blocks other items; backoff survives a device clock correction | `muhamhad-pc1/claude-verify` | 2026-11-22 | no migration |
 
 ## Migration numbers
 
@@ -45,8 +44,6 @@ Planned major upgrades (Node 24, React 19, Vite 8, Zod 4, Tailwind 4, Flutter, R
 
 Audit 2026-11-21 (`muhamhad-pc1/claude-verify`; read-only audit by three agents, fixed items are in Done) - open findings, most severe first
 - [ ] **infra, high** `infra/backup-offsite/offsite.sh:62-70`: `ensure_repo` runs `restic init` whenever the repo is unreadable. With the off-site disk not mounted it silently creates a new repo on the system disk and reports success. Fix: never init during `backup`; fail when `/repo` is not a mountpoint or has no marker. Needs Docker + restic to test.
-- [ ] **mobile, medium** `mobile/lib/core/database/sync_service.dart:357-437`: a permanently rejected SOS (403 `guard_not_allowed`) is never parked and blocks the whole outbox of the tablet through strict FIFO. Fix: FIFO within a priority, not across priorities.
-- [ ] **mobile, medium** `sync_service.dart:368,429,457`: backoff `next_at` uses the raw device clock; after a clock correction the head item (an SOS too) waits up to a day. Fix: clamp `next_at` to now + max backoff on read.
 - [ ] **mobile, low** follow-up of D-065: the tablet says "SOS acknowledged" for an unverified response too, and sends no event time with the acknowledgement. Show "noted, confirm on the web" when the reply has no `acknowledged_at`.
 - [ ] **backend, medium** `handler/admin.go:322-344`, `repository/attendance.go:220`, `service/shifts.go:148-178`: moving a guard to another site (or deactivating one) leaves the old site's templates and future shifts; they are flagged absent and alert every day, and count as absent in the monthly recap. Fix in the `updateGuard` transaction: deactivate the guard's templates at the old site, delete future shifts without attendance.
 - [ ] **infra, medium** `infra/docker-compose.app.yml:236`, `.env.example:129`: default `ADMIN_ALLOW_CIDRS` contains `172.16.0.0/12`, which includes the stack's own bridge gateway; traffic relayed by docker-proxy (IPv6 on an IPv4-only bridge) passes the Keycloak admin allow-list. Fix: `deny <SP_DOCKER_SUBNET>` before the allows, or publish on `0.0.0.0:443` only.
@@ -89,6 +86,7 @@ Mobile (D-024) — open audit items, see docs/audit-2026-10.md
 | Task | Agent | Date | Ref |
 |---|---|---|---|
 | Audit 2026-11-21 fixes: failure counters at 0 for alerts; rollback with RESTORE_FRESH=1 + VERSION pinned early; offline clock-out with unknown attendance_id; site check on device reset; web: site list retry, SOS polling ungated, site edit keeps scan_radius_m, on-duty night shifts, SOS badge polling, push test language | `muhamhad-pc1/claude-verify` | 2026-11-21 | no migration |
+| Mobile outbox: priority-0 items (SOS, SOS ack) are independent, so a rejected or waiting SOS no longer blocks other items or a second SOS (the rest stays strict FIFO); a wait beyond 30 min (device clock set back) counts as due; rejected-SOS state is per item; 3 tests | `muhamhad-pc1/claude-verify` | 2026-11-22 | no migration |
 | Mobile: an SOS the tablet could not store (outbox insert fails) shows a red "not saved, press again and call" banner instead of "SOS delivered"; test added. Flutter now on this PC (analyze + 90 tests) | `muhamhad-pc1/claude-verify` | 2026-11-22 | no migration |
 | Tablet SOS acknowledgement without a verified PIN is only noted (`unverified_ack_by/at`): tablets go quiet, the web alert stays open and keeps escalating (D-065); web SOS list shows who responded; verify journey `sos-unverified-ack`; client-readonly keeps signed QR codes (D-066) | `muhamhad-pc1/claude-verify` | 2026-11-22 | migration 010 |
 | SOS delivery gives up atomically with its ops alert (D-064, finding F1); integration test + model updated | `muhamhad-pc1/claude-verify` | 2026-11-21 | no migration |

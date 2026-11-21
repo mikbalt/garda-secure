@@ -55,6 +55,43 @@ void main() {
     o.dispose();
   });
 
+  test('a rejected SOS does not hold back other items or a second SOS', () async {
+    final api = FakeApi(handler: (c) async => c.json['id'] == 's-1' ? throw err(403, 'guard_not_allowed') : const {});
+    final o = outboxWith(api);
+    await o.enqueue(op('s-1', 'sos', priority: 0), send: false);
+    await o.enqueue(op('s-2', 'sos', priority: 0), send: false);
+    await o.enqueue(op('c-1', 'clock_in'), send: false);
+    await o.enqueue(op('c-2', 'clock_out'), send: false);
+    await o.process();
+    expect(api.calls.map((c) => c.json['id']), ['s-1', 's-2', 'c-1', 'c-2']);
+    expect((await only(o)).id, 's-1', reason: 'the rejected SOS stays queued, everything else was sent');
+    expect(o.sosRejected, isTrue);
+    o.dispose();
+  });
+
+  test('an item that waits still holds back the later items of its guard (FIFO)', () async {
+    final api = FakeApi(script: [err(503, 'unavailable')]);
+    final o = outboxWith(api);
+    await o.enqueue(op('c-1', 'clock_in'), send: false);
+    await o.enqueue(op('c-2', 'clock_out'), send: false);
+    await o.process();
+    await o.process();
+    expect(api.calls.map((c) => c.json['id']), ['c-1']);
+    o.dispose();
+  });
+
+  test('a wait longer than any backoff (device clock set back) does not hold the queue', () async {
+    final api = FakeApi();
+    final o = outboxWith(api);
+    await o.enqueue(op('s-1', 'sos', priority: 0), send: false);
+    await o.enqueue(op('c-1', 'clock_in'), send: false);
+    await db.db.update('outbox', {'next_at': DateTime.now().toUtc().add(const Duration(days: 1)).toIso8601String()});
+    await o.process();
+    expect(api.calls.map((c) => c.json['id']), ['s-1', 'c-1']);
+    expect(await o.list(), isEmpty);
+    o.dispose();
+  });
+
   test('an SOS rejected for clock skew is resent at once without the client time', () async {
     final api = FakeApi(script: [err(400, 'timestamp_out_of_range')]);
     final o = outboxWith(api);

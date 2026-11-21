@@ -204,7 +204,10 @@ class Outbox extends ChangeNotifier {
 
   /// The last attempt to send an SOS was rejected by the server (not a
   /// network problem): it keeps retrying, but the guard must call for help.
-  bool sosRejected = false;
+  bool get sosRejected => _sosRejected.isNotEmpty;
+
+  /// The queued SOS the server last answered with a rejection, by id.
+  final _sosRejected = <String>{};
 
   bool online = true;
   DateTime? lastSuccess;
@@ -222,6 +225,10 @@ class Outbox extends ChangeNotifier {
   bool _disposed = false;
 
   static const _retryDelays = [5, 15, 30, 60, 120, 300, 600];
+
+  /// No backoff or Retry-After is this long. A wait beyond it comes from a
+  /// device clock that was set back after the item was rescheduled.
+  static const maxWait = Duration(minutes: 30);
 
   /// Device-level denials: nothing can be sent until an admin acts.
   static const deviceDenials = {'device_pending', 'device_revoked', 'device_inactive', 'device_unregistered'};
@@ -295,6 +302,7 @@ class Outbox extends ChangeNotifier {
   Future<void> discard(String id) async {
     final rows = await _db.db.query('outbox', columns: ['photos'], where: 'id = ?', whereArgs: [id]);
     await _db.db.delete('outbox', where: 'id = ?', whereArgs: [id]);
+    _sosRejected.remove(id);
     for (final r in rows) {
       _deleteFiles((jsonDecode(r['photos'] as String) as List).map((e) => OutboxPhoto.fromJson((e as Map).cast<String, dynamic>())));
     }
@@ -354,18 +362,16 @@ class Outbox extends ChangeNotifier {
     while (!_disposed) {
       final until = _pausedUntil;
       if (until != null && DateTime.now().isBefore(until)) break;
-      final rows = await _db.db.query('outbox', where: "status = 'pending'", orderBy: 'priority, seq', limit: 1);
-      if (rows.isEmpty) break;
-      final read = _read(rows.first);
+      final row = await _next();
+      if (row == null) break;
+      final read = _read(row);
       if (read == null) {
         // Undecryptable row (should not happen): park it instead of looping.
-        await _db.db.update('outbox', {'status': 'failed', 'last_code': 'unreadable', 'last_error': 'unreadable'}, where: 'id = ?', whereArgs: [rows.first['id']]);
+        await _db.db.update('outbox', {'status': 'failed', 'last_code': 'unreadable', 'last_error': 'unreadable'}, where: 'id = ?', whereArgs: [row['id']]);
         await refreshCounts();
         continue;
       }
       var op = read;
-      // Strict FIFO: never overtake an earlier operation that is waiting.
-      if (op.nextAt.isAfter(DateTime.now().toUtc())) break;
 
       try {
         op = await _uploadPhotos(op);
@@ -389,7 +395,7 @@ class Outbox extends ChangeNotifier {
           // Not the item's fault: pause everything, keep the items as they are.
           pauseCode = e.code;
           _pausedUntil = DateTime.now().add(pauseFor);
-          if (op.kind == 'sos') sosRejected = true;
+          if (op.kind == 'sos') _sosRejected.add(op.id);
           _setOnline(true);
           onDeviceDenied?.call(e.code!);
           if (!_disposed) notifyListeners();
@@ -418,7 +424,7 @@ class Outbox extends ChangeNotifier {
           // of a rejection: drop the client time and let the server stamp it.
           final body = Map<String, dynamic>.of(op.body);
           final skew = e.code == 'timestamp_out_of_range' && body.remove('fired_at') != null;
-          sosRejected = !skew;
+          skew ? _sosRejected.remove(op.id) : _sosRejected.add(op.id);
           await _db.db.update(
             'outbox',
             {
@@ -433,8 +439,8 @@ class Outbox extends ChangeNotifier {
           );
           _setOnline(true);
           await refreshCounts();
-          if (skew) continue;
-          break;
+          // The server answered: go on with the items that do not wait.
+          continue;
         }
         // Rejected by the server (validation, conflict): park it and go on.
         await _park(op, code: e.code, message: e.message);
@@ -442,6 +448,28 @@ class Outbox extends ChangeNotifier {
       }
     }
     await refreshCounts();
+  }
+
+  /// The next operation to send, or null when everything left is waiting.
+  ///
+  /// Priority 0 (SOS, SOS acknowledgement) items do not depend on each other
+  /// or on anything else: the first one that is due goes out, and one that
+  /// waits (rejected, backing off) holds nothing back. The rest is strict
+  /// FIFO, because a scan needs its session and a clock-out its clock-in:
+  /// an earlier operation that waits is never overtaken.
+  Future<Map<String, Object?>?> _next() async {
+    final now = DateTime.now().toUtc();
+    bool due(Map<String, Object?> r) {
+      final at = DateTime.tryParse(r['next_at'] as String? ?? '');
+      return at == null || !at.isAfter(now) || at.isAfter(now.add(maxWait));
+    }
+
+    final urgent = await _db.db.query('outbox', where: "status = 'pending' AND priority = 0", orderBy: 'seq');
+    for (final r in urgent) {
+      if (due(r)) return r;
+    }
+    final rest = await _db.db.query('outbox', where: "status = 'pending' AND priority > 0", orderBy: 'priority, seq', limit: 1);
+    return rest.isNotEmpty && due(rest.first) ? rest.first : null;
   }
 
   bool _exhausted(OutboxOp op) =>
@@ -474,7 +502,7 @@ class Outbox extends ChangeNotifier {
 
   Future<void> _done(OutboxOp op) async {
     await _db.db.delete('outbox', where: 'id = ?', whereArgs: [op.id]);
-    if (op.kind == 'sos') sosRejected = false;
+    _sosRejected.remove(op.id);
     _deleteFiles(op.photos); // sent: free the tablet's storage
     lastSuccess = DateTime.now().toUtc();
     await _db.put(CacheKeys.lastSync, lastSuccess!.toIso8601String());
