@@ -9,6 +9,7 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
+| Mobile outbox: a waiting or rejected SOS no longer blocks other items; backoff survives a device clock correction | `muhamhad-pc1/claude-verify` | 2026-11-22 | no migration |
 
 ## Migration numbers
 
