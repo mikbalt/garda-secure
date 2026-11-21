@@ -442,8 +442,9 @@ func TestAPIEndToEnd(t *testing.T) {
 	}
 
 	// Sari's tablet was offline: her clock-in arrives after the absent flag.
+	sariClockID := uuid.NewString()
 	sync := e.expect(e.do("POST", "/api/v1/attendance/clock-in", tablet, sari, map[string]any{
-		"clock_in_at": rfc(now.Add(-38 * time.Minute)),
+		"id": sariClockID, "clock_in_at": rfc(now.Add(-38 * time.Minute)),
 	}), 201, "offline clock-in after absent")
 	if sync.obj()["needs_review"] != true || sync.str("status") != "present" { // 2 min after start: within grace
 		t.Fatalf("offline clock-in = %s", sync.raw)
@@ -457,6 +458,15 @@ func TestAPIEndToEnd(t *testing.T) {
 		t.Fatalf("review queue after review = %d", len(q))
 	}
 
+	// The tablet queued her clock-out under the id it gave the clock-in. The
+	// server kept the absent record's own id, so the clock-out closes her
+	// open record instead of being rejected for good.
+	sariOut := e.expect(e.do("POST", "/api/v1/attendance/clock-out", tablet, sari, map[string]any{
+		"attendance_id": sariClockID, "clock_out_at": rfc(now.Add(-5 * time.Minute)),
+	}), 200, "offline clock-out after the clock-in replaced an absent record")
+	if sariOut.str("id") != sync.str("id") || sariOut.obj()["clock_out_at"] == nil {
+		t.Fatalf("offline clock-out = %s", sariOut.raw)
+	}
 	out := e.expect(e.do("POST", "/api/v1/attendance/clock-out", tablet, budi, map[string]any{}), 200, "clock out")
 	if out.obj()["early_out_minutes"].(float64) < 400 {
 		t.Fatalf("early-out minutes = %v", out.obj()["early_out_minutes"])

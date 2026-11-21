@@ -176,11 +176,18 @@ func ClockOut(ctx context.Context, pool *pgxpool.Pool, in ClockOutInput) (*model
 	var changed bool
 	err = pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
 		var rec *model.AttendanceRecord
-		if in.AttendanceID != nil {
-			r, err := repository.GetAttendance(ctx, tx, *in.AttendanceID)
-			if errors.Is(err, repository.ErrNotFound) {
-				return NotFound("attendance_not_found", "attendance record not found")
+		byID := in.AttendanceID
+		if byID != nil {
+			// An offline clock-in that replaced an auto-absent record kept that
+			// record's id, not the tablet's (ApplyClockInToAbsent). The queued
+			// clock-out still names the tablet's id: close the guard's open
+			// record instead of rejecting it for good.
+			if _, err := repository.GetAttendance(ctx, tx, *byID); errors.Is(err, repository.ErrNotFound) {
+				byID = nil
 			}
+		}
+		if byID != nil {
+			r, err := repository.GetAttendance(ctx, tx, *byID)
 			if err != nil {
 				return err
 			}

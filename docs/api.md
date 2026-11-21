@@ -184,7 +184,7 @@ check). Responses always contain the full effective config.
 | GET | `/attendance/:id/history` | admin, supervisor, hr | `{attendance, overrides:[{id, attendance_id, shift_id?, site_id, before_status? (null = no record before), before_clock_in_at?, before_clock_out_at?, before_reason?, after_status, after_clock_in_at?, after_clock_out_at?, reason, actor, created_at}]}` oldest first |
 | GET | `/attendance/shifts/:shiftId/history` | admin, supervisor, hr | same, by shift (`{attendance: null, overrides: []}` without a record) |
 | POST | `/attendance/clock-in` | field | `{id?, clock_in_at?, selfie_object_key?, gps_lat?, gps_lng?}` → record incl. `received_at`, `flags` — 400 `no_shift`, 409 `already_clocked_in` (another record exists for the shift), `id_conflict`; concurrent retries with the same `id` all get the stored record (one 201, the rest 200) |
-| POST | `/attendance/clock-out` | field | `{attendance_id?, clock_out_at?, gps_lat?, gps_lng?}` — 409 `not_clocked_in`, `clock_out_window_closed` |
+| POST | `/attendance/clock-out` | field | `{attendance_id?, clock_out_at?, gps_lat?, gps_lng?}` — 409 `not_clocked_in`, `clock_out_window_closed`. An `attendance_id` the server does not know closes the guard's open record at the site (an offline clock-in that replaced an auto-absent record keeps that record's id) |
 
 ## Patrol
 
