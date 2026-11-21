@@ -9,6 +9,7 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
+| Project verification skills (`.claude/skills/verify` + formal verification) | `muhamhad-pc1/claude-verify` | 2026-11-21 | no migration; touches `.gitignore`, `.claude/skills/` |
 
 ## Migration numbers
 
