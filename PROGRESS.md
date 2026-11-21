@@ -9,6 +9,7 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
+| Tablet SOS ack without a guard token is recorded as unverified; alert stays open on the web and keeps escalating (D-065) | `muhamhad-pc1/claude-verify` | 2026-11-22 | migration 010 |
 
 ## Migration numbers
 
@@ -23,7 +24,8 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 | 007 | be_features (overrides history, route snapshots, floor plans, channels, retention, telemetry, incident GPS) | `muhamhad-pc1/claude-be-features` | pushed |
 | 008 | push (subscriptions, preferences, device push tokens, SOS escalations) | `muhamhad-pc1/claude-push` | pushed |
 | 009 | site_active (`sites.active`) | `mokhataq/site-deactivation` | pushed |
-| 010 | *(next free)* | | |
+| 010 | sos_unverified_ack (`sos_alerts.unverified_ack_by/at`) | `muhamhad-pc1/claude-verify` | reserved |
+| 011 | *(next free)* | | |
 
 ## Milestones (PRD §11)
 
