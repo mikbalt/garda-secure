@@ -1,0 +1,29 @@
+{
+  "syncCommit": "77a1e9927f9476f3a98de0f0faa5fd5d4aeb0525",
+  "files": [
+    {
+      "path": "backend/internal/repository/notification_outbox.go",
+      "functions": [
+        "ClaimDelivery",
+        "MarkDeliverySent",
+        "MarkDeliveryRetry",
+        "MarkDeliveryFailed"
+      ],
+      "sha256": "5956a6d41dc7c9288bacce556301b1a0b3d721860497d062ca30622dfae48291"
+    },
+    {
+      "path": "backend/internal/notification/worker.go",
+      "functions": [
+        "RetryDelay",
+        "Worker.claimAndSend",
+        "Worker.deliver",
+        "Worker.alertSOSUndelivered",
+        "sendTimeout",
+        "leaseFor",
+        "dbTimeout",
+        "sosMaxAttempts"
+      ],
+      "sha256": "5bf45d248af318915ad0d40e532f5858b17df2f185cf2f965486404d306f113d"
+    }
+  ]
+}

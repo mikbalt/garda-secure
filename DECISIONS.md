@@ -577,3 +577,18 @@ The review queue (`/attendance?tab=review`, `reviewAttendance`) is admin/supervi
 - Polling stays as the fallback: 60 s while connected (safety net), 10 s while not.
   Max 50 sockets per site. CSP `connect-src 'self'` covers same-origin `wss:` in
   current browsers, so the CSP is unchanged.
+
+### D-063 — Project skills for agents live in `.claude/skills/` and are committed
+
+- `.claude/skills/` is tracked (the rest of `.claude/` stays ignored), so every agent on
+  every PC gets the same skills.
+- `verify`: drives the web dashboard on the demo build under the production CSP and keeps
+  evidence in `.claude/verify/evidence/` (ignored). A pass there proves the web app only,
+  not the API, SQL or Keycloak; the skill names the tiers for those.
+- `sos-delivery`: an exhaustive model check of the SOS delivery outbox (claim, lease,
+  retry, give-up, ops alert). A change to `notification/worker.go` or
+  `repository/notification_outbox.go` runs `node .claude/skills/sos-delivery/check.mjs`
+  and updates the model with the code. Plain Node, no new dependency.
+- Open finding F1 from that check: `MarkDeliveryFailed` and the `ops_sos_undelivered`
+  alert are two transactions, so an SOS delivery can end `failed` with no ops alert
+  (Publish error, or the process dies in between). Not fixed here; tracked in PROGRESS.md.

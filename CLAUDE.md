@@ -8,6 +8,7 @@ below before touching code.
 - Status / who is doing what: [PROGRESS.md](PROGRESS.md)
 - Architecture & product decisions: [DECISIONS.md](DECISIONS.md)
 - Maintenance routine, Dependabot rules, planned major upgrades: [docs/maintenance.md](docs/maintenance.md)
+- Agent skills (D-063): [.claude/skills/verify](.claude/skills/verify/SKILL.md) proves a web change in the real app; [.claude/skills/sos-delivery](.claude/skills/sos-delivery/SKILL.md) model-checks the SOS delivery outbox
 
 ## Coordination protocol (multi-agent, multi-PC)
 

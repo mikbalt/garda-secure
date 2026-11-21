@@ -9,7 +9,6 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
-| Project verification skills (`.claude/skills/verify` + formal verification) | `muhamhad-pc1/claude-verify` | 2026-11-21 | no migration; touches `.gitignore`, `.claude/skills/` |
 
 ## Migration numbers
 
@@ -44,6 +43,8 @@ Planned major upgrades (Node 24, React 19, Vite 8, Zod 4, Tailwind 4, Flutter, R
 
 Verification
 - [ ] Smoke-test the full Docker stack (`make up`): Keycloak `start` under `/auth`, realm import, login, MinIO via :9443, backup job (`pg_dump` in image)
+- [ ] SOS delivery finding F1 (D-063): stage the `ops_sos_undelivered` alert in the same transaction as `MarkDeliveryFailed`; then update `.claude/skills/sos-delivery`
+- [ ] Run the `verify` skill tiers 2 and 3 (Go integration tests, Docker stack) on a PC that has Go and Docker; they were not proven where the skill was written
 - [ ] Real SMTP + WhatsApp template delivery test
 
 Web
@@ -68,6 +69,7 @@ Mobile (D-024) — open audit items, see docs/audit-2026-10.md
 
 | Task | Agent | Date | Ref |
 |---|---|---|---|
+| Project skills for agents (D-063): `verify` (web demo driver, 5 proven journeys, feature map) and `sos-delivery` (model check of the SOS outbox) | `muhamhad-pc1/claude-verify` | 2026-11-21 | no migration |
 | Promote page-local UI kits to components/ui (issue #41): Avatar/PersonCell, FilterChips/ChipGroup, Segmented, PeriodStepper, ConfirmDialog, Switch, Stat/StatRow, LiveIndicator, IconTile; lib/avatar.ts; kit files re-export for compat | `mokhataq/ui-kits` | 2026-11-18 | no migration |
 | Device dialog reset to pending (issue #42): `POST /devices/:id/reset`, `resetDevice` capability, confirm dialog, demo mock | `mokhataq/device-reset` | 2026-11-18 | no migration |
 | Attendance chip count fix (issue #44): chip now shows total review count (all days) + Table `onRowClick` prop (issue #43) | `mokhataq/attendance-chip-fix` | 2026-11-18 | no migration |
