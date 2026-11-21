@@ -80,9 +80,9 @@ function Welcome() {
  * welcome state (admins can create the first location right there).
  */
 export function RequireSite({ children }: { children: (site: Site) => ReactNode }) {
-  const { site, isLoading, error } = useSite()
+  const { site, isLoading, error, retry } = useSite()
   if (isLoading) return <TableSkeleton />
-  if (error) return <ErrorState error={error} />
+  if (error && !site) return <ErrorState error={error} onRetry={retry} />
   if (!site) return <Welcome />
   return <>{children(site)}</>
 }

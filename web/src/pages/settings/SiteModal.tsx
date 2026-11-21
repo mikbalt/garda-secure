@@ -8,6 +8,7 @@ import { useToast } from '../../components/toast/context'
 import { useSite } from '../../context/site'
 import { useI18n, type Key } from '../../i18n/context'
 import { errorText } from '../../i18n/errors'
+import { siteConfigForSave, type SiteConfigNumber } from '../../lib/siteConfig'
 import type { Site, SiteConfig, SiteInput } from '../../types'
 
 const DEFAULTS: SiteConfig = {
@@ -19,7 +20,7 @@ const DEFAULTS: SiteConfig = {
   language: 'id',
 }
 
-type NumKey = Exclude<keyof SiteConfig, 'language'>
+type NumKey = SiteConfigNumber
 const NUM_FIELDS: { key: NumKey; label: Key; hint?: Key }[] = [
   { key: 'clock_window_minutes', label: 'site.clockWindow', hint: 'adm.site.hint.window' },
   { key: 'late_grace_minutes', label: 'site.lateGrace', hint: 'adm.site.hint.late' },
@@ -58,8 +59,7 @@ export function SiteModal({ site, onClose, onSaved }: { site: Site | null; onClo
 
   const save = useMutation({
     mutationFn: async () => {
-      const config_json = { language } as SiteConfig
-      for (const f of NUM_FIELDS) config_json[f.key] = Number(cfg[f.key])
+      const config_json = siteConfigForSave(site?.config_json, language, cfg)
       const body: SiteInput = {
         name: name.trim(),
         client_id: clientId.trim() || null,

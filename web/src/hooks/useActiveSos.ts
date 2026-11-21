@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
 import { apiGet } from '../api/client'
-import { useSite } from '../context/site'
 import { useAuth } from './useAuth'
 import type { SosAlert } from '../types'
 
@@ -30,8 +29,8 @@ export async function fetchActiveSos(): Promise<SosAlert[]> {
 /** Polls active SOS alerts of all visible sites (admin / supervisor). */
 export function useActiveSos() {
   const { can } = useAuth()
-  const { sites } = useSite()
-  const enabled = can('viewSos') && sites.length > 0
+  // Not tied to the site list: when `/sites` fails to load, alerts must still show.
+  const enabled = can('viewSos')
   return useQuery({
     queryKey: ['sos', 'active'],
     queryFn: fetchActiveSos,

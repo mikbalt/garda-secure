@@ -8,6 +8,8 @@ export interface SiteContextValue {
   setSiteId: (id: string) => void
   isLoading: boolean
   error: unknown
+  /** Loads the site list again (after `error`). */
+  retry: () => void
 }
 
 export const SiteContext = createContext<SiteContextValue>({
@@ -17,6 +19,7 @@ export const SiteContext = createContext<SiteContextValue>({
   setSiteId: () => undefined,
   isLoading: true,
   error: null,
+  retry: () => undefined,
 })
 
 /** The globally selected site (top-bar selector). */

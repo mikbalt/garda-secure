@@ -5,10 +5,15 @@ import { apiGet } from '../api/client'
 import { readStored, STORAGE_KEYS, writeStored } from '../lib/storage'
 import type { Site } from '../types'
 
+const SITES_RETRY_MS = 15_000
+
 export function SiteProvider({ children }: { children: ReactNode }) {
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['sites'],
     queryFn: () => apiGet<Site[]>('/sites'),
+    // Every site page hangs on this list: after a failed load (API restart,
+    // network blip) keep trying instead of staying broken until a reload.
+    refetchInterval: (query) => (query.state.status === 'error' ? SITES_RETRY_MS : false),
   })
   const [chosen, setChosen] = useState<string>(() => readStored(STORAGE_KEYS.site) ?? '')
 
@@ -20,8 +25,8 @@ export function SiteProvider({ children }: { children: ReactNode }) {
   const value = useMemo(() => {
     const sites = data ?? []
     const site = sites.find((s) => s.id === chosen) ?? sites[0] ?? null
-    return { sites, site, siteId: site?.id ?? '', setSiteId, isLoading, error }
-  }, [data, chosen, setSiteId, isLoading, error])
+    return { sites, site, siteId: site?.id ?? '', setSiteId, isLoading, error, retry: () => void refetch() }
+  }, [data, chosen, setSiteId, isLoading, error, refetch])
 
   return <SiteContext.Provider value={value}>{children}</SiteContext.Provider>
 }
