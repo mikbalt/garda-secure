@@ -41,6 +41,26 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 Planned major upgrades (Node 24, React 19, Vite 8, Zod 4, Tailwind 4, Flutter, Redis 8, Grafana 13): see [docs/maintenance.md](docs/maintenance.md).
 
+Audit 2026-11-21 (`muhamhad-pc1/claude-verify`; read-only audit by three agents, fixed items are in Done) - open findings, most severe first
+- [ ] **infra, high** `infra/backup-offsite/offsite.sh:62-70`: `ensure_repo` runs `restic init` whenever the repo is unreadable. With the off-site disk not mounted it silently creates a new repo on the system disk and reports success. Fix: never init during `backup`; fail when `/repo` is not a mountpoint or has no marker. Needs Docker + restic to test.
+- [ ] **mobile, high** `mobile/lib/features/field_actions.dart:438-474`, `shared/widgets/sos_button.dart:112`: `sos()` has no `catch`; when the outbox insert fails (storage full) the banner still shows "SOS sent". Fix: remove the id and show an error; count an SOS as delivered only after it was seen in the outbox and left it.
+- [ ] **mobile, medium** `mobile/lib/core/database/sync_service.dart:357-437`: a permanently rejected SOS (403 `guard_not_allowed`) is never parked and blocks the whole outbox of the tablet through strict FIFO. Fix: FIFO within a priority, not across priorities.
+- [ ] **mobile, medium** `sync_service.dart:368,429,457`: backoff `next_at` uses the raw device clock; after a clock correction the head item (an SOS too) waits up to a day. Fix: clamp `next_at` to now + max backoff on read.
+- [ ] **backend, medium-high, needs a product decision** `handler/incidents.go:378-415`: a tablet acknowledges an SOS with only `X-Guard-ID` of a supervisor, no guard token, and the ack carries no `guard_unverified` flag. Anyone holding the device token can silence an alarm. Options: require a verified guard token for tablet acks (blocks a supervisor who unlocked offline), or record the ack as unverified and keep escalating until a verified or web ack.
+- [ ] **backend, medium** `handler/admin.go:322-344`, `repository/attendance.go:220`, `service/shifts.go:148-178`: moving a guard to another site (or deactivating one) leaves the old site's templates and future shifts; they are flagged absent and alert every day, and count as absent in the monthly recap. Fix in the `updateGuard` transaction: deactivate the guard's templates at the old site, delete future shifts without attendance.
+- [ ] **infra, medium** `infra/docker-compose.app.yml:236`, `.env.example:129`: default `ADMIN_ALLOW_CIDRS` contains `172.16.0.0/12`, which includes the stack's own bridge gateway; traffic relayed by docker-proxy (IPv6 on an IPv4-only bridge) passes the Keycloak admin allow-list. Fix: `deny <SP_DOCKER_SUBNET>` before the allows, or publish on `0.0.0.0:443` only.
+- [ ] **backend, low-medium** `handler/audit.go:17-21`: `GET /audit` is filtered by realm only; a site-limited admin reads other sites' audit rows. Needs a `site_id` on `audit_log` (migration) or refusing `/audit` to site-limited principals.
+- [ ] **backend, low** `handler/incidents.go:157`: incident `photo_object_keys` accept keys of any kind (selfie, visitor ID photo), which `getIncident` then presigns for client-readonly. Fix: require the matching kind segment per field.
+- [ ] **backend, low, product decision** `handler/patrol.go:33-55`: client-readonly receives valid signed QR codes from `GET /patrol/routes`.
+- [ ] **backend, low** `handler/shifts.go:255-258`: `updateShift` checks for attendance outside the transaction and treats a DB error as "none". Fix: `AND NOT EXISTS (...)` in the `UPDATE`, 0 rows -> 409.
+- [ ] **backend, low** `handler/app.go:96,100`: `POST /sos` passes the per-IP auth-failure limiter and the write limiter before its own exemption; a site behind one NAT IP can get SOS delayed by 429.
+- [ ] **backend + web, low** `handler/handler.go:107-110`: the `/devices` group requires `admin`, so the `platform-admin` grant on `POST /devices/:id/reset` (docs/api.md, `web/src/lib/roles.ts`) can never apply. Decide which side is right.
+- [ ] **infra, low** `infra/docker-compose.ops.yml:222`: `.env` is bind-mounted as a single file into `backup-offsite`; `sed -i` replaces the inode, so off-site config bundles carry a stale `.env`. Mount the directory.
+- [ ] **infra, low** `infra/prometheus/alerts.yml:69-84`: no `absent()` rule for the `sp_offsite_*` series; an off-site backup that never ran never alerts.
+- [ ] **infra, low** `.github/workflows/ci-e2e-stack.yml:178-196`: CI never restores an app DB dump or runs `restic restore`.
+- [ ] **web, low** `pages/Patrol.tsx:30-35`: a 10 s `refetchInterval` on `['patrol-live']` defeats the 60 s slow poll while the WebSocket is up (D-062). Server load only.
+- [ ] **web, low** `pages/settings/LogTab.tsx`, `pages/Audit.tsx`: realm-wide lists format every row in the selected site's time zone.
+- [ ] **web, low** `pages/settings/SiteModal.tsx`: no form field for `scan_radius_m` (the value is now kept on save, but can only be set through the API).
 Verification
 - [ ] Smoke-test the full Docker stack (`make up`): Keycloak `start` under `/auth`, realm import, login, MinIO via :9443, backup job (`pg_dump` in image)
 - [ ] Run the `verify` skill tiers 2 and 3 (Go integration tests, Docker stack) on a PC that has Go and Docker; they were not proven where the skill was written
@@ -68,6 +88,7 @@ Mobile (D-024) — open audit items, see docs/audit-2026-10.md
 
 | Task | Agent | Date | Ref |
 |---|---|---|---|
+| Audit 2026-11-21 fixes: failure counters at 0 for alerts; rollback with RESTORE_FRESH=1 + VERSION pinned early; offline clock-out with unknown attendance_id; site check on device reset; web: site list retry, SOS polling ungated, site edit keeps scan_radius_m, on-duty night shifts, SOS badge polling, push test language | `muhamhad-pc1/claude-verify` | 2026-11-21 | no migration |
 | SOS delivery gives up atomically with its ops alert (D-064, finding F1); integration test + model updated | `muhamhad-pc1/claude-verify` | 2026-11-21 | no migration |
 | Project skills for agents (D-063): `verify` (web demo driver, 5 proven journeys, feature map) and `sos-delivery` (model check of the SOS outbox) | `muhamhad-pc1/claude-verify` | 2026-11-21 | no migration |
 | Promote page-local UI kits to components/ui (issue #41): Avatar/PersonCell, FilterChips/ChipGroup, Segmented, PeriodStepper, ConfirmDialog, Switch, Stat/StatRow, LiveIndicator, IconTile; lib/avatar.ts; kit files re-export for compat | `mokhataq/ui-kits` | 2026-11-18 | no migration |
