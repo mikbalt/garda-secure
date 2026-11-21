@@ -761,7 +761,8 @@ machine-specific settings belong in `.env`.
   (`cat infra/.deploy/previous` on the server) — its images are still on the server.
 * **Rollback across a migration:** migrations only go forward. Stop the app
   (`docker compose stop api notification-worker`), restore the pre-deploy dump
-  (`sh scripts/restore-db.sh app infra/backups/<time>-pre-vX.Y.Z-…/securepatrol.dump`,
+  (`RESTORE_FRESH=1 sh scripts/restore-db.sh app infra/backups/<time>-pre-vX.Y.Z-…/securepatrol.dump`;
+  `RESTORE_FRESH=1` empties the schema first so no table of the newer version survives,
   same for keycloak if needed), then deploy the previous tag. Data written between
   the deploy and the rollback is lost — announce a short freeze for risky releases.
 * Never run `docker image prune -a` on the server: it would delete the rollback images.

@@ -73,14 +73,15 @@ if ! compose up -d --no-build --remove-orphans --wait --wait-timeout 600; then
   echo "DEPLOY FAILED. To roll back:" >&2
   echo "  1. git checkout --detach refs/tags/$previous && infra/scripts/deploy.sh $previous" >&2
   echo "  2. if $version ran DB migrations, restore the pre-deploy dump first:" >&2
-  echo "     infra/scripts/restore-db.sh app infra/backups/<newest>-pre-$version-*/$POSTGRES_DB.dump" >&2
+  echo "     RESTORE_FRESH=1 infra/scripts/restore-db.sh app infra/backups/<newest>-pre-$version-*/$POSTGRES_DB.dump" >&2
+  echo "     (RESTORE_FRESH=1 empties the schema first, so no table of $version survives)" >&2
   exit 1
 fi
 
-sh scripts/keycloak-config.sh
-
 # Pin the running version in .env so manual `docker compose ...` commands use
-# the same images (.env is not tracked by git).
+# the same images (.env is not tracked by git). Done as soon as the new
+# images run: if a later step fails, a plain `docker compose up -d` must not
+# put the previous images back on the migrated database.
 set_env() { # key value
   if grep -q "^$1=" .env; then
     sed -i "s|^$1=.*|$1=$2|" .env
@@ -90,6 +91,8 @@ set_env() { # key value
 }
 set_env VERSION "$version"
 set_env IMAGE_REPO "$IMAGE_REPO"
+sh scripts/keycloak-config.sh
+
 
 echo "$previous" > "$state/previous"
 echo "$version" > "$state/current"
