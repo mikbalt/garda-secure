@@ -127,6 +127,7 @@ func (w *Worker) Heartbeat() time.Time { return w.heartbeat.Last() }
 // finish (each is bounded by sendTimeout) and returns.
 func (w *Worker) Run(ctx context.Context) {
 	w.heartbeat.Beat()
+	initFailedSeries()
 	var wg sync.WaitGroup
 	for i := 0; i < w.workers; i++ {
 		lanes := []string{LaneSOS, LaneNormal}
@@ -147,6 +148,18 @@ func (w *Worker) Run(ctx context.Context) {
 	}
 	wg.Wait()
 	w.log.Info().Msg("notification worker stopped")
+}
+
+// initFailedSeries creates the failure counter of every rule event at 0.
+// Prometheus' increase() cannot see a series that is born at 1, so without
+// this the first permanent failure of an event type after a worker start
+// would not fire NotificationsFailing.
+func initFailedSeries() {
+	for _, types := range [][]string{EventTypes, OpsEventTypes} {
+		for _, ev := range types {
+			metrics.NotificationsFailed.WithLabelValues(ev)
+		}
+	}
 }
 
 // loop claims and sends due deliveries of its lanes (in priority order).

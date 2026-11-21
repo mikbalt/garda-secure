@@ -1,5 +1,5 @@
 {
-  "syncCommit": "12f2784a72e3d7ac3a45847a9e6ffa5681f71209",
+  "syncCommit": "1dc07a45aff422515dff76a3b2c82591a3c0d814",
   "files": [
     {
       "path": "backend/internal/repository/notification_outbox.go",
@@ -24,7 +24,7 @@
         "dbTimeout",
         "sosMaxAttempts"
       ],
-      "sha256": "733333a33ffc3a186a418f027af42ecdc985eef79fb17ad16203b0a5f914d46b"
+      "sha256": "4bac61cdb9059668d83d1287e6eff3ff18741206e0c02247c1ba80c926b926e8"
     }
   ]
 }

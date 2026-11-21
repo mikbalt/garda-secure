@@ -99,6 +99,7 @@ func (s *Scheduler) jobs() []job {
 // graceful shutdown lets them complete); they are cancelled when abort is.
 func (s *Scheduler) Run(ctx, abort context.Context) {
 	s.heartbeat.Beat()
+	s.initMetrics()
 	if err := s.failInterruptedBackups(ctx); err != nil {
 		s.log.Warn().Err(err).Msg("could not check for interrupted backups")
 	}
@@ -112,6 +113,15 @@ func (s *Scheduler) Run(ctx, abort context.Context) {
 	}
 	wg.Wait()
 	s.log.Info().Msg("scheduler stopped")
+}
+
+// initMetrics creates every job's error counter at 0. Prometheus' increase()
+// cannot see a series that is born at 1, so without this the first failure of
+// a job after a worker start would not fire JobNotSucceeding.
+func (s *Scheduler) initMetrics() {
+	for _, j := range s.jobs() {
+		metrics.JobRuns.WithLabelValues(j.name, "error")
+	}
 }
 
 // loop runs a job immediately and then every interval.
