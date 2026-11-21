@@ -154,6 +154,19 @@ void main() {
       expect(sos.guardId, 'g-2');
     });
 
+    test('an SOS the tablet could not store is not shown as delivered', () async {
+      await h.db.db.execute("CREATE TRIGGER no_sos BEFORE INSERT ON outbox BEGIN SELECT RAISE(ABORT, 'disk full'); END");
+      await h.actions.sos(as: h.session.roster[1]);
+      expect(await h.outbox.list(), isEmpty);
+      expect(h.actions.sosOutstanding, isEmpty, reason: 'nothing will send it');
+      expect(h.actions.sosNotSaved, isTrue);
+      expect(h.actions.sosPreparing, isFalse);
+      await h.db.db.execute('DROP TRIGGER no_sos');
+      await h.actions.sos(as: h.session.roster[1]);
+      expect((await h.outbox.list()).single.kind, 'sos');
+      expect(h.actions.sosNotSaved, isFalse);
+    });
+
     test('the PIN lockout survives an app restart', () async {
       for (var i = 0; i < 5; i++) {
         await h.session.unlockWithPin(budi, '0000');

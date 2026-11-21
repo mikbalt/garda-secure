@@ -111,11 +111,14 @@ class SosDeliveryBanner extends StatelessWidget {
     // shown after an app restart.
     final waiting = outbox.sosPending || actions.sosPreparing;
     final rejected = outbox.sosFailed;
-    final delivered = !waiting && !rejected && actions.sosOutstanding.isNotEmpty;
-    if (!waiting && !rejected && !delivered) return const SizedBox.shrink();
+    final notSaved = actions.sosNotSaved;
+    final delivered = !waiting && !rejected && !notSaved && actions.sosOutstanding.isNotEmpty;
+    if (!waiting && !rejected && !notSaved && !delivered) return const SizedBox.shrink();
     final s = S.of(context);
     final String message;
-    if (waiting && outbox.sosRejected) {
+    if (notSaved) {
+      message = s.t('sos.notSaved');
+    } else if (waiting && outbox.sosRejected) {
       message = s.t('sos.rejectedRetrying');
     } else if (waiting) {
       message = outbox.online ? s.t('sos.sending') : s.t('sos.notConfirmed');

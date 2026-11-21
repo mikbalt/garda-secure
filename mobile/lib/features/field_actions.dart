@@ -124,6 +124,10 @@ class FieldActions extends ChangeNotifier {
 
   /// True while an SOS is being prepared (GPS fix) and not yet in the outbox.
   bool sosPreparing = false;
+
+  /// The last SOS could not be stored on the tablet (e.g. storage full), so
+  /// nothing will send it. Cleared by the next SOS that is stored.
+  bool sosNotSaved = false;
   Timer? _sosClear;
 
   String get _guardId => session.guard!.id;
@@ -458,15 +462,24 @@ class FieldActions extends ChangeNotifier {
           if (quick != null) 'gps_lng': quick.lng,
         },
       );
-      if (quick != null) {
-        await outbox.enqueue(op);
-      } else {
-        // Persist first (survives a crash), then try to add a fix before the
-        // first send goes out.
-        await outbox.enqueue(op, send: false);
-        final fix = await location.current(timeout: const Duration(seconds: 4));
-        if (fix != null) await outbox.amendBody(id, {'gps_lat': fix.lat, 'gps_lng': fix.lng});
-        unawaited(outbox.process());
+      try {
+        // Persist first (survives a crash); without a position the first
+        // send waits for a fix below.
+        await outbox.enqueue(op, send: quick != null);
+      } catch (_) {
+        // Not stored: nothing will send it. The banner must not go green.
+        sosOutstanding.remove(id);
+        sosNotSaved = true;
+        return;
+      }
+      sosNotSaved = false;
+      if (quick == null) {
+        try {
+          final fix = await location.current(timeout: const Duration(seconds: 4));
+          if (fix != null) await outbox.amendBody(id, {'gps_lat': fix.lat, 'gps_lng': fix.lng});
+        } finally {
+          unawaited(outbox.process());
+        }
       }
     } finally {
       sosPreparing = false;

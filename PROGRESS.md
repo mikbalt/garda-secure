@@ -44,7 +44,6 @@ Planned major upgrades (Node 24, React 19, Vite 8, Zod 4, Tailwind 4, Flutter, R
 
 Audit 2026-11-21 (`muhamhad-pc1/claude-verify`; read-only audit by three agents, fixed items are in Done) - open findings, most severe first
 - [ ] **infra, high** `infra/backup-offsite/offsite.sh:62-70`: `ensure_repo` runs `restic init` whenever the repo is unreadable. With the off-site disk not mounted it silently creates a new repo on the system disk and reports success. Fix: never init during `backup`; fail when `/repo` is not a mountpoint or has no marker. Needs Docker + restic to test.
-- [ ] **mobile, high** `mobile/lib/features/field_actions.dart:438-474`, `shared/widgets/sos_button.dart:112`: `sos()` has no `catch`; when the outbox insert fails (storage full) the banner still shows "SOS sent". Fix: remove the id and show an error; count an SOS as delivered only after it was seen in the outbox and left it.
 - [ ] **mobile, medium** `mobile/lib/core/database/sync_service.dart:357-437`: a permanently rejected SOS (403 `guard_not_allowed`) is never parked and blocks the whole outbox of the tablet through strict FIFO. Fix: FIFO within a priority, not across priorities.
 - [ ] **mobile, medium** `sync_service.dart:368,429,457`: backoff `next_at` uses the raw device clock; after a clock correction the head item (an SOS too) waits up to a day. Fix: clamp `next_at` to now + max backoff on read.
 - [ ] **mobile, low** follow-up of D-065: the tablet says "SOS acknowledged" for an unverified response too, and sends no event time with the acknowledgement. Show "noted, confirm on the web" when the reply has no `acknowledged_at`.
@@ -89,6 +88,7 @@ Mobile (D-024) — open audit items, see docs/audit-2026-10.md
 | Task | Agent | Date | Ref |
 |---|---|---|---|
 | Audit 2026-11-21 fixes: failure counters at 0 for alerts; rollback with RESTORE_FRESH=1 + VERSION pinned early; offline clock-out with unknown attendance_id; site check on device reset; web: site list retry, SOS polling ungated, site edit keeps scan_radius_m, on-duty night shifts, SOS badge polling, push test language | `muhamhad-pc1/claude-verify` | 2026-11-21 | no migration |
+| Mobile: an SOS the tablet could not store (outbox insert fails) shows a red "not saved, press again and call" banner instead of "SOS delivered"; test added. Flutter now on this PC (analyze + 90 tests) | `muhamhad-pc1/claude-verify` | 2026-11-22 | no migration |
 | Tablet SOS acknowledgement without a verified PIN is only noted (`unverified_ack_by/at`): tablets go quiet, the web alert stays open and keeps escalating (D-065); web SOS list shows who responded; verify journey `sos-unverified-ack`; client-readonly keeps signed QR codes (D-066) | `muhamhad-pc1/claude-verify` | 2026-11-22 | migration 010 |
 | SOS delivery gives up atomically with its ops alert (D-064, finding F1); integration test + model updated | `muhamhad-pc1/claude-verify` | 2026-11-21 | no migration |
 | Project skills for agents (D-063): `verify` (web demo driver, 5 proven journeys, feature map) and `sos-delivery` (model check of the SOS outbox) | `muhamhad-pc1/claude-verify` | 2026-11-21 | no migration |
