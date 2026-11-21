@@ -470,8 +470,7 @@ func (h *Handler) resetDevice(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
-	p := middleware.GetPrincipal(c)
-	if d.KeycloakRealm != p.Realm {
+	if p := middleware.GetPrincipal(c); d.KeycloakRealm != p.Realm || (d.SiteID != nil && !p.CanSeeSite(*d.SiteID)) {
 		return h.fail(c, repository.ErrNotFound)
 	}
 	middleware.SetAuditBefore(c, d)

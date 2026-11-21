@@ -169,6 +169,16 @@ func TestSiteScopingAndActiveSOS(t *testing.T) {
 	e.expect(e.do("GET", "/api/v1/sos/active", client, "", nil), 403, "client active sos")
 	e.expect(e.do("POST", "/api/v1/sos/"+sosB+"/acknowledge", sup, "", nil), 404, "scoped ack other site")
 	e.expect(e.do("POST", "/api/v1/sos/"+sosA+"/acknowledge", sup, "", nil), 200, "ack")
+	// An admin limited to site A cannot reset (un-pair) the tablet of site B.
+	var deviceB string
+	if err := e.pool.QueryRow(context.Background(), `SELECT id::text FROM devices WHERE site_id = $1`, b.site).Scan(&deviceB); err != nil {
+		t.Fatal(err)
+	}
+	scopedAdmin := e.webSites(realm4, "scope-admin-a", []string{a.site}, "admin")
+	e.expect(e.do("POST", "/api/v1/devices/"+deviceB+"/reset", scopedAdmin, "", nil), 404, "scoped admin resets another site's tablet")
+	if n := e.count(`SELECT COUNT(*) FROM devices WHERE id = $1 AND status = 'active'`, deviceB); n != 1 {
+		t.Fatal("the other site's tablet was reset")
+	}
 	if got := ids(e.do("GET", "/api/v1/sos/active", admin, "", nil).list()); slices.Contains(got, sosA) || !slices.Contains(got, sosB) {
 		t.Fatalf("after ack = %v", got)
 	}
