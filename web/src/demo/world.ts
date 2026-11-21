@@ -294,7 +294,7 @@ export function seedWorld(): World {
   // SOS: one live, one acknowledged.
   w.sos.push(
     { id: uid(), guard_id: A[3].id, guard_name: A[3].name, site_id: siteA.id, fired_at: iso(minutes(now, -3)), received_at: iso(minutes(now, -3)), gps_lat: -6.2944, gps_lng: 107.1531, flags: [] },
-    { id: uid(), guard_id: B[2].id, guard_name: B[2].name, site_id: siteB.id, fired_at: iso(minutes(now, -12)), received_at: iso(minutes(now, -1)), flags: ['late_sync'] },
+    { id: uid(), guard_id: B[2].id, guard_name: B[2].name, site_id: siteB.id, fired_at: iso(minutes(now, -12)), received_at: iso(minutes(now, -1)), unverified_ack_by: B[0].name, unverified_ack_at: iso(minutes(now, -1)), flags: ['late_sync'] },
     { id: uid(), guard_id: B[3].id, guard_name: B[3].name, site_id: siteB.id, fired_at: iso(minutes(now, -60 * 30)), received_at: iso(minutes(now, -60 * 30)), gps_lat: -6.2253, gps_lng: 106.8099, acknowledged_by: 'demo/supervisor', acknowledged_at: iso(minutes(now, -60 * 30 + 2)), flags: [] },
   )
 

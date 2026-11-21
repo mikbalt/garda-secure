@@ -191,17 +191,23 @@ func ListAmendments(ctx context.Context, db DBTX, incidentID string) ([]model.In
 // ── SOS ──────────────────────────────────────────────────────────────────────
 
 const sosColumns = `id, guard_id, site_id, device_id, fired_at, received_at, gps_lat, gps_lng,
-	acknowledged_by, acknowledged_at, flags,
+	acknowledged_by, acknowledged_at, unverified_ack_by, unverified_ack_at, flags,
 	COALESCE((SELECT g.name FROM guards g WHERE g.id = sos_alerts.guard_id), '')`
 
 func scanSos(row pgx.Row) (model.SosAlert, error) {
 	var a model.SosAlert
-	err := row.Scan(&a.ID, &a.GuardID, &a.SiteID, &a.DeviceID, &a.FiredAt, &a.ReceivedAt,
-		&a.GPSLat, &a.GPSLng, &a.AcknowledgedBy, &a.AcknowledgedAt, &a.Flags, &a.GuardName)
+	err := row.Scan(sosDest(&a)...)
 	if a.Flags == nil {
 		a.Flags = []string{}
 	}
 	return a, err
+}
+
+// sosDest lists the scan targets of sosColumns, in order.
+func sosDest(a *model.SosAlert) []any {
+	return []any{&a.ID, &a.GuardID, &a.SiteID, &a.DeviceID, &a.FiredAt, &a.ReceivedAt,
+		&a.GPSLat, &a.GPSLng, &a.AcknowledgedBy, &a.AcknowledgedAt, &a.UnverifiedAckBy, &a.UnverifiedAckAt,
+		&a.Flags, &a.GuardName}
 }
 
 func scanSosRows(rows pgx.Rows) (model.SosAlert, error) { return scanSos(rows) }
@@ -233,12 +239,6 @@ func GetSosAlert(ctx context.Context, db DBTX, id string) (*model.SosAlert, erro
 		return nil, mapNoRows(err)
 	}
 	return &a, nil
-}
-
-// ListSosAlerts returns the latest 200 SOS alerts of a site, newest first.
-func ListSosAlerts(ctx context.Context, db DBTX, siteID string, unackOnly bool) ([]model.SosAlert, error) {
-	rows, _, err := ListSosAlertsPage(ctx, db, siteID, unackOnly, Page{Limit: 200})
-	return rows, err
 }
 
 // ListSosAlertsPage returns one page of a site's SOS alerts, newest first,
@@ -274,6 +274,37 @@ func AcknowledgeSosAlert(ctx context.Context, db DBTX, id, actor string) (*model
 		return nil, mapNoRows(err)
 	}
 	return &a, nil
+}
+
+// NoteUnverifiedSosAck records a tablet acknowledgement whose supervisor the
+// server could not verify (D-065). The alert stays unacknowledged; the first
+// such note is kept, and an alert that is already acknowledged is not touched.
+func NoteUnverifiedSosAck(ctx context.Context, db DBTX, id, who string) (*model.SosAlert, error) {
+	a, err := scanSos(db.QueryRow(ctx, `
+		UPDATE sos_alerts
+		SET unverified_ack_by = CASE WHEN acknowledged_at IS NULL THEN COALESCE(unverified_ack_by, $2) ELSE unverified_ack_by END,
+		    unverified_ack_at = CASE WHEN acknowledged_at IS NULL THEN COALESCE(unverified_ack_at, now()) ELSE unverified_ack_at END
+		WHERE id = $1
+		RETURNING `+sosColumns, id, who))
+	if err != nil {
+		return nil, mapNoRows(err)
+	}
+	return &a, nil
+}
+
+// ListSosForTablets returns the site's SOS alerts that its tablets still
+// show: not acknowledged and not yet attended on a tablet (D-065). Newest
+// first, 200 at most.
+func ListSosForTablets(ctx context.Context, db DBTX, siteID string) ([]model.SosAlert, error) {
+	rows, err := db.Query(ctx, `
+		SELECT `+sosColumns+` FROM sos_alerts
+		WHERE site_id = $1 AND acknowledged_at IS NULL AND unverified_ack_at IS NULL
+		ORDER BY fired_at DESC, id
+		LIMIT 200`, siteID)
+	if err != nil {
+		return nil, fmt.Errorf("ListSosForTablets: %w", err)
+	}
+	return collect(rows, scanSosRows)
 }
 
 // ── Defect reports ───────────────────────────────────────────────────────────

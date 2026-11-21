@@ -374,7 +374,10 @@ func (h *Handler) sosExists(c *fiber.Ctx, id string) bool {
 }
 
 // POST /sos/:id/acknowledge — supervisors/admins on the web, or a supervisor
-// guard on the site's tablet.
+// guard on the site's tablet. A tablet acknowledgement counts only with a
+// verified guard token; without one it is noted as unverified: the site's
+// tablets go quiet, the alert stays open on the web and keeps escalating
+// (D-065).
 func (h *Handler) acknowledgeSos(c *fiber.Ctx) error {
 	alert, err := repository.GetSosAlert(c.Context(), h.DB, c.Params("id"))
 	if err != nil {
@@ -393,16 +396,23 @@ func (h *Handler) acknowledgeSos(c *fiber.Ctx) error {
 	} else if p := middleware.GetPrincipal(c); p != nil {
 		by = p.Actor()
 	}
+	now := service.Now()
+	verified := g == nil || middleware.GetGuardAuth(c).VerifiedAt(now, now)
 	ctx := c.Context()
 	var out *model.SosAlert
 	var staged notification.Staged
 	err = pgx.BeginFunc(ctx, h.DB, func(tx pgx.Tx) error {
 		var err error
-		if out, err = repository.AcknowledgeSosAlert(ctx, tx, alert.ID, actor(c)); err != nil {
+		if verified {
+			out, err = repository.AcknowledgeSosAlert(ctx, tx, alert.ID, actor(c))
+		} else {
+			out, err = repository.NoteUnverifiedSosAck(ctx, tx, alert.ID, g.Name)
+		}
+		if err != nil {
 			return err
 		}
-		if alert.AcknowledgedAt != nil {
-			return nil // already acknowledged: the tablets were told then
+		if alert.AcknowledgedAt != nil || alert.UnverifiedAckAt != nil {
+			return nil // acknowledged or attended before: the tablets were told then
 		}
 		// The site's tablets stop their SOS alarm (FCM sos_ack).
 		staged, err = h.stageSosAck(ctx, tx, out, by, requestID(c))

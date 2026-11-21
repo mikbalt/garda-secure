@@ -321,7 +321,11 @@ type SosAlert struct {
 	GPSLng         *float64   `json:"gps_lng,omitempty"`
 	AcknowledgedBy *string    `json:"acknowledged_by,omitempty"`
 	AcknowledgedAt *time.Time `json:"acknowledged_at,omitempty"`
-	Flags          []string   `json:"flags"`
+	// UnverifiedAckBy/At: a supervisor acknowledged on a tablet without a
+	// verified PIN (D-065). The alert stays unacknowledged.
+	UnverifiedAckBy *string    `json:"unverified_ack_by,omitempty"`
+	UnverifiedAckAt *time.Time `json:"unverified_ack_at,omitempty"`
+	Flags           []string   `json:"flags"`
 }
 
 // NotificationRule routes an event type at a site to a channel recipient.

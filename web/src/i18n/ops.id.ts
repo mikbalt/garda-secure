@@ -118,6 +118,7 @@ export const opsId: Record<keyof typeof opsEn, string> = {
   'ops.sos.waiting': 'Menunggu {d}',
   'ops.sos.ackedBy': 'Ditanggapi oleh {who}',
   'ops.sos.response': 'respons {d}',
+  'ops.sos.unverifiedAck': '{who} menanggapi di tablet pukul {time}, PIN tidak terverifikasi. Pastikan ke petugas, lalu tanggapi di sini.',
   'ops.sos.allHandled': 'Semua SOS sudah ditanggapi.',
   'ops.sos.emptyTitle': 'Tidak ada SOS',
   'ops.sos.emptyBody':

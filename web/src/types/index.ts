@@ -387,6 +387,9 @@ export interface SosAlert {
   gps_lng?: number
   acknowledged_by?: string
   acknowledged_at?: string
+  /** A supervisor responded on a tablet without a verified PIN (D-065); the alert is still open. */
+  unverified_ack_by?: string
+  unverified_ack_at?: string
   flags?: string[]
 }
 

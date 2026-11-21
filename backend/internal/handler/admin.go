@@ -637,7 +637,7 @@ func (h *Handler) deviceSos(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
-	alerts, err := repository.ListSosAlerts(c.Context(), h.DB, site.ID, true)
+	alerts, err := repository.ListSosForTablets(c.Context(), h.DB, site.ID)
 	if err != nil {
 		return h.fail(c, err)
 	}

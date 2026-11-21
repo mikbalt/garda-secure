@@ -727,9 +727,25 @@ func TestAPIEndToEnd(t *testing.T) {
 	}
 	e.expect(e.do("POST", "/api/v1/sos/"+sosID+"/acknowledge", tablet, budi, nil), 403, "guard acks sos")
 	e.expect(e.do("POST", "/api/v1/sos/"+sosID+"/acknowledge", client, "", nil), 403, "client acks sos")
+	// Without a verified PIN the tablet acknowledgement is only noted (D-065):
+	// the site's tablets go quiet, the web still has an open alert.
+	noted := e.expect(e.doH("POST", "/api/v1/sos/"+sosID+"/acknowledge", tablet, sari, nil, noToken), 200, "unverified supervisor acks")
+	if noted.str("acknowledged_at") != "" || noted.str("unverified_ack_by") != "Sari" || noted.str("unverified_ack_at") == "" {
+		t.Fatalf("unverified ack = %s", noted.raw)
+	}
+	if l := e.expect(e.do("GET", "/api/v1/device/sos", tablet, "", nil), 200, "device sos after unverified ack").list(); len(l) != 0 {
+		t.Fatalf("tablets still show %d SOS after an unverified ack", len(l))
+	}
+	if n := len(e.expect(e.do("GET", "/api/v1/sos?site_id="+siteA+"&unack_only=true", sup, "", nil), 200, "web unack sos").list()); n != 1 {
+		t.Fatalf("web shows %d unacknowledged SOS after an unverified ack, want 1", n)
+	}
 	ack := e.expect(e.do("POST", "/api/v1/sos/"+sosID+"/acknowledge", tablet, sari, nil), 200, "supervisor guard acks")
-	if ack.str("acknowledged_by") != "guard:"+sari {
+	if ack.str("acknowledged_by") != "guard:"+sari || ack.str("acknowledged_at") == "" || ack.str("unverified_ack_by") != "Sari" {
 		t.Fatalf("ack = %s", ack.raw)
+	}
+	again := e.expect(e.doH("POST", "/api/v1/sos/"+sosID+"/acknowledge", tablet, sari, nil, noToken), 200, "unverified ack after ack")
+	if again.str("acknowledged_by") != "guard:"+sari {
+		t.Fatalf("unverified ack changed an acknowledged alert: %s", again.raw)
 	}
 
 	// ── Defects & visitors ───────────────────────────────────────────────────

@@ -404,8 +404,7 @@ func ListSosForEscalation(ctx context.Context, db DBTX, since time.Time, max int
 	return collect(rows, func(r pgx.Rows) (SosEscalation, error) {
 		var e SosEscalation
 		a := &e.SosAlert
-		err := r.Scan(&a.ID, &a.GuardID, &a.SiteID, &a.DeviceID, &a.FiredAt, &a.ReceivedAt,
-			&a.GPSLat, &a.GPSLng, &a.AcknowledgedBy, &a.AcknowledgedAt, &a.Flags, &a.GuardName, &e.Escalations)
+		err := r.Scan(append(sosDest(a), &e.Escalations)...)
 		if a.Flags == nil {
 			a.Flags = []string{}
 		}

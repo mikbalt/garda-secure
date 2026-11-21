@@ -385,6 +385,15 @@ func TestPushNotifications(t *testing.T) {
 	if n := e.count(`SELECT COUNT(*) FROM notification_log WHERE dedupe_key LIKE $1`, "sos_unack:"+sosA+"%"); n != 3 {
 		t.Fatalf("second run staged again: %d deliveries", n)
 	}
+	// A supervisor acknowledges on the tablet without a verified PIN (D-065):
+	// the tablets are told, the reminders below still go out.
+	if _, err := e.pool.Exec(ctx, `UPDATE guards SET role = 'supervisor' WHERE id = $1`, a.guard); err != nil {
+		t.Fatal(err)
+	}
+	e.expect(e.doH("POST", "/api/v1/sos/"+sosA+"/acknowledge", a.tablet, a.guard, nil, noToken), 200, "unverified tablet acknowledge")
+	if got := e.recipients("sos_ack:"+sosA, "fcm"); !sameSet(got, "fcm-a1-"+run, "fcm-a2-"+run) {
+		t.Fatalf("sos_ack after an unverified acknowledge to %v", got)
+	}
 	if _, err := e.pool.Exec(ctx, `UPDATE sos_alerts SET received_at = now() - interval '9 minutes' WHERE id = $1`, sosA); err != nil {
 		t.Fatal(err)
 	}

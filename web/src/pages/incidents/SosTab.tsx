@@ -129,6 +129,11 @@ export function SosTab({ site }: { site: Site }) {
                       <span>{t('sos.noGps')}</span>
                     )}
                   </p>
+                  {open && s.unverified_ack_at && (
+                    <p className="mt-1 text-xs font-medium text-amber-800">
+                      {t('ops.sos.unverifiedAck', { who: s.unverified_ack_by || '—', time: formatTime(s.unverified_ack_at, tz) })}
+                    </p>
+                  )}
                 </div>
                 {open ? (
                   <div className="flex items-center gap-3">

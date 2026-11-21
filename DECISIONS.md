@@ -607,3 +607,32 @@ The review queue (`/attendance?tab=review`, `reviewAttendance`) is admin/supervi
   alert has no recipient (`stageOps` logs a warning).
 - Checked by `TestUndeliveredSOSFailsOnlyWithItsOpsAlert` and by the model in
   `.claude/skills/sos-delivery` (`NoSilentLoss` now holds; `mutant-alert` is the old shape).
+
+### D-065 — A tablet SOS acknowledgement counts only with a verified PIN; without one it is noted and the alert stays open
+
+- Before: `POST /sos/:id/acknowledge` from a tablet needed only `X-Guard-ID` of a supervisor.
+  Whoever held the device token could close an alarm for everyone, with no trace of that.
+- Decided by the product owner (2026-11-22): do not refuse the unverified acknowledgement
+  (a supervisor who unlocked the tablet offline has no guard token), record it apart.
+- Verified guard token, or a web user: `acknowledged_by/at`, as before.
+- No verified guard token: `unverified_ack_by` (guard name) and `unverified_ack_at`
+  (migration 010). The site's tablets get `sos_ack` once and `GET /device/sos` stops
+  listing the alert. `acknowledged_at` stays NULL, so the web banner, the unacknowledged
+  counts and the `sos_unacknowledged` reminders continue until a verified or web
+  acknowledgement. The web SOS list shows who responded on the tablet.
+- Accepted limit: a holder of the device token can still quiet the tablets of that site.
+  They cannot quiet the web, push or e-mail/WhatsApp side.
+- After an unverified response the alert is closed from the web in practice: the tablets no
+  longer list it, so the app cannot offer a second, verified acknowledgement (the API would
+  accept one).
+- The acknowledgement carries no event time. One that was queued offline with a valid token
+  and synced after the token expired is recorded as unverified; the web then asks to confirm.
+- Tablet app: no change. Its "SOS acknowledged" message does not yet tell the two cases apart.
+
+### D-066 — client-readonly keeps receiving signed checkpoint QR codes
+
+- `GET /patrol/routes` returns valid signed QR payloads to `client-readonly` (audit 2026-11-21).
+- Decided by the product owner (2026-11-22): keep it. The codes are printed and stuck at the
+  checkpoints, so they are not secret from anyone on site; the client prints sheets too.
+- The protection of a scan is the tablet, the guard and the scan radius, not the secrecy of the code.
+

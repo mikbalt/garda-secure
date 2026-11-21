@@ -116,6 +116,7 @@ export const opsEn = {
   'ops.sos.waiting': 'Waiting {d}',
   'ops.sos.ackedBy': 'Acknowledged by {who}',
   'ops.sos.response': 'response {d}',
+  'ops.sos.unverifiedAck': '{who} responded on the tablet at {time}, PIN not verified. Confirm with the guard, then acknowledge here.',
   'ops.sos.allHandled': 'Every SOS has been acknowledged.',
   'ops.sos.emptyTitle': 'No SOS alerts',
   'ops.sos.emptyBody':
