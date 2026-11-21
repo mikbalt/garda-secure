@@ -163,6 +163,14 @@ function Today({ site }: { site: Site }) {
     queryFn: () => apiGet<DailyAttendance>('/attendance/daily', { site_id: site.id, date: today }),
     refetchInterval: 60_000,
   })
+  // A shift belongs to the day it starts on, so a night shift that is still
+  // running after midnight is in yesterday's list.
+  const yesterday = addDays(today, -1)
+  const dailyBefore = useQuery({
+    queryKey: ['attendance-daily', site.id, yesterday],
+    queryFn: () => apiGet<DailyAttendance>('/attendance/daily', { site_id: site.id, date: yesterday }),
+    refetchInterval: 60_000,
+  })
   const live = useQuery({
     queryKey: ['patrol-live', site.id],
     queryFn: () => apiGet<LivePatrol[]>('/patrol/live', { site_id: site.id }),
@@ -192,8 +200,11 @@ function Today({ site }: { site: Site }) {
   const now = Date.now()
 
   const onDuty = useMemo(
-    () => (daily.data?.rows ?? []).filter((r) => Date.parse(r.shift_start) <= now && now < Date.parse(r.shift_end)),
-    [daily.data, now]
+    () =>
+      [...(dailyBefore.data?.rows ?? []), ...(daily.data?.rows ?? [])].filter(
+        (r) => Date.parse(r.shift_start) <= now && now < Date.parse(r.shift_end)
+      ),
+    [dailyBefore.data, daily.data, now]
   )
 
   const actions: ActionItem[] = []

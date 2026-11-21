@@ -78,6 +78,9 @@ export function TemplatesTab({ site, canEdit, onNew, onEdit }: Props) {
       toast.success(t('sch.templateDeleted'))
       qc.invalidateQueries({ queryKey: ['shift-templates', site.id] })
       qc.invalidateQueries({ queryKey: ['shifts', site.id] })
+      // Later shifts of today are deleted too.
+      qc.invalidateQueries({ queryKey: ['attendance-daily', site.id] })
+      qc.invalidateQueries({ queryKey: ['dashboard', site.id] })
       setDeleting(null)
     },
   })

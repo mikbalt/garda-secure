@@ -18,14 +18,14 @@ import type { PushTestResult } from '../types/push'
  * the user's devices, which alerts to receive, and a test push.
  */
 export default function Notifications() {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const qc = useQueryClient()
   const toast = useToast()
   const onError = useErrorToast()
   const push = usePush()
 
   const test = useMutation({
-    mutationFn: async () => (await apiClient.post<PushTestResult>('/push/test')).data,
+    mutationFn: async () => (await apiClient.post<PushTestResult>('/push/test', { lang })).data,
     onSuccess: (r) => {
       const sent = r?.sent ?? 0
       const failed = r?.failed ?? 0

@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { ShieldAlert } from 'lucide-react'
 import { apiGet } from '../api/client'
+import { SOS_POLL_MS } from '../hooks/useActiveSos'
 import { RequireSite } from '../components/RequireSite'
 import { PageHeader } from '../components/ui/States'
 import { MaybeTabPanel, Tabs, type TabItem } from '../components/ui/Tabs'
@@ -18,11 +19,12 @@ type TabKey = 'incidents' | 'sos' | 'defects' | 'visitors'
 function IncidentsContent({ site }: { site: Site }) {
   const t = useT()
   const { can } = useAuth()
-  // Shares the cache entry polled by the SOS banner.
+  // The tab badge: polled like the SOS banner, so a new alert shows here too.
   const unack = useQuery({
     queryKey: ['sos', site.id, 'unack'],
     queryFn: () => apiGet<SosAlert[]>('/sos', { site_id: site.id, unack_only: true }),
     enabled: can('viewSos'),
+    refetchInterval: SOS_POLL_MS,
   })
   // Shares the dashboard summary (open incidents / defects counts).
   const summary = useQuery({
