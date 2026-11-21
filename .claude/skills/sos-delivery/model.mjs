@@ -7,7 +7,7 @@
  * for. If that code changes, change the action; see SKILL.md.
  *
  *   backend/internal/repository/notification_outbox.go   ClaimDelivery, MarkDelivery*
- *   backend/internal/notification/worker.go              deliver, RetryDelay, alertSOSUndelivered
+ *   backend/internal/notification/worker.go              deliver, RetryDelay, pgStore.MarkFailed, sosUndelivered
  *
  * Row fields:     status (queued|sent|failed), attempts, due (next_attempt_at <= now),
  *                 leased (locked_until >= now)
@@ -19,8 +19,8 @@
  * @param {object} cfg
  * @param {string[]} cfg.workers        dispatch goroutines, on any number of replicas
  * @param {number}  cfg.maxAttempts     stands for sosMaxAttempts (33 in the code)
- * @param {boolean} cfg.alertInFailTx   the ops alert is staged in the statement/transaction of MarkDeliveryFailed.
- *                                      false = the code today (worker.go: MarkFailed, then alertSOSUndelivered).
+ * @param {boolean} cfg.alertInFailTx   the ops alert is staged in the transaction of MarkDeliveryFailed.
+ *                                      true = the code today (worker.go: pgStore.MarkFailed runs both in one pgx.BeginFunc).
  * @param {boolean} cfg.stallBeyondLease a live worker can still be inside deliver() after its lease ran out.
  *                                      false = the code's premise: leaseFor > sendTimeout + dbTimeout.
  * @param {'none'|'mark_sent_on_error'} cfg.bug   a deliberately broken variant, to show a property can fail
@@ -81,17 +81,19 @@ export function makeModel(cfg) {
           add(`${w}: MarkDeliveryRetry (next attempt later)`, at(s, w, 'idle', { attempts: s.attempts + 1, due: false, leased: false }))
           add(`${w}: MarkDeliveryRetry fails (database error, logged); deliver returns`, at(s, w, 'idle'))
         } else if (cfg.alertInFailTx) {
+          // pgStore.MarkFailed: MarkDeliveryFailed and Notifier.Stage(ops_sos_undelivered) in one
+          // transaction. On an error deliver returns; the row stays queued and leased.
           add(`${w}: MarkDeliveryFailed and the ops alert commit together`, at(s, w, 'idle', { status: 'failed', attempts: s.attempts + 1, leased: false, opsAlert: true }))
           add(`${w}: MarkDeliveryFailed with the ops alert fails (database error); deliver returns`, at(s, w, 'idle'))
         } else {
-          // MarkDeliveryFailed: status='failed', attempts+1, locked_until=NULL. deliver goes on to
-          // alertSOSUndelivered whether or not this UPDATE worked.
+          // The broken variant (the code before D-064): MarkDeliveryFailed, then the ops alert in a
+          // second transaction, attempted whether or not the first UPDATE worked.
           add(`${w}: MarkDeliveryFailed (the delivery gives up)`, at(s, w, 'alerting', { status: 'failed', attempts: s.attempts + 1, leased: false }))
           add(`${w}: MarkDeliveryFailed fails (database error, logged)`, at(s, w, 'alerting'))
         }
       }
 
-      // alertSOSUndelivered: Notifier.Publish(ops_sos_undelivered) in its own transaction.
+      // Only in the broken variant: the ops alert in its own transaction.
       if (pc === 'alerting') {
         add(`${w}: alertSOSUndelivered stages the ops alert`, at(s, w, 'idle', { opsAlert: true }))
         add(`${w}: alertSOSUndelivered fails (Publish error, logged only)`, at(s, w, 'idle'))

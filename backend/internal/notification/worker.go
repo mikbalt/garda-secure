@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
@@ -215,7 +216,7 @@ func (w *Worker) deliver(d *repository.Delivery) {
 	if isPush && (errors.Is(sendErr, push.ErrGone) || errors.Is(sendErr, push.ErrDisabled)) {
 		// The subscription/token is gone (already removed) or push was
 		// switched off: retrying cannot help.
-		if err := w.store.MarkFailed(ctx, d.ID, msg); err != nil {
+		if err := w.store.MarkFailed(ctx, d.ID, msg, nil); err != nil {
 			log.Error().Err(err).Msg("mark failed failed")
 		}
 		w.count(d, isPush, metrics.ResultGone)
@@ -234,8 +235,20 @@ func (w *Worker) deliver(d *repository.Delivery) {
 		return
 	}
 
-	if err := w.store.MarkFailed(ctx, d.ID, msg); err != nil {
-		log.Error().Err(err).Msg("mark failed failed")
+	// An SOS that gives up tells the ops recipients, in the transaction that
+	// records the failure: a failed SOS without its ops alert would never be
+	// claimed again, so nobody would learn the alarm did not go out.
+	var staged Staged
+	var alert func(repository.DBTX) error
+	if !isPush && d.EventType == EventSOS && w.notifier != nil {
+		alert = func(db repository.DBTX) (err error) {
+			staged, err = w.notifier.Stage(ctx, db, sosUndelivered(d, msg))
+			return err
+		}
+	}
+	if err := w.store.MarkFailed(ctx, d.ID, msg, alert); err != nil {
+		log.Error().Err(err).Msg("mark failed failed (attempted again after the lease)")
+		return
 	}
 	w.count(d, isPush, metrics.ResultFailed)
 	log.Error().Str("error", msg).Msg("delivery failed permanently")
@@ -243,8 +256,8 @@ func (w *Worker) deliver(d *repository.Delivery) {
 		return // best effort: never an ops alert or a NotificationsFailing page
 	}
 	metrics.NotificationsFailed.WithLabelValues(d.EventType).Inc()
-	if d.EventType == EventSOS {
-		w.alertSOSUndelivered(ctx, d, msg)
+	if alert != nil {
+		w.notifier.Wake(ctx, staged)
 	}
 }
 
@@ -258,20 +271,14 @@ func (w *Worker) count(d *repository.Delivery, isPush bool, result string) {
 	metrics.Notifications.WithLabelValues(d.Channel, d.EventType, result).Inc()
 }
 
-// alertSOSUndelivered tells the ops recipients that an SOS delivery gave up.
-func (w *Worker) alertSOSUndelivered(ctx context.Context, d *repository.Delivery, reason string) {
-	if w.notifier == nil {
-		return
-	}
-	_, err := w.notifier.Publish(ctx, Event{
+// sosUndelivered is the ops alert for an SOS delivery that gave up.
+func sosUndelivered(d *repository.Delivery, reason string) Event {
+	return Event{
 		Type: EventOpsSOSUndelivered, DedupeKey: "ops:sos_failed:" + d.ID,
 		Subject: "[OPS] SOS tidak terkirim / not delivered: " + d.Subject,
 		Body: "Pengiriman ke / delivery to " + d.Channel + " " + d.Recipient + " gagal / gave up after " +
 			strconv.Itoa(d.Attempts+1) + " attempts: " + reason +
 			"\n\nHubungi lokasi secara langsung / contact the site directly.\n\n---\n" + d.Body,
-	})
-	if err != nil {
-		w.log.Error().Err(err).Str("id", d.ID).Msg("could not raise ops alert for undelivered SOS")
 	}
 }
 
@@ -299,7 +306,9 @@ type deliveryStore interface {
 	Claim(ctx context.Context, lane string, lease time.Duration) (*repository.Delivery, error)
 	MarkSent(ctx context.Context, id string) error
 	MarkRetry(ctx context.Context, id, msg string, next time.Time) error
-	MarkFailed(ctx context.Context, id, msg string) error
+	// MarkFailed records the give-up. also, when not nil, runs in the same
+	// transaction: both commit or neither does.
+	MarkFailed(ctx context.Context, id, msg string, also func(repository.DBTX) error) error
 }
 
 type pgStore struct{ db *pgxpool.Pool }
@@ -313,8 +322,16 @@ func (s pgStore) MarkSent(ctx context.Context, id string) error {
 func (s pgStore) MarkRetry(ctx context.Context, id, msg string, next time.Time) error {
 	return repository.MarkDeliveryRetry(ctx, s.db, id, msg, next)
 }
-func (s pgStore) MarkFailed(ctx context.Context, id, msg string) error {
-	return repository.MarkDeliveryFailed(ctx, s.db, id, msg)
+func (s pgStore) MarkFailed(ctx context.Context, id, msg string, also func(repository.DBTX) error) error {
+	if also == nil {
+		return repository.MarkDeliveryFailed(ctx, s.db, id, msg)
+	}
+	return pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+		if err := repository.MarkDeliveryFailed(ctx, tx, id, msg); err != nil {
+			return err
+		}
+		return also(tx)
+	})
 }
 
 // ── Wake-ups ─────────────────────────────────────────────────────────────────

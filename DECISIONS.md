@@ -592,3 +592,18 @@ The review queue (`/attendance?tab=review`, `reviewAttendance`) is admin/supervi
 - Open finding F1 from that check: `MarkDeliveryFailed` and the `ops_sos_undelivered`
   alert are two transactions, so an SOS delivery can end `failed` with no ops alert
   (Publish error, or the process dies in between). Not fixed here; tracked in PROGRESS.md.
+
+### D-064 — An SOS delivery gives up in one transaction with its ops alert (closes finding F1 of D-063)
+
+- `Worker.deliver` used to run `MarkDeliveryFailed` and then publish `ops_sos_undelivered`
+  in a second transaction. A publish error, or a process death in between, left the SOS
+  delivery `failed` with no ops alert, and nothing claimed it again.
+- Now the store's `MarkFailed(ctx, id, msg, also)` runs the status change and
+  `Notifier.Stage` of the ops alert in one transaction. When it fails the row stays
+  queued and leased, and the last attempt is made again after the lease.
+- A failed `MarkFailed` no longer counts as a failed delivery in the metrics (it is
+  counted when it commits).
+- Still configuration, not code: with no ops alert rule for `ops_sos_undelivered` the
+  alert has no recipient (`stageOps` logs a warning).
+- Checked by `TestUndeliveredSOSFailsOnlyWithItsOpsAlert` and by the model in
+  `.claude/skills/sos-delivery` (`NoSilentLoss` now holds; `mutant-alert` is the old shape).

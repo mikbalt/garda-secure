@@ -1,5 +1,5 @@
 {
-  "syncCommit": "77a1e9927f9476f3a98de0f0faa5fd5d4aeb0525",
+  "syncCommit": "12f2784a72e3d7ac3a45847a9e6ffa5681f71209",
   "files": [
     {
       "path": "backend/internal/repository/notification_outbox.go",
@@ -17,13 +17,14 @@
         "RetryDelay",
         "Worker.claimAndSend",
         "Worker.deliver",
-        "Worker.alertSOSUndelivered",
+        "pgStore.MarkFailed",
+        "sosUndelivered",
         "sendTimeout",
         "leaseFor",
         "dbTimeout",
         "sosMaxAttempts"
       ],
-      "sha256": "5bf45d248af318915ad0d40e532f5858b17df2f185cf2f965486404d306f113d"
+      "sha256": "733333a33ffc3a186a418f027af42ecdc985eef79fb17ad16203b0a5f914d46b"
     }
   ]
 }

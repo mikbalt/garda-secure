@@ -84,13 +84,12 @@ function check(cfg, propName) {
 
 const facts = codeFacts()
 const bounds = { workers: ['w1', 'w2', 'w3'], maxAttempts: 3 }
-/** The code as it is today. Change these two knobs when the code changes (SKILL.md). */
-const code = { ...bounds, alertInFailTx: false, stallBeyondLease: !facts.leaseOutlivesWork, bug: 'none' }
+/** The code as it is today. Change these knobs when the code changes (SKILL.md). */
+const code = { ...bounds, alertInFailTx: true, stallBeyondLease: !facts.leaseOutlivesWork, bug: 'none' }
 
 const scenarios = [
-  { name: 'code', what: 'the code as it is', cfg: code, props: ['SentMeansSent', 'OneSenderAtATime', 'TerminalIsStable'], expect: 'hold' },
-  { name: 'finding-F1', what: 'the code as it is (known finding F1)', cfg: code, props: ['NoSilentLoss'], expect: 'break' },
-  { name: 'fix-F1', what: 'ops alert staged together with MarkDeliveryFailed', cfg: { ...code, alertInFailTx: true }, props: Object.keys(properties), expect: 'hold' },
+  { name: 'code', what: 'the code as it is', cfg: code, props: Object.keys(properties), expect: 'hold' },
+  { name: 'mutant-alert', what: 'broken on purpose: ops alert staged after MarkDeliveryFailed, in its own transaction', cfg: { ...code, alertInFailTx: false }, props: ['NoSilentLoss'], expect: 'break' },
   { name: 'mutant-lease', what: 'broken on purpose: lease shorter than a send', cfg: { ...code, stallBeyondLease: true }, props: ['OneSenderAtATime', 'TerminalIsStable'], expect: 'break' },
   { name: 'mutant-mark', what: 'broken on purpose: MarkDeliverySent after a failed send', cfg: { ...code, bug: 'mark_sent_on_error' }, props: ['SentMeansSent'], expect: 'break' },
 ]
@@ -124,8 +123,8 @@ for (const sc of scenarios) {
     if (!asExpected) mismatches++
     const verdict = r.ok ? `holds in all ${r.states} states` : `BROKEN after ${r.trace.length} steps`
     console.log(`${asExpected ? 'as expected' : 'UNEXPECTED '}  ${sc.name.padEnd(13)} ${p.padEnd(17)} ${verdict}   [${sc.what}]`)
-    // Show a trace when the real code breaks a property, or when an outcome is a surprise.
-    const show = !r.ok && (!asExpected || sc.name === 'finding-F1')
+    // Show a trace when an outcome is a surprise.
+    const show = !r.ok && !asExpected
     if (!asExpected && r.ok) console.log(`      expected this to break: the property can no longer fail here, so it no longer guards "${sc.what}"`)
     if (show) {
       console.log(`      promise: ${properties[p].promise}`)
@@ -152,4 +151,4 @@ if (changed.length) {
   console.log('RESULT: outcomes are as expected, but they describe the code as it was. Not a pass until the drift is reviewed.')
   process.exit(2)
 }
-console.log('RESULT: as expected. Three properties hold; finding F1 (NoSilentLoss) is still open.')
+console.log('RESULT: as expected. All four properties hold on the code as modelled.')

@@ -1,6 +1,6 @@
 ---
 name: sos-delivery
-description: Formal check of GARDA's SOS notification delivery - the notification_log outbox row, its lease, retries, give-up and the ops alert (backend/internal/notification/worker.go, backend/internal/repository/notification_outbox.go). Explores every order of worker steps, crashes and database errors in a small model. Use before and after any change to ClaimDelivery, MarkDeliverySent/Retry/Failed, Worker.deliver, RetryDelay, alertSOSUndelivered, or the constants sendTimeout, leaseFor, dbTimeout, sosMaxAttempts; and when asked whether an SOS can be lost, sent twice or stuck.
+description: Formal check of GARDA's SOS notification delivery - the notification_log outbox row, its lease, retries, give-up and the ops alert (backend/internal/notification/worker.go, backend/internal/repository/notification_outbox.go). Explores every order of worker steps, crashes and database errors in a small model. Use before and after any change to ClaimDelivery, MarkDeliverySent/Retry/Failed, Worker.deliver, pgStore.MarkFailed, RetryDelay, or the constants sendTimeout, leaseFor, dbTimeout, sosMaxAttempts; and when asked whether an SOS can be lost, sent twice or stuck.
 ---
 
 # SOS delivery: formal check
@@ -33,7 +33,7 @@ Yes if the diff touches any of these (also listed in [coverage.json](coverage.js
 | File | Covered |
 |---|---|
 | `backend/internal/repository/notification_outbox.go` | `ClaimDelivery`, `MarkDeliverySent`, `MarkDeliveryRetry`, `MarkDeliveryFailed` |
-| `backend/internal/notification/worker.go` | `RetryDelay`, `Worker.claimAndSend`, `Worker.deliver`, `Worker.alertSOSUndelivered`, constants `sendTimeout`, `leaseFor`, `dbTimeout`, `sosMaxAttempts` |
+| `backend/internal/notification/worker.go` | `RetryDelay`, `Worker.claimAndSend`, `Worker.deliver`, `pgStore.MarkFailed`, `sosUndelivered`, constants `sendTimeout`, `leaseFor`, `dbTimeout`, `sosMaxAttempts` |
 
 `check.mjs` hashes both files and reports `DRIFT` when either differs from the
 reviewed version. A change elsewhere in those files (gauges, wake-ups,
@@ -50,32 +50,27 @@ code that writes those columns.
 | `SentMeansSent` | A delivery is recorded as sent only after a channel really accepted the message. | The dashboard shows an SOS as delivered while nobody was told, and nothing retries it. | holds |
 | `OneSenderAtATime` | While one worker is sending a delivery, no other worker sends the same one. | Duplicate SOS messages, and two workers write conflicting outcomes. | holds |
 | `TerminalIsStable` | Once a delivery is sent or failed, no worker changes that outcome. | A delivered SOS flips to failed, or a failed one to sent. | holds |
-| `NoSilentLoss` | An SOS delivery that gives up always leaves an ops alert (or was in fact delivered). | Every attempt fails and no person is ever told the alarm did not go out. | **broken: finding F1** |
+| `NoSilentLoss` | An SOS delivery that gives up always leaves an ops alert (or was in fact delivered). | Every attempt fails and no person is ever told the alarm did not go out. | holds (since D-064) |
 
-### Finding F1 (open)
+### Finding F1 (fixed, D-064)
 
-`Worker.deliver` runs `MarkDeliveryFailed` and then `alertSOSUndelivered` as two
-separate database transactions (`worker.go`, the end of `deliver`). Between them:
+Until D-064 `Worker.deliver` ran `MarkDeliveryFailed` and then the ops alert as
+two transactions. When the alert failed, or the process died in between, the
+delivery ended `failed` with no `ops_sos_undelivered` alert and nothing claimed
+it again. Now `pgStore.MarkFailed` commits both in one transaction; when it
+fails the row stays queued and is attempted again after the lease. Scenario
+`mutant-alert` keeps the old shape alive as a broken variant, so the check still
+shows that `NoSilentLoss` can fail. The integration test
+`TestUndeliveredSOSFailsOnlyWithItsOpsAlert` covers the same thing on real SQL.
 
-1. All attempts of an SOS delivery fail; `MarkDeliveryFailed` commits `status = 'failed'`.
-2. `alertSOSUndelivered` fails (its `Notifier.Publish` returns an error, which is only logged), or the worker process dies before it runs.
-3. The row is `failed`, so no worker claims it again. No `ops_sos_undelivered` alert exists.
-
-What still catches it today: `sp_notifications_failed_total` is incremented
-before the alert, so the Prometheus rule in `infra/prometheus/alerts.yml` fires
-when the monitoring stack is deployed and scrapes before the process dies. With
-a hard kill in that window there is nothing.
-
-Scenario `fix-F1` shows one shape that closes it: stage the ops alert in the
-same transaction as `MarkDeliveryFailed`. All four properties hold there. This
-skill reports the finding; changing the product code is a separate decision.
-
+The alert is only staged when ops alert rules exist. With none configured,
+`stageOps` logs a warning and the failure is silent again: that is
+configuration, outside this model.
 ## What is checked, and what is not
 
 Checked, exhaustively: one SOS delivery on a rule channel (e-mail or WhatsApp),
 three workers, giving up at attempt 3. Every step is one SQL statement or one
-send outcome. Any worker can die at any step. Any `Mark*` and the ops-alert
-publish can fail with a database error. The lease and the retry delay can run
+send outcome. Any worker can die at any step. Any `Mark*` (the give-up with its ops alert included) can fail with a database error. The lease and the retry delay can run
 out at any allowed moment.
 
 Assumed, and read from the code on every run: a live worker finishes before its
@@ -106,9 +101,8 @@ Retell it to the user as those steps; they do not need the model.
 
 | Scenario | Models | Expected |
 |---|---|---|
-| `code` | the code as it is | three properties hold |
-| `finding-F1` | the code as it is | `NoSilentLoss` breaks (F1) |
-| `fix-F1` | ops alert staged with `MarkDeliveryFailed` | all four hold |
+| `code` | the code as it is | all four properties hold |
+| `mutant-alert` | broken on purpose: ops alert staged after `MarkDeliveryFailed`, in its own transaction | `NoSilentLoss` breaks |
 | `mutant-lease` | broken on purpose: a lease shorter than a send | `OneSenderAtATime`, `TerminalIsStable` break |
 | `mutant-mark` | broken on purpose: `MarkDeliverySent` after a failed send | `SentMeansSent` breaks |
 
@@ -134,7 +128,7 @@ removing `the worker process dies` or a `fails (database error)` step.
 2. Map it to the model:
    - A changed `WHERE` or `SET` in `ClaimDelivery` or a `Mark*`: change the guard or the effect of that action in `steps()`.
    - A reordered or new step in `deliver`: change the `pc` flow. Two database calls that are now one transaction become one action; one that was split becomes two.
-   - `alertSOSUndelivered` now commits with `MarkDeliveryFailed` (F1 fixed): set `alertInFailTx: true` in `code` in `check.mjs`, move `NoSilentLoss` into the `code` scenario's `props`, delete the `finding-F1` and `fix-F1` scenarios, and update the F1 section and the table above.
+   - The ops alert leaves the transaction of `MarkDeliveryFailed` (`pgStore.MarkFailed`): set `alertInFailTx: false` in `code` in `check.mjs`. `NoSilentLoss` then breaks, which is the real result.
    - A changed timeout or `sosMaxAttempts`: nothing to edit, the run reads them.
    - A change outside the covered functions: no model change.
 3. Run the check. Resolve any exit 1 as in "Real bug or modelling error".
@@ -148,7 +142,7 @@ That writes the file hashes and the current commit (`syncCommit`) into
 `coverage.json`. Commit `coverage.json` with the code change. Do not run
 `--accept` to silence `DRIFT` without doing steps 1 to 3.
 
-Last confirmed against the code: commit `77a1e99` (see `coverage.json`).
+The commit the model was last confirmed against is `syncCommit` in `coverage.json`.
 
 ## Files
 

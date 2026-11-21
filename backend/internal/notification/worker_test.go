@@ -123,7 +123,7 @@ func (s *fakeStore) MarkRetry(_ context.Context, id, _ string, next time.Time) e
 	return nil
 }
 
-func (s *fakeStore) MarkFailed(_ context.Context, id, msg string) error {
+func (s *fakeStore) MarkFailed(_ context.Context, id, msg string, _ func(repository.DBTX) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.failed[id] = msg
