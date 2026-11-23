@@ -501,6 +501,50 @@ WhatsApp Business Cloud API only delivers business-initiated messages through an
 **approved template**. Create one in Meta Business Manager with a single body
 variable, e.g. `GARDA: {{1}}`, and set its name/language in Settings.
 
+### Live delivery test checklist (TAQ-7)
+
+The code paths are proven by a dry run: `go test ./internal/notification -run DryRun`
+(no Docker, no credentials) drives the real e-mail and WhatsApp channels, all
+templates in both languages, SMTP/WhatsApp failure answers and the worker's
+retry/give-up schedule against an in-process SMTP catcher and a fake WhatsApp
+Cloud API. What it cannot prove is that *your* accounts accept the messages.
+Before go-live, an operator supplies the following and runs the test once.
+
+**E-mail**
+- [ ] SMTP relay host, port (25, 465, 587 or 2525), user and password, and a
+      `From` address the relay allows (SPF/DKIM set up for its domain).
+- [ ] Set in `.env` (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`,
+      `SMTP_FROM`) or in *Settings → Channels*. A relay on a private network also
+      needs `SMTP_ALLOWED_PRIVATE_NETS`.
+- [ ] A real mailbox to receive the test.
+
+**WhatsApp Business Cloud API**
+- [ ] Meta Business account with a verified WhatsApp Business number: its
+      **phone number ID** and a permanent system-user **access token**.
+- [ ] An **approved** message template with exactly one body variable (e.g.
+      `GARDA: {{1}}`), its name and language code (`WHATSAPP_TEMPLATE_NAME`,
+      `WHATSAPP_TEMPLATE_LANG`). Without a template only free-text messages
+      are sent, which Meta delivers only inside a 24 h customer-service window.
+- [ ] `WHATSAPP_API_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` (and `WHATSAPP_API_URL`
+      if not `https://graph.facebook.com/v18.0`) in `.env`, or *Settings → Channels*.
+      A non-Meta gateway needs `WHATSAPP_API_URL_ALLOWLIST`.
+- [ ] A test recipient phone that is allowed to receive (in Meta's sandbox it
+      must be on the allowed-recipient list).
+
+**Run**
+1. *Settings → Channels → Send test* for e-mail and WhatsApp. Expected: message
+   arrives with the GARDA subject and text. A failure shows `reason`
+   (`auth_failed`, `rejected`, `destination_not_allowed`, …); details are in the API log.
+2. Fire a test SOS from a tablet at a site that has an e-mail **and** a WhatsApp
+   rule; both must arrive and the *Notification log* rows must turn `sent`.
+3. Break one channel on purpose (wrong password) and confirm the row retries
+   (SOS: 10 s, 20 s, 30 s, then every minute) and that an `ops_sos_undelivered`
+   alert reaches the ops recipients when it gives up.
+4. Check the e-mail renders in the target clients (Indonesian characters in the
+   subject) and the WhatsApp text is not truncated.
+
+Never paste real tokens or passwords into tickets, PRs or chat.
+
 *Settings → Notification rules*: per site, which events go to which e-mail/phone.
 *Settings → Notification log*: failed deliveries show the error and can be retried
 (one more attempt).
