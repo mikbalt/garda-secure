@@ -10,6 +10,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
+	"github.com/valyala/fasthttp"
 )
 
 func TestFiberRecordsRoutePatternAndFinalStatus(t *testing.T) {
@@ -87,4 +88,43 @@ func counterValue(c prometheus.Counter) float64 {
 		return -1
 	}
 	return m.GetCounter().GetValue()
+}
+
+// The method label must not alias fasthttp's reusable request buffer: after
+// the connection serves a second request the stored series would show the
+// new method and a scrape fails with a duplicate-series error (found in the
+// TAQ-13 load test: GET /metrics answered 500 once tablets posted records).
+func TestFiberMethodLabelIsACopy(t *testing.T) {
+	app := fiber.New()
+	app.Use(Fiber())
+	app.Post("/api/v1/aliasing/", func(c *fiber.Ctx) error { return c.SendStatus(201) })
+	ctx := &fasthttp.RequestCtx{}
+	ctx.Request.Header.SetMethod("POST")
+	ctx.Request.SetRequestURI("/api/v1/aliasing/")
+	app.Handler()(ctx)
+	ctx.Request.Header.SetMethod("GET") // reuses the same bytes, like the next request on the connection
+
+	ch := make(chan prometheus.Metric, 100)
+	HTTPRequests.Collect(ch)
+	close(ch)
+	found := false
+	for m := range ch {
+		var d dto.Metric
+		if err := m.Write(&d); err != nil {
+			t.Fatal(err)
+		}
+		labels := map[string]string{}
+		for _, l := range d.GetLabel() {
+			labels[l.GetName()] = l.GetValue()
+		}
+		if labels["route"] == "/api/v1/aliasing/" {
+			found = true
+			if labels["method"] != "POST" {
+				t.Errorf("method label = %q, want POST (aliases the request buffer)", labels["method"])
+			}
+		}
+	}
+	if !found {
+		t.Fatal("series not recorded")
+	}
 }

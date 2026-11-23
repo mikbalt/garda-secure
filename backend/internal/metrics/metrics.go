@@ -9,6 +9,7 @@ package metrics
 
 import (
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -161,7 +162,11 @@ func Fiber() fiber.Handler {
 		if r := c.Route(); r != nil && r.Path != "" {
 			route = r.Path
 		}
-		method := c.Method()
+		// c.Method() is a view into fasthttp's request buffer, which the next
+		// request on the connection overwrites; a label value must be a copy
+		// or the stored series keep changing and /metrics fails with
+		// "collected before with the same name and label values".
+		method := strings.Clone(c.Method())
 		HTTPRequests.WithLabelValues(method, route, strconv.Itoa(c.Response().StatusCode())).Inc()
 		HTTPDuration.WithLabelValues(method, route).Observe(time.Since(start).Seconds())
 		return err
