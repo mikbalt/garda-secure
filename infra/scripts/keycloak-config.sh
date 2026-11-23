@@ -209,7 +209,11 @@ configure_admin_client() { # realm — confidential client for the API's user ma
   mkdir -p "$SECRETS_DIR" && chmod 700 "$SECRETS_DIR"
   tmp=$(mktemp "$SECRETS_DIR/.kc-admin.XXXXXX")
   { [ -f "$SECRETS_FILE" ] && grep -v "^$r=" "$SECRETS_FILE" || true; printf '%s=%s\n' "$r" "$secret"; } > "$tmp"
-  chmod 644 "$tmp" && mv "$tmp" "$SECRETS_FILE"
+  # Overwrite in place (same inode): the API container bind-mounts this single
+  # file, and a rename would leave it reading the old (empty) copy until the
+  # container is recreated (fresh install: every /users and /device-accounts
+  # call answered 503 kc_unavailable after the first `make up`).
+  chmod 644 "$tmp" && cat "$tmp" > "$SECRETS_FILE" && rm -f "$tmp"
   info "  $ADMIN_CLIENT: service account roles set, secret stored in secrets/keycloak-admin-clients"
 }
 
