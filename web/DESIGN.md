@@ -69,15 +69,47 @@ logout dialog.
 
 ## Visual tokens
 
-- Neutral scale: `gray-*` (mapped to slate). Page background `gray-50`, cards white
-  with `border-gray-200/80 shadow-card rounded-2xl`.
-- **Text contrast on white/gray-50:** body `text-gray-600`+ , meta/hints
-  `text-gray-500` (4.8:1) at least. `text-gray-400`/`300` only for decorative
-  icons (`aria-hidden`), disabled controls, or on the dark shell (`ink-*`),
-  where `text-gray-300/400` are the readable greys. Coloured text on tinted
-  backgrounds uses the `-700`/`-800` shade (e.g. `text-amber-800` on
-  `bg-amber-50`).
-- Brand: product name **GARDA** (all caps, `app.name`; no tagline). Primary `primary-*` (blue). Shell: `ink-*` (navy).
+Direction: **Buku Jaga** (the guard's logbook, TAQ-42): warm paper, ink-black
+actions, mono for evidence, **no gradients**, muted status colours. Tokens are
+CSS variables ("R G B" channels, so `/80` opacity works) in `src/index.css`:
+`:root` is light, `.dark` on `<html>` is dark (no toggle yet). Tailwind reads
+them in `tailwind.config.ts`; `src/lib/tokens.test.ts` enforces the table below.
+
+- Neutral scale: `gray-*` (warm paper to ink; flips in dark). Page background
+  `gray-50` (paper), cards `bg-white` + `border-gray-200` + `shadow-card` (none:
+  flat, 1px border; shadows only for `raised`/`overlay`). Semantic names also
+  exist: `paper`, `surface`, `action-fg`, and status pairs `text-ok bg-ok-bg`
+  (`ok`, `warn`, `overdue`, `danger`) plus `bg-sos text-sos-fg`. Keep dot + word:
+  colour is never the only signal.
+- Action: `primary-*` is the ink scale; `primary-600` is the button (white text in
+  light; in dark it becomes the paper button, so use `text-action-fg`, not
+  `text-white`, on new buttons). Focus ring: 2px ink + 2px offset (global
+  `:focus-visible`). Shell: `ink-*` (always dark).
+- Radius: 6 px (`rounded-md`/`lg`: inputs, chips), 10 px (`rounded-xl`/`2xl`: cards).
+- **Text contrast on the page:** body `text-gray-600`+, meta/hints `text-gray-500`
+  (5.7:1) at least. `text-gray-400`/`300` only for decorative icons
+  (`aria-hidden`), disabled controls, or on the dark shell (`ink-*`). Coloured
+  text on tinted backgrounds uses the status pair, not a raw palette colour.
+
+| Pair (fg on bg) | Light | Ratio | Dark | Ratio |
+|---|---|---|---|---|
+| `text` on `paper` | #15181E on #F5F2EA | 15.9 | #ECE9E1 on #0E1116 | 15.6 |
+| `text` on `surface` | #15181E on #FFFDF8 | 17.5 | #ECE9E1 on #161A21 | 14.4 |
+| `muted` on `paper` (= `gray-500` on `gray-50`) | #5B6068 on #F5F2EA | 5.7 | #9AA0AA on #0E1116 | 7.2 |
+| `muted` on `surface` | #5B6068 on #FFFDF8 | 6.2 | #9AA0AA on #161A21 | 6.6 |
+| `action-fg` on `action` | #FFFFFF on #1B2A4A | 14.2 | #0E1116 on #ECE9E1 | 15.6 |
+| `ok` on `ok-bg` | #1E6B4A on #E4F0E8 | 5.5 | #5FC59A on #14281F | 7.3 |
+| `warn` on `warn-bg` | #7A4F00 on #F6E7C1 | 5.8 | #E2B24A on #2E2410 | 7.8 |
+| `overdue` on `overdue-bg` | #9A3D0C on #F9E4D6 | 5.6 | #F08A4B on #301D10 | 6.4 |
+| `danger` on `danger-bg` | #A4191F on #F8DDDC | 6.0 | #FF7B7B on #321517 | 6.7 |
+| `sos-fg` on `sos` | #FFFFFF on #C01B2C | 6.1 | #FFFFFF on #D6293B | 5.0 |
+| `border-strong` on `paper` (non-text, 3:1) | #8F8A7C on #F5F2EA | 3.1 | #7C828D on #0E1116 | 4.9 |
+| `focus` on `paper` (non-text, 3:1) | #1B2A4A on #F5F2EA | 12.7 | #ECE9E1 on #0E1116 | 15.6 |
+
+Known gaps for later revamp tasks: `bg-white` and `text-white` are not themed
+yet (dark mode needs components moved to `surface`/`action-fg`); fonts
+(IBM Plex) and the brand mark are separate tasks.
+- Brand: product name **GARDA** (all caps, `app.name`; no tagline).
 - App mark: `<BrandMark>` (`components/BrandMark.tsx`) renders `public/favicon.svg`, a copy of
   `branding/icon.svg` — never draw the logo by hand; replace the icon via `branding/generate.sh`.
 - Type: Inter. Page title `text-2xl font-semibold tracking-tight`; card title
