@@ -636,3 +636,12 @@ The review queue (`/attendance?tab=review`, `reviewAttendance`) is admin/supervi
   checkpoints, so they are not secret from anyone on site; the client prints sheets too.
 - The protection of a scan is the tablet, the guard and the scan radius, not the secrecy of the code.
 
+
+### D-067 — Public certificates through `scripts/acme.sh` (certbot webroot), kept next to the private CA
+
+- Convention change (TAQ-10): `make acme-issue` / `make acme-renew` (`infra/scripts/acme.sh`) obtain and renew a
+  Let's Encrypt certificate with certbot in a container, validate it with the preflight rules, install it as
+  `nginx/certs/cert.pem` + `key.pem` and reload nginx. The private CA flow (`make certs`) stays the default.
+- `docker-compose.app.yml` mounts `infra/acme/webroot` into nginx at `/var/www/certbot` (the `:80`
+  challenge location already existed); ACME state in `infra/acme/config` is git-ignored.
+- Tested against a local Pebble ACME server only; a real Let's Encrypt issue needs a public hostname (open item in the runbook §6).
