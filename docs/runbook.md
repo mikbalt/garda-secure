@@ -309,6 +309,52 @@ first (§5 restore drill on a spare machine with a production dump), then:
 
    Password changes, OTP enrolments, new users and sessions since the upgrade are lost.
 
+#### Rehearsal on a copy (24 → 26) — done 2026-11-23 (TAQ-11)
+
+Never rehearse on the production stack. Use a scratch copy of `infra/` with its own
+Compose project, subnet and no fixed host ports, so it cannot touch the running stack:
+
+```bash
+cp -R infra /tmp/kc-rehearsal && cd /tmp/kc-rehearsal && rm -rf .env backups secrets nginx/certs
+sh scripts/gen-env.sh kc-rehearsal.test         # fresh secrets: never reuse production's
+# .env: COMPOSE_PROJECT_NAME=kcrehearse  SP_DOCKER_SUBNET=172.29.77.0/24
+#       COMPOSE_FILE=docker-compose.yml:docker-compose.rehearsal.yml
+# docker-compose.rehearsal.yml: postgres/nginx `ports: !override []`, keycloak `127.0.0.1:18081:8080`
+docker compose up -d postgres keycloak   # (phase 1: image quay.io/keycloak/keycloak:24.0.5 + the 24 env, see git show 3eef4ac^:infra/docker-compose.yml)
+# restore the production keycloak dump into it:  RESTORE_FRESH=1 RESTORE_CONFIRM=keycloak sh scripts/restore-db.sh keycloak <dump>
+sh scripts/backup-db.sh pre-kc26                # the rollback point
+# switch to the pinned 26 image, `docker compose up -d keycloak`, then `sh scripts/keycloak-config.sh`
+docker compose down -v                          # tear down: no scratch container or volume may remain
+```
+
+A dump of the real installation is the best input; it only exists as a 24 database
+before the upgrade (the production stack was already moved to 26.8, so the rehearsal
+used the two realm files in `infra/keycloak/realms` imported into a real Keycloak 24.0.5,
+plus users with password and OTP, an offline tablet session; 7 users in 3 realms).
+Compare before/after with SQL on `realm`, `user_entity`, `credential`, `offline_user_session`.
+
+Result: the 24.0.5 database booted on 26.8.0 (Compose healthy 17 s after start; tiny database
+— expect longer with many sessions); the log shows the model migrations 25.0.0, 26.0.0, 26.1.0 … for all
+realms and no errors. Unchanged: 3 realms, 24 clients, users per realm, 9 credentials (the
+`password` and `otp` rows are byte-identical: same md5 over id/user/type/secret/credential data),
+the offline session; an offline refresh token issued **before** the upgrade still refreshed
+on 26.8; an OTP code validated for the migrated TOTP user (and again on 24.0.5 after the
+rollback). Changed, as expected: `keycloak_role` 142 → 157 (new built-in roles of 26) and
+`migration_model` 24.0.5 → 26.8.0. `scripts/keycloak-config.sh` ran clean on the migrated copy.
+**Rollback** (step 6) was exercised: `RESTORE_FRESH=1 … restore-db.sh keycloak
+<pre-upgrade dump>` produced a database whose snapshot was identical to the pre-upgrade one and
+Keycloak 24.0.5 started on it and accepted the OTP user again. Notes from the run:
+`restore-db.sh` restarts Keycloak only if it was running when you started it — after a
+rollback always run `scripts/deploy.sh <previous>` / `docker compose up -d keycloak` (step 3).
+The OTP check is the weakest part of the rehearsal: the secret was imported through the
+admin API, not enrolled in the browser, and my first code computation (secret decoded as
+Base32) was accepted by 24.0.5 but not by 26.8, while the raw secret string as HMAC key was
+accepted by 26.8 and again by 24.0.5 after the rollback. The stored row did not change, so treat
+it as a test-harness effect, but **verify OTP with a real authenticator on production** (the web
+login with OTP in step 5) before announcing the upgrade done. **Not covered:** the rehearsal used no
+nginx/API (so `keycloak-smoke.sh` was not run — it needs the full stack: run it on the
+production host after the real upgrade) and no production-sized session tables.
+
 PostgreSQL majors (16 → 17) likewise need a planned dump/restore migration, and the
 API image's `pg_dump` (`postgresql16-client`) must be upgraded with the server.
 
@@ -688,18 +734,73 @@ Install the CA once per device (file `nginx/certs/securepatrol-ca.crt`):
 `make certs-renew` (new server certificate from the same CA — devices need no change);
 it reloads nginx. The CA itself lasts 10 years.
 
-**Public / ACME certificate (optional):** if the server has a public DNS name, use
-certbot with the webroot nginx already serves on port 80:
+### Public certificate (Let's Encrypt) — production TLS
+
+Use this instead of the private CA when the server has a **public DNS name** (e.g.
+`patrol.example.co.id`, `SERVER_HOST` in `.env`) and port 80 is reachable from the
+internet. Browsers then need no CA installation and tablets need no bundled CA. nginx
+serves the same `nginx/certs/cert.pem` + `key.pem` on 443 and 9443 (photo links), so one
+certificate covers both. Let's Encrypt does not issue for IP addresses or `localhost`.
+
+**First issue** (the stack is running; nginx answers `/.well-known/acme-challenge/` from
+`infra/acme/webroot` on port 80 — `docker-compose.app.yml` mounts it):
+
 ```bash
-docker run --rm -v /etc/letsencrypt:/etc/letsencrypt -v /opt/securepatrol/infra/acme:/var/www/certbot \
-  certbot/certbot certonly --webroot -w /var/www/certbot -d patrol.example.co.id
+cd /opt/securepatrol/infra
+# 1. Dry run against Let's Encrypt staging (untrusted test CA; no rate limits to worry about):
+ACME_EMAIL=ops@example.co.id ACME_SERVER=https://acme-staging-v02.api.letsencrypt.org/directory \
+  sh scripts/acme.sh issue    # the staging root is not trusted: it stops at "chain does not verify" - expected
+# 2. Real certificate. Download the issuing root once (https://letsencrypt.org/certificates/,
+#    "ISRG Root X1", PEM) and pass it: it becomes nginx/certs/ca.pem for the probes.
+rm -rf acme/config           # forget the staging account/cert
+ACME_EMAIL=ops@example.co.id ACME_ROOT_PEM=/path/to/isrgrootx1.pem make acme-issue
+make preflight               # SAN, key match, chain against ca.pem, expiry
 ```
-(mount `./acme:/var/www/certbot:ro` into the nginx service with a small
-`docker-compose.override.yml` and append that file to `COMPOSE_FILE` in `.env` —
-with `COMPOSE_FILE` set, Compose does not load the override file by itself), then copy `fullchain.pem` → `nginx/certs/cert.pem`,
-`privkey.pem` → `key.pem`, the issuing **root** (e.g. ISRG Root X1) → `ca.pem`, and
-`docker compose exec nginx nginx -s reload`. Renew with a monthly cron job doing the
-same. Tablets then need no CA installation.
+
+`scripts/acme.sh` runs certbot in a container, checks the result with the same rules
+as `make preflight` (name, key, chain, ≥ 7 days left) **before** it replaces anything,
+installs `cert.pem`/`key.pem` (key stays `0600`) and does `nginx -t && nginx -s reload`
+(no downtime). If any check fails the previous certificate stays in place. Skip step 1 if
+you are confident; staging only proves DNS, port 80 and the webroot.
+
+Prerequisites that cannot be scripted: the DNS `A`/`AAAA` record points at the server;
+port 80 (and 443/9443) are open in the firewall/NAT from the internet; `ADMIN_ALLOW_CIDRS`
+does not matter for the challenge path. If port 80 cannot be opened, use a DNS-01
+certbot plugin instead (not covered here).
+
+**Renewal.** Let's Encrypt certificates last 90 days; certbot renews from 30 days
+before expiry. Add a cron job on the host (twice a day is the Let's Encrypt
+recommendation; `renew` does nothing while the certificate is not due):
+
+```cron
+17 3,15 * * *  cd /opt/securepatrol/infra && make acme-renew >> /var/log/garda-acme.log 2>&1
+```
+
+The `CertificateExpiresSoon` alert (21 days before expiry, blackbox probe of 443 and
+9443) is the safety net when cron or the challenge silently fails. Test the renewal
+path any time without waiting for the deadline: `sh scripts/acme.sh renew -f` forces a
+new certificate now (Let's Encrypt allows 5 duplicate certificates per week — do not
+loop it) and prints the new expiry; check with
+`echo | openssl s_client -connect $SERVER_HOST:443 -servername $SERVER_HOST 2>/dev/null | openssl x509 -noout -serial -enddate`.
+
+**Backup:** `infra/acme/config` holds the ACME account key and renewal config; it is
+git-ignored. Copy it with the rest of `infra/` (the certificate itself can always be
+re-issued). Rotating to a different `SERVER_HOST` means a new `.env`, a new realm
+redirect set (`make keycloak-config`) and a new `acme.sh issue`.
+
+**Tablets.** The APK embeds a CA (`SECUREPATROL_CA_PEM`, §3). With a Let's Encrypt
+certificate leave that secret empty so the app trusts the system store, or put ISRG Root X1
+in it. Switching an installed fleet from the private CA to Let's Encrypt: ship an APK that
+trusts both first, then switch the server certificate.
+
+**Verified how (2026-11-23, TAQ-10).** `scripts/acme.sh` was run against a local
+[Pebble](https://github.com/letsencrypt/pebble) ACME test server on a scratch Docker network with
+the real nginx TLS snippet and the same webroot mount: issue (HTTP-01 through nginx on port 80), chain verified
+against the root, nginx reloaded, forced renewal replaced the served certificate (serial changed,
+no downtime), `renew` without `-f` left a not-yet-due certificate alone, a certificate with < 7
+days left was refused. **Not done here (needs a real public hostname and port 80 from the
+internet):** one issue against Let's Encrypt itself (staging, then production). Do that
+on the production server after DNS is in place and record the date here.
 
 ## 7. Releases, deploys and rollback (INF-C1/C2/C5, INF-M4)
 

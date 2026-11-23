@@ -7,13 +7,14 @@ COMPOSE_INFRA = $(COMPOSE) -f docker-compose.yml
 # to SERVER_HOST from .env).
 SERVER_HOST ?=
 
-.PHONY: help env certs certs-renew preflight up up-infra down logs ps build restart \
+.PHONY: help env certs certs-renew acme-issue acme-renew preflight up up-infra down logs ps build restart \
         keycloak-config keycloak-smoke backup-db offsite-backup offsite-check offsite-snapshots
 
 help:
 	@echo "make env SERVER_HOST=<dns|ip> - create .env with random secrets (once)"
 	@echo "make certs [SERVER_HOST=...]  - private CA + server cert for SERVER_HOST (nginx/certs)"
 	@echo "make certs-renew              - new server cert from the existing CA"
+	@echo "make acme-issue / acme-renew  - public Let's Encrypt certificate (runbook §6)"
 	@echo "make preflight                - check .env, URLs, secrets and certificate"
 	@echo "make up                       - preflight, start the full stack, configure Keycloak"
 	@echo "make up-infra                 - infrastructure only (local backend/web dev)"
@@ -33,6 +34,12 @@ certs:
 
 certs-renew:
 	sh scripts/certs.sh --renew $(SERVER_HOST)
+
+acme-issue:
+	sh scripts/acme.sh issue
+
+acme-renew:
+	sh scripts/acme.sh renew
 	-$(COMPOSE) exec nginx nginx -s reload
 
 preflight:

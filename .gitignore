@@ -5,6 +5,7 @@
 *.key
 *.crt
 infra/nginx/certs/
+infra/acme/config/
 *.jks
 *.keystore
 mobile/android/key.properties

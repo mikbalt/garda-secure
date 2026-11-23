@@ -73,9 +73,9 @@ Web
 
 Infra / Ops
 - [ ] Create the Firebase project (Android app `id.co.garda.tablet`), install the service-account file on the server and the 4 `SP_FCM_*` values as GitHub secrets (runbook: Push notifications)
-- [ ] Rehearse the Keycloak 24→26 DB migration on a copy of the production Keycloak dump before upgrading production (runbook §2/§5)
+- [x] Rehearse the Keycloak 24→26 DB migration (runbook §2 "Rehearsal on a copy"; run `keycloak-smoke.sh` and a real-authenticator OTP login on production after the real upgrade)
 - [ ] Configure the `production` environment secrets and do a first tagged deploy (runbook §7)
-- [ ] Let's Encrypt / production TLS notes
+- [ ] Let's Encrypt on the real hostname: first `scripts/acme.sh issue` against staging, then production (runbook §6; tooling + renewal tested on Pebble, D-067)
 - [ ] Load test 2 sites / 10 guards (M7)
 
 Mobile (D-024) — open audit items, see docs/audit-2026-10.md
