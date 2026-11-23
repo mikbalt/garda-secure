@@ -54,6 +54,12 @@ set `KEYCLOAK_PUBLIC_URL=http://localhost:8081/auth` and `KEYCLOAK_DEV_REDIRECTS
 in `.env`, then `make up-infra` and `make keycloak-config` (allows the Vite dev server
 `http://localhost:5173` as redirect URI). Never set `KEYCLOAK_DEV_REDIRECTS` on a server.
 
+The **full** stack on one machine (`make up`) also works with `SERVER_HOST=localhost`, but
+`make preflight` refuses that name unless you run `PREFLIGHT_ALLOW_LOCALHOST=1 make up`
+(tablets and other PCs cannot reach `localhost`). On macOS Docker Desktop add
+`docker-compose.local.yml` to `COMPOSE_FILE` (no `/` bind mount for node-exporter, MinIO S3
+on :9002) and point `OFFSITE_BACKUP_REPO` at an existing local directory.
+
 ### Database roles (INF-S4)
 
 The Postgres init script creates, on the **first start of an empty volume**:
