@@ -76,7 +76,7 @@ Infra / Ops
 - [x] Rehearse the Keycloak 24→26 DB migration (runbook §2 "Rehearsal on a copy"; run `keycloak-smoke.sh` and a real-authenticator OTP login on production after the real upgrade)
 - [ ] Configure the `production` environment secrets and do a first tagged deploy (runbook §7)
 - [ ] Let's Encrypt on the real hostname: first `scripts/acme.sh issue` against staging, then production (runbook §6; tooling + renewal tested on Pebble, D-067)
-- [ ] Load test 2 sites / 10 guards (M7)
+- [x] Load test 2 sites / 10 guards (M7): done 2026-11-23 (TAQ-13), see docs/load-test.md
 
 Mobile (D-024) — open audit items, see docs/audit-2026-10.md
 - [ ] First real APK on a tablet: private-CA TLS, camera/QR, kiosk mode (runbook §3)
@@ -85,6 +85,7 @@ Mobile (D-024) — open audit items, see docs/audit-2026-10.md
 
 | Task | Agent | Date | Ref |
 |---|---|---|---|
+| Load test 2 sites / 10 guards (TAQ-13, docs/load-test.md, harness infra/loadtest) and manual UI pass, all roles, EN + ID (TAQ-14, docs/ui-pass-2026-11.md); fixed on the way: API /metrics 500 (#58), fresh-install 503 kc_unavailable (#59); open: TAQ-41 | `mikbalt/agent-taq-13-load` | 2026-11-23 | this PR |
 | Audit 2026-11-21 fixes: failure counters at 0 for alerts; rollback with RESTORE_FRESH=1 + VERSION pinned early; offline clock-out with unknown attendance_id; site check on device reset; web: site list retry, SOS polling ungated, site edit keeps scan_radius_m, on-duty night shifts, SOS badge polling, push test language | `muhamhad-pc1/claude-verify` | 2026-11-21 | no migration |
 | Mobile outbox: priority-0 items (SOS, SOS ack) are independent, so a rejected or waiting SOS no longer blocks other items or a second SOS (the rest stays strict FIFO); a wait beyond 30 min (device clock set back) counts as due; rejected-SOS state is per item; 3 tests | `muhamhad-pc1/claude-verify` | 2026-11-22 | no migration |
 | Mobile: an SOS the tablet could not store (outbox insert fails) shows a red "not saved, press again and call" banner instead of "SOS delivered"; test added. Flutter now on this PC (analyze + 90 tests) | `muhamhad-pc1/claude-verify` | 2026-11-22 | no migration |
