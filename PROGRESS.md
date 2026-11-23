@@ -61,7 +61,7 @@ Audit 2026-11-21 (`muhamhad-pc1/claude-verify`; read-only audit by three agents,
 Verification
 - [ ] Smoke-test the full Docker stack (`make up`): Keycloak `start` under `/auth`, realm import, login, MinIO via :9443, backup job (`pg_dump` in image)
 - [ ] Run the `verify` skill tiers 2 and 3 (Go integration tests, Docker stack) on a PC that has Go and Docker; they were not proven where the skill was written
-- [ ] Real SMTP + WhatsApp template delivery test
+- [ ] Real SMTP + WhatsApp template delivery test — dry run done (TAQ-7, `dryrun_test.go`); the live run needs owner credentials, checklist in `docs/runbook.md` §4
 
 Web
 - [ ] HR receives `attendance_review` push but `/attendance?tab=review` is admin/supervisor only — drop HR from the event or give HR a read-only review view
