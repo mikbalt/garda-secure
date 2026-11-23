@@ -9,6 +9,7 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
+| TAQ-13 load test (2 sites / 10 guards) then TAQ-14 manual UI pass (all roles, EN+ID) | `mikbalt/agent-taq-13-load` | 2026-11-23 | local stack; results in Linear + docs |
 
 ## Migration numbers
 
