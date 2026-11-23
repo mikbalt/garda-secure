@@ -302,7 +302,7 @@ function SitePicker() {
     return (
       <div className="flex items-center gap-2 text-sm text-gray-600">
         <Building2 className="h-4 w-4" aria-hidden="true" />
-        {isLoading ? t('site.loading') : t('site.none')}
+        {isLoading ? t('site.loading') : can('viewSites') ? t('site.none') : t('site.platform')}
       </div>
     )
   }

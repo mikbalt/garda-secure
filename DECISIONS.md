@@ -645,3 +645,16 @@ The review queue (`/attendance?tab=review`, `reviewAttendance`) is admin/supervi
 - `docker-compose.app.yml` mounts `infra/acme/webroot` into nginx at `/var/www/certbot` (the `:80`
   challenge location already existed); ACME state in `infra/acme/config` is git-ignored.
 - Tested against a local Pebble ACME server only; a real Let's Encrypt issue needs a public hostname (open item in the runbook §6).
+
+### D-068 — A platform-admin-only user has no sites: the web does not ask for `/sites`
+
+- **Date:** 2026-11-23 · **Status:** Accepted (TAQ-41; default taken by the agent, owner may overrule)
+- `platform-admin` is install-wide (D-025, D-032) and belongs to no site. `GET /sites` (and every other
+  site-scoped route) stays realm-role only, so the API answers it with 403 - least privilege, and no
+  cross-realm site list is built for the operator. An operator who also holds a realm role (usually `admin`)
+  sees that realm's sites as before.
+- The bug was in the web: `SiteProvider` fetched `/sites` for everyone, so an operator-only login got a 403 on
+  every page and the header said "No sites yet". New capability `viewSites` (the four realm roles); the query
+  is `enabled` only with it, and the header shows "Install-wide (no sites)" instead.
+- Install-wide pages (Settings: channels, backups, ops alerts/log) do not need a site. A site-less platform
+  view across realms (site/guard overview per realm) is not planned; it would need its own endpoints.

@@ -105,6 +105,7 @@ export const id: Dict = {
 
   'site.selector': 'Lokasi',
   'site.none': 'Belum ada lokasi',
+  'site.platform': 'Seluruh instalasi (tanpa lokasi)',
   'site.noneHint': 'Organisasi Anda belum memiliki lokasi.',
   'site.noneAdminCta': 'Buat lokasi pertama di Pengaturan',
   'site.noneContactAdmin': 'Minta administrator untuk membuat lokasi.',
