@@ -9,6 +9,7 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
+| Production TLS / Let's Encrypt notes (TAQ-10) + Keycloak 24→26 migration rehearsal (TAQ-11) | `mokhataq/tls-kc-rehearsal` | 2026-11-23 | docs/runbook §2/§6; rehearsal on scratch containers only |
 
 ## Migration numbers
 
