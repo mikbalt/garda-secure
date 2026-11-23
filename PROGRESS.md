@@ -30,7 +30,7 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Milestone | Status |
 |---|---|
-| M1 Infra & Auth | 🟢 backend + config done; ⚠️ full Docker stack not yet smoke-tested (no Docker on the dev PC) |
+| M1 Infra & Auth | 🟢 backend + config done; full Docker stack smoke-tested 2026-11-23 (TAQ-6, fresh `make env/certs/up` on macOS Docker Desktop, `SERVER_HOST=localhost`) |
 | M2 Core Attendance | 🟢 backend + web done |
 | M3 Patrol | 🟢 backend + web + mobile: schedules, signed QR, live view on site floor plans (polling, D-014) |
 | M4 Incident & Field Reports | 🟢 backend + web + mobile (D-024) |
@@ -59,7 +59,7 @@ Audit 2026-11-21 (`muhamhad-pc1/claude-verify`; read-only audit by three agents,
 - [ ] **web, low** `pages/settings/LogTab.tsx`, `pages/Audit.tsx`: realm-wide lists format every row in the selected site's time zone.
 - [ ] **web, low** `pages/settings/SiteModal.tsx`: no form field for `scan_radius_m` (the value is now kept on save, but can only be set through the API).
 Verification
-- [ ] Smoke-test the full Docker stack (`make up`): Keycloak `start` under `/auth`, realm import, login, MinIO via :9443, backup job (`pg_dump` in image)
+- [x] Smoke-test the full Docker stack (`make up`): done 2026-11-23 (TAQ-6) - logins for every role incl. TOTP enrolment, MinIO via :9443 (pre-signed GET 200), manual + scheduled backup, `restore-db.sh` of both dumps. Not covered: LAN/DNS `SERVER_HOST`, real SMTP/WhatsApp, FCM, off-site restic run
 - [ ] Run the `verify` skill tiers 2 and 3 (Go integration tests, Docker stack) on a PC that has Go and Docker; they were not proven where the skill was written
 - [ ] Real SMTP + WhatsApp template delivery test
 
