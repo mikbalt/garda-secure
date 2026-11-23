@@ -27,6 +27,11 @@ export const CAPABILITIES = {
   viewPatrol: OPS_CLIENT,
   viewIncidents: OPS_CLIENT,
   viewReports: WEB,
+  /**
+   * The site list (GET /sites). `platform-admin` is install-wide with no
+   * sites of its own (D-032, D-068), so an operator-only user never asks.
+   */
+  viewSites: WEB,
   /** Settings page: realm sections (admin) and install-wide sections (platform-admin). */
   viewSettings: ['admin', 'platform-admin'] as Role[],
   viewSetup: ADMIN,

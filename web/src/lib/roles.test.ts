@@ -12,6 +12,7 @@ const EXPECTED: Record<Capability, Role[]> = {
   viewPatrol: ['admin', 'supervisor', 'client-readonly'],
   viewIncidents: ['admin', 'supervisor', 'client-readonly'],
   viewReports: ['admin', 'supervisor', 'hr', 'client-readonly'],
+  viewSites: ['admin', 'supervisor', 'hr', 'client-readonly'],
   viewSettings: ['admin', 'platform-admin'],
   viewSetup: ['admin'],
   viewAudit: ['admin'],

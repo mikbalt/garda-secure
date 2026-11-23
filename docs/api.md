@@ -127,7 +127,7 @@ Denials: `403 {code: device_unregistered | device_pending | device_revoked | gua
 
 | Method | Path | Body |
 |---|---|---|
-| GET | `/sites` | active sites only; admin may add `?include_inactive=true` to also get deactivated ones (`active: false`) |
+| GET | `/sites` | active sites only; admin may add `?include_inactive=true` to also get deactivated ones (`active: false`). A `platform-admin`-only token gets 403 (no sites of its own, D-068); the web does not call it for that user |
 | GET | `/sites/:id` | — |
 | POST | `/sites` | `{name, client_id?, address?, timezone (IANA, default Asia/Jakarta), config_json?}` |
 | PUT | `/sites/:id` | same; 409 `site_inactive` on a deactivated site |

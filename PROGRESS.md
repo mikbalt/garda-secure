@@ -85,6 +85,7 @@ Mobile (D-024) — open audit items, see docs/audit-2026-10.md
 
 | Task | Agent | Date | Ref |
 |---|---|---|---|
+| Web: platform-admin-only user no longer calls `GET /sites` (403 on every page, header 'No sites yet'): `viewSites` capability gates the site list, header says 'Install-wide (no sites)'; API unchanged (D-068, TAQ-41) | `mokhataq/taq-41` | 2026-11-23 | this PR |
 | Load test 2 sites / 10 guards (TAQ-13, docs/load-test.md, harness infra/loadtest) and manual UI pass, all roles, EN + ID (TAQ-14, docs/ui-pass-2026-11.md); fixed on the way: API /metrics 500 (#58), fresh-install 503 kc_unavailable (#59); open: TAQ-41 | `mikbalt/agent-taq-13-load` | 2026-11-23 | this PR |
 | Audit 2026-11-21 fixes: failure counters at 0 for alerts; rollback with RESTORE_FRESH=1 + VERSION pinned early; offline clock-out with unknown attendance_id; site check on device reset; web: site list retry, SOS polling ungated, site edit keeps scan_radius_m, on-duty night shifts, SOS badge polling, push test language | `muhamhad-pc1/claude-verify` | 2026-11-21 | no migration |
 | Mobile outbox: priority-0 items (SOS, SOS ack) are independent, so a rejected or waiting SOS no longer blocks other items or a second SOS (the rest stays strict FIFO); a wait beyond 30 min (device clock set back) counts as due; rejected-SOS state is per item; 3 tests | `muhamhad-pc1/claude-verify` | 2026-11-22 | no migration |

@@ -108,6 +108,7 @@ export const en = {
   // site selector
   'site.selector': 'Site',
   'site.none': 'No sites yet',
+  'site.platform': 'Install-wide (no sites)',
   'site.noneHint': 'There are no sites for your organisation yet.',
   'site.noneAdminCta': 'Create the first site in Settings',
   'site.noneContactAdmin': 'Ask an administrator to create a site.',
