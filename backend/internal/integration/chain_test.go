@@ -423,6 +423,15 @@ func TestChainDetectsDeletedHead(t *testing.T) {
 		}
 	})
 	wantBreakAt(t, pool, s2.site, 2) // the second scan has no entry
+	wantBreakReason(t, pool, s2.site, "chain head missing")
+	// An attacker who recreates a head that fits the remaining entries is still caught by the unchained record.
+	withoutGuard(t, pool, "record_chain_heads", func() {
+		if _, err := pool.Exec(ctx, `INSERT INTO record_chain_heads (site_id, last_seq, last_hash)
+			SELECT site_id, seq, entry_hash FROM record_chain WHERE site_id = $1 ORDER BY seq DESC LIMIT 1`, s2.site); err != nil {
+			t.Fatal(err)
+		}
+	})
+	wantBreakReason(t, pool, s2.site, "record has no chain entry")
 
 	// Head and every entry gone: the records without entries give it away.
 	s3 := chainSeed(t, pool, "head and all")
@@ -562,11 +571,20 @@ func TestChainRolledBackWriteLeavesNoEntry(t *testing.T) {
 	if _, err := repository.CreateAmendment(ctx, tx, "00000000-0000-0000-0000-000000000000", []byte(`{}`), "r", "a"); err == nil {
 		t.Fatal("amendment of an unknown incident must fail")
 	}
-	s2 := s.scanIn(t, tx)
+	after := s.scanIn(t, tx)
 	if err := tx.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}
-	_ = s2
+	var amendments, afterEntries, total int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE kind = 'incident_amendment'),
+		count(*) FILTER (WHERE record_id = $2), count(*) FROM record_chain WHERE site_id = $1`,
+		s.site, after).Scan(&amendments, &afterEntries, &total); err != nil {
+		t.Fatal(err)
+	}
+	if amendments != 0 || afterEntries != 1 || total != 3 {
+		t.Fatalf("after savepoint: amendment entries %d (want 0), entries of the later scan %d (want 1), chain length %d (want 3)",
+			amendments, afterEntries, total)
+	}
 	wantValid(t, pool, s.site)
 }
 

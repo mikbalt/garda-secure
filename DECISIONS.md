@@ -674,8 +674,10 @@ The review queue (`/attendance?tab=review`, `reviewAttendance`) is admin/supervi
   at migration time only. Run the migration with the app stopped; later unchained writes by old code are not flagged.
 - Also found: records with no chain entry (forged inserts, or entries deleted together with the head), a missing
   or mismatching head, reordered entries. The head row only advances by one (trigger); deleting or resetting it is blocked.
-- **Open limit (not solved here):** this detects edits and deletions made *outside* the application path. The app's
-  own database role can call `chain_append` (or disable nothing and just write consistent rows through the app
-  functions), so an edit followed by `chain_append` is chained as the new truth, and anyone with superuser rights can
-  rewrite records, chain and head together. Closing it needs an external anchor (head hash published outside the
+- **Open limit (not solved here):** this detects edits and deletions made *outside* the application path. The app/owner
+  role (the one that runs migrations and owns the tables) can disable the triggers, call `chain_append` and
+  `chain_entry_hash` and advance the head by one (the tests do `ALTER TABLE ... DISABLE TRIGGER USER` through the app
+  pool), so an edit followed by `chain_append` is chained as the new truth, and anyone with superuser rights can
+  rewrite records, chain and head together. Hardening follow-ups: split the migration owner from the runtime role and
+  REVOKE EXECUTE on `chain_append`, together with the signer service. Closing it needs an external anchor (head hash published outside the
   database) or signed heads. It is not "verifiable without trusting the operator" yet; the owner decides how to handle it.
