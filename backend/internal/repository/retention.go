@@ -56,39 +56,62 @@ func ExpiredSelfies(ctx context.Context, db DBTX, cutoff time.Time, limit int) (
 
 // ClearSelfie removes the selfie reference of an attendance record.
 func ClearSelfie(ctx context.Context, db DBTX, id string) error {
-	if _, err := db.Exec(ctx, `UPDATE attendance_records SET selfie_object_key = NULL WHERE id = $1`, id); err != nil {
-		return fmt.Errorf("ClearSelfie: %w", err)
-	}
-	return nil
+	return inTx(ctx, db, func(db DBTX) error {
+		if _, err := db.Exec(ctx, `UPDATE attendance_records SET selfie_object_key = NULL WHERE id = $1`, id); err != nil {
+			return fmt.Errorf("ClearSelfie: %w", err)
+		}
+		return chainAppend(ctx, db, chainAttendance, id)
+	})
 }
 
 // ClearAttendanceGPS nulls the clock-in/out positions of up to limit records
 // created before cutoff; it returns how many were cleared.
 func ClearAttendanceGPS(ctx context.Context, db DBTX, cutoff time.Time, limit int) (int64, error) {
-	tag, err := db.Exec(ctx, `
+	return clearChained(ctx, db, "ClearAttendanceGPS", chainAttendance, `
 		UPDATE attendance_records
 		SET gps_lat = NULL, gps_lng = NULL, clock_out_gps_lat = NULL, clock_out_gps_lng = NULL
 		WHERE id IN (SELECT id FROM attendance_records
 		             WHERE created_at < $1 AND (gps_lat IS NOT NULL OR clock_out_gps_lat IS NOT NULL
 		                                        OR gps_lng IS NOT NULL OR clock_out_gps_lng IS NOT NULL)
-		             LIMIT $2)`, cutoff, limit)
-	if err != nil {
-		return 0, fmt.Errorf("ClearAttendanceGPS: %w", err)
-	}
-	return tag.RowsAffected(), nil
+		             LIMIT $2)
+		RETURNING id`, cutoff, limit)
+}
+
+// clearChained runs a retention UPDATE ... RETURNING id and chains every
+// changed record in the same transaction.
+func clearChained(ctx context.Context, db DBTX, op, kind, sql string, args ...any) (int64, error) {
+	var n int64
+	err := inTx(ctx, db, func(db DBTX) error {
+		rows, err := db.Query(ctx, sql, args...)
+		if err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
+		ids, err := collect(rows, func(r pgx.Rows) (string, error) {
+			var id string
+			return id, r.Scan(&id)
+		})
+		if err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
+		for _, id := range ids {
+			if err := chainAppend(ctx, db, kind, id); err != nil {
+				return err
+			}
+		}
+		n = int64(len(ids))
+		return nil
+	})
+	return n, err
 }
 
 // ClearScanGPS nulls the positions of up to limit checkpoint scans made
 // before cutoff.
 func ClearScanGPS(ctx context.Context, db DBTX, cutoff time.Time, limit int) (int64, error) {
-	tag, err := db.Exec(ctx, `
+	return clearChained(ctx, db, "ClearScanGPS", chainScan, `
 		UPDATE checkpoint_scans SET gps_lat = NULL, gps_lng = NULL
 		WHERE id IN (SELECT id FROM checkpoint_scans
-		             WHERE scanned_at < $1 AND (gps_lat IS NOT NULL OR gps_lng IS NOT NULL) LIMIT $2)`, cutoff, limit)
-	if err != nil {
-		return 0, fmt.Errorf("ClearScanGPS: %w", err)
-	}
-	return tag.RowsAffected(), nil
+		             WHERE scanned_at < $1 AND (gps_lat IS NOT NULL OR gps_lng IS NOT NULL) LIMIT $2)
+		RETURNING id`, cutoff, limit)
 }
 
 // PurgedRecipient replaces recipients of expired deliveries.
@@ -129,10 +152,12 @@ func ExpiredIncidentPhotos(ctx context.Context, db DBTX, cutoff time.Time, limit
 // ClearIncidentPhotos removes the photo references of an incident
 // (retention of evidence photos, only when configured).
 func ClearIncidentPhotos(ctx context.Context, db DBTX, id string) error {
-	if _, err := db.Exec(ctx, `UPDATE incidents SET photo_object_keys = '[]'::jsonb WHERE id = $1`, id); err != nil {
-		return fmt.Errorf("ClearIncidentPhotos: %w", err)
-	}
-	return nil
+	return inTx(ctx, db, func(db DBTX) error {
+		if _, err := db.Exec(ctx, `UPDATE incidents SET photo_object_keys = '[]'::jsonb WHERE id = $1`, id); err != nil {
+			return fmt.Errorf("ClearIncidentPhotos: %w", err)
+		}
+		return chainAppend(ctx, db, chainIncident, id)
+	})
 }
 
 // ExpiredDefectPhotos returns defect reports created before cutoff with a photo.
@@ -161,10 +186,12 @@ func ExpiredScanPhotos(ctx context.Context, db DBTX, cutoff time.Time, limit int
 
 // ClearScanPhoto removes the photo reference of a checkpoint scan.
 func ClearScanPhoto(ctx context.Context, db DBTX, id string) error {
-	if _, err := db.Exec(ctx, `UPDATE checkpoint_scans SET photo_object_key = NULL WHERE id = $1`, id); err != nil {
-		return fmt.Errorf("ClearScanPhoto: %w", err)
-	}
-	return nil
+	return inTx(ctx, db, func(db DBTX) error {
+		if _, err := db.Exec(ctx, `UPDATE checkpoint_scans SET photo_object_key = NULL WHERE id = $1`, id); err != nil {
+			return fmt.Errorf("ClearScanPhoto: %w", err)
+		}
+		return chainAppend(ctx, db, chainScan, id)
+	})
 }
 
 // PlainVisitorIDNumbers returns visitor logs whose ID number is not yet

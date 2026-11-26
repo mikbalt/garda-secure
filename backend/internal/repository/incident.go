@@ -116,6 +116,22 @@ func ListIncidents(ctx context.Context, db DBTX, f IncidentFilter, p Page) ([]mo
 
 // CreateIncident inserts an incident; idempotent on a client-supplied ID.
 func CreateIncident(ctx context.Context, db DBTX, i model.Incident, clientID *string) (*model.Incident, bool, error) {
+	var out *model.Incident
+	var created bool
+	err := inTx(ctx, db, func(db DBTX) error {
+		var err error
+		if out, created, err = createIncident(ctx, db, i, clientID); err != nil || !created {
+			return err
+		}
+		return chainAppend(ctx, db, chainIncident, out.ID)
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	return out, created, nil
+}
+
+func createIncident(ctx context.Context, db DBTX, i model.Incident, clientID *string) (*model.Incident, bool, error) {
 	out, err := scanIncident(db.QueryRow(ctx, `
 		INSERT INTO incidents
 		  (id, site_id, guard_id, device_id, type, severity, description, photo_object_keys,
@@ -146,12 +162,18 @@ func GetIncident(ctx context.Context, db DBTX, id string) (*model.Incident, erro
 
 // UpdateIncidentStatus moves an incident through its workflow.
 func UpdateIncidentStatus(ctx context.Context, db DBTX, id, status string) (*model.Incident, error) {
-	tag, err := db.Exec(ctx, `UPDATE incidents SET status = $2, updated_at = now() WHERE id = $1`, id, status)
+	err := inTx(ctx, db, func(db DBTX) error {
+		tag, err := db.Exec(ctx, `UPDATE incidents SET status = $2, updated_at = now() WHERE id = $1`, id, status)
+		if err != nil {
+			return fmt.Errorf("UpdateIncidentStatus: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return ErrNotFound
+		}
+		return chainAppend(ctx, db, chainIncident, id)
+	})
 	if err != nil {
-		return nil, fmt.Errorf("UpdateIncidentStatus: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return nil, ErrNotFound
+		return nil, err
 	}
 	return GetIncident(ctx, db, id)
 }
@@ -161,14 +183,20 @@ func UpdateIncidentStatus(ctx context.Context, db DBTX, id, status string) (*mod
 // CreateAmendment stores a correction to an incident.
 func CreateAmendment(ctx context.Context, db DBTX, incidentID string, changes []byte, reason, actor string) (*model.IncidentAmendment, error) {
 	var a model.IncidentAmendment
-	err := db.QueryRow(ctx, `
-		INSERT INTO incident_amendments (incident_id, changes, reason, amended_by)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id, incident_id, changes, reason, amended_by, created_at`,
-		incidentID, changes, reason, actor,
-	).Scan(&a.ID, &a.IncidentID, &a.Changes, &a.Reason, &a.AmendedBy, &a.CreatedAt)
+	err := inTx(ctx, db, func(db DBTX) error {
+		err := db.QueryRow(ctx, `
+			INSERT INTO incident_amendments (incident_id, changes, reason, amended_by)
+			VALUES ($1, $2, $3, $4)
+			RETURNING id, incident_id, changes, reason, amended_by, created_at`,
+			incidentID, changes, reason, actor,
+		).Scan(&a.ID, &a.IncidentID, &a.Changes, &a.Reason, &a.AmendedBy, &a.CreatedAt)
+		if err != nil {
+			return fmt.Errorf("CreateAmendment: %w", err)
+		}
+		return chainAppend(ctx, db, chainIncidentAmendment, a.ID)
+	})
 	if err != nil {
-		return nil, fmt.Errorf("CreateAmendment: %w", err)
+		return nil, err
 	}
 	return &a, nil
 }

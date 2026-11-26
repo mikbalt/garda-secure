@@ -658,3 +658,20 @@ The review queue (`/attendance?tab=review`, `reviewAttendance`) is admin/supervi
   is `enabled` only with it, and the header shows "Install-wide (no sites)" instead.
 - Install-wide pages (Settings: channels, backups, ops alerts/log) do not need a site. A site-less platform
   view across realms (site/guard overview per realm) is not planned; it would need its own endpoints.
+
+### D-069 — Per-site hash chain over attendance, scan and incident records (TAQ-17)
+- Migration 011: `record_chain` (append-only, like `audit_log`) + `record_chain_heads`. Each write of an attendance
+  record, checkpoint scan, incident or incident amendment appends an entry in the same transaction
+  (`repository.inTx` + `chain_append`): `record_hash` = sha256 of the record's canonical form, `entry_hash` =
+  sha256(version, site, seq, kind, record id, record_hash, prev_hash). The first `prev_hash` is a per-site genesis value.
+- Canonical form: the listed columns as jsonb text (keys sorted), timestamps in UTC, function-pinned session settings.
+  Columns added later are not covered until a new `hash_version` lists them (a new column is not a break).
+- Order: `chain_append` locks the site's head row, so writers of one site take turns; `seq` has no gaps.
+- Every legitimate change (clock-out, status, override, retention clearing GPS/photos) appends a new entry; the
+  verifier compares the live record with its latest entry. `chain_first_break(site)` / `repository.FirstChainBreak`
+  returns the first broken seq (gap, link, entry content, record edited/deleted, dropped tail). Endpoint/CLI: TAQ-18.
+- Existing rows are chained by the migration (`origin = 'backfill'`, oldest first per site): they vouch for the state
+  at migration time only. Run the migration with the app stopped; later unchained writes by old code are not flagged.
+- Known limits: an edit followed by a legitimate update of the same record is chained as the new truth; a superuser
+  who rewrites the whole chain and the head needs the head hash anchored outside the database.
+
