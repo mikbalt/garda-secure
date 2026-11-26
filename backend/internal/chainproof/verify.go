@@ -313,7 +313,7 @@ func Verify(b *Bundle, o Options) Result {
 	// The end of the bundle must be the chain's end, or a signed head.
 	lastEntry := b.Entries[len(b.Entries)-1]
 	switch {
-	case m.ChainTipSeq == m.LastSeq && strings.ToLower(m.ChainTipHash) != strings.ToLower(lastEntry.EntryHash):
+	case m.ChainTipSeq == m.LastSeq && !strings.EqualFold(m.ChainTipHash, lastEntry.EntryHash):
 		res.Break = chainBreak(lastEntry, ClassChain, "chain head does not match the last entry")
 		return res
 	case m.ChainTipSeq < m.LastSeq:
