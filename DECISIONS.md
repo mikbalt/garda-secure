@@ -695,9 +695,16 @@ The review queue (`/attendance?tab=review`, `reviewAttendance`) is admin/supervi
 - `QR_WINDOW` default **720h (30 days)**, allowed 1h..8784h. Reason: a printed sticker cannot rotate, so the window
   is the replay horizon of a photo of the sticker and also the reprint interval. Short windows would make guards'
   scans stale on schedule. Per-site / per-route windows are not built (simpler first).
-- Verification uses the scan's **event time** (`scanned_at`), not the arrival time, with `QRSkew` = 10 min at both
-  ends for tablet clock drift. So a scan captured offline inside the window verifies when it syncs days later
-  (the offline queue never needs the window to still be open).
+- Verification uses the scan's **event time** (`scanned_at`) with `QRSkew` = 10 min at both ends for tablet clock
+  drift, **and** the server's receipt time: `scanned_at` is client-supplied and `ClientTime` accepts anything from the
+  last 7 days, so the event time alone would let a photo of a code that expired days ago be backdated into the
+  window. A scan is therefore `qr_stale` unless the event time is inside the window **and** it is received no later
+  than `QROfflineGrace` (24 h) + skew after the window ends. A scan captured offline inside the window still
+  verifies when it syncs, including up to a day after expiry; the offline queue does not need the window open.
+- **Replay horizon:** window + 10 min + 24 h (about 31 days), not window + 7 days. Remaining limit: a guard who
+  is offline (or whose tablet clock is set back) and lies about the time can still replay a photo of a code until
+  that horizon; `late_sync`/`clock_ahead` and the GPS/photo checks are the other signals. A genuine offline scan
+  synced more than a day after the window ended is flagged, not dropped.
 - Stale scans are **accepted and flagged `qr_stale`** (never rejected, never dropped), like `qr_invalid` (D-037):
   an offline scan older than the window must not be lost, and a wrong clock or a late reprint must not stop a
   patrol. A genuine windowless `SP1:` code is flagged `qr_stale` too (reprint to get a window); the tampered

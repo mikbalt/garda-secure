@@ -231,6 +231,11 @@ const QRPrefixWindowed = "SP2:"
 const (
 	DefaultQRWindow = 30 * 24 * time.Hour
 	QRSkew          = 10 * time.Minute
+	// QROfflineGrace is how long after a window ends the server still takes a
+	// scan whose event time is inside it: the tablet may have been offline.
+	// The event time is client-supplied, so this bounds the replay horizon of
+	// a photo of an expired code to window + skew + grace.
+	QROfflineGrace = 24 * time.Hour
 )
 
 // QRWindow is the signed validity of a printed code.
@@ -242,6 +247,13 @@ type QRWindow struct{ NotBefore, Expires time.Time }
 // inside the window still counts when it syncs later.
 func (w QRWindow) Contains(at time.Time) bool {
 	return !at.Before(w.NotBefore.Add(-QRSkew)) && !at.After(w.Expires.Add(QRSkew))
+}
+
+// Accepts is Contains plus a check of the receipt time, which the client
+// cannot choose: a scan whose event time is backdated into the window is only
+// taken while it is received no later than QROfflineGrace after the window.
+func (w QRWindow) Accepts(at, received time.Time) bool {
+	return w.Contains(at) && !received.After(w.Expires.Add(QRSkew+QROfflineGrace))
 }
 
 func (s *QRSigner) windowSig(checkpointID string, version int, w QRWindow) string {

@@ -357,7 +357,8 @@ func RecordScan(ctx context.Context, pool *pgxpool.Pool, in ScanInput) (*model.C
 //   - a signed payload (qr_payload, or an SP1:/SP2: text in qr_code) names
 //     the checkpoint; a signature that does not match its current version
 //     (or, for SP2, its window) is accepted but flagged qr_invalid; a genuine
-//     SP2 code whose window does not contain the scan's event time, or a
+//     SP2 code whose window does not contain the scan's event time (or the
+//     receipt time is more than a day past it), or a
 //     windowless SP1 code, is accepted but flagged qr_stale (TAQ-19);
 //   - a plain code matches a legacy checkpoint's qr_code: qr_unsigned;
 //   - a checkpoint_id alone proves no scan: qr_unsigned.
@@ -402,7 +403,7 @@ func resolveCheckpoint(route *model.Route, in ScanInput, at time.Time) (*model.C
 			return nil, ""
 		case !cp.QRSigned || in.QR == nil || !in.QR.ValidWindowed(cp.ID, cp.QRVersion, w, sig):
 			return cp, qrFlag(FlagQRInvalid)
-		case !w.Contains(at):
+		case !w.Accepts(at, Now()):
 			return cp, qrFlag(FlagQRStale)
 		}
 		return cp, ""

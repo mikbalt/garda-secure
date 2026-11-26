@@ -211,3 +211,31 @@ func TestQRWindowContains(t *testing.T) {
 		t.Errorf("default window = %v", d)
 	}
 }
+
+// The event time is client-supplied, so it alone cannot prove a scan is
+// fresh: the receipt time must also be near the window (QROfflineGrace).
+func TestQRWindowAccepts(t *testing.T) {
+	from := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	w := QRWindow{NotBefore: from, Expires: from.Add(30 * 24 * time.Hour)}
+	lastReceipt := w.Expires.Add(QRSkew + QROfflineGrace)
+	cases := []struct {
+		name         string
+		at, received time.Time
+		want         bool
+	}{
+		{"online, mid-window", from.Add(time.Hour), from.Add(time.Hour), true},
+		{"offline scan queued 2 h ago, inside window", from.Add(24 * time.Hour), from.Add(26 * time.Hour), true},
+		{"offline scan made in window, synced just after expiry", w.Expires.Add(-time.Hour), w.Expires.Add(5 * time.Hour), true},
+		{"receipt on the last accepted second", w.Expires.Add(-time.Hour), lastReceipt, true},
+		{"receipt one second later", w.Expires.Add(-time.Hour), lastReceipt.Add(time.Second), false},
+		{"photo of a 3-day-expired QR, scanned_at backdated 1 day", w.Expires.Add(48 * time.Hour), w.Expires.Add(72 * time.Hour), false},
+		{"event backdated into the window, receipt 3 days after expiry", w.Expires.Add(-time.Hour), w.Expires.Add(72 * time.Hour), false},
+		{"event after expiry, receipt after expiry", w.Expires.Add(time.Hour), w.Expires.Add(2 * time.Hour), false},
+		{"event before the window", from.Add(-QRSkew - time.Second), from, false},
+	}
+	for _, tc := range cases {
+		if got := w.Accepts(tc.at, tc.received); got != tc.want {
+			t.Errorf("%s: Accepts = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
