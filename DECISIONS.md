@@ -682,7 +682,7 @@ The review queue (`/attendance?tab=review`, `reviewAttendance`) is admin/supervi
   REVOKE EXECUTE on `chain_append`, together with the signer service. Closing it needs an external anchor (head hash published outside the
   database) or signed heads. It is not "verifiable without trusting the operator" yet; the owner decides how to handle it.
 
-### D-070 - Time-bound checkpoint QR codes (TAQ-19)
+### D-072 - Time-bound checkpoint QR codes (TAQ-19)
 
 - **Date:** 2026-11-26 · **Status:** Accepted (defaults taken by the agent, owner may overrule)
 - The printed text is now `SP2:<checkpoint id>:<from>:<to>:<sig>` (Unix seconds). `sig` is the first 22 base64url

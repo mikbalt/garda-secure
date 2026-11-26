@@ -390,7 +390,7 @@ queue. Five wrong PINs in a row lock that guard's server PIN check for 15 minute
 locked attempts are in the audit log (`resource_type=device.guard-sessions`).
 
 **Checkpoint QR codes (D-035).** New checkpoints get signed codes
-(`SP2:<checkpoint>:<from>:<to>:<signature>`, time-bound, D-070); the server verifies every scan and tablets never
+(`SP2:<checkpoint>:<from>:<to>:<signature>`, time-bound, D-072); the server verifies every scan and tablets never
 receive the codes, so a code cannot be scanned without the printed sticker. Old
 plain codes keep working but their scans are flagged `qr_unsigned`. To switch a
 route to signed codes — or after a sticker was copied or lost — use *Regenerate QR

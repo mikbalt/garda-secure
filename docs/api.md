@@ -57,7 +57,7 @@ is added to the record), `qr_invalid` (scan of a signed QR payload whose
 signature does not match the checkpoint's current code: forged, or printed
 before *regenerate-qr*), `qr_unsigned` (QR scan without a signed payload:
 legacy plain code, or `checkpoint_id` only), `qr_stale` (genuine QR scanned outside its signed time window, or a
-windowless `SP1` code, D-070). Flags never reject a record.
+windowless `SP1` code, D-072). Flags never reject a record.
 
 **Guard verification (D-035).** When online, the tablet verifies the PIN with
 the server: `POST /device/guard-sessions {guard_id, pin}` → `{token,
@@ -191,7 +191,7 @@ check). Responses always contain the full effective config.
 
 | Method | Path | Roles | Body / notes |
 |---|---|---|---|
-| GET | `/patrol/routes?site_id=&active=true` | admin, supervisor, client | checkpoints `{id, name, qr_code, qr_signed, qr_version, sla_minutes?, order_index, lat?, lng?}` — `qr_code` is the text to print (signed: `SP2:<checkpoint id>:<from>:<to>:<sig>`, a fresh window `[now, now + QR_WINDOW]` on every read, D-070; the stored `SP1:` text is never returned) |
+| GET | `/patrol/routes?site_id=&active=true` | admin, supervisor, client | checkpoints `{id, name, qr_code, qr_signed, qr_version, sla_minutes?, order_index, lat?, lng?}` — `qr_code` is the text to print (signed: `SP2:<checkpoint id>:<from>:<to>:<sig>`, a fresh window `[now, now + QR_WINDOW]` on every read, D-072; the stored `SP1:` text is never returned) |
 | GET | `/patrol/routes/:id` | same | |
 | POST | `/patrol/routes` | admin | `{site_id, name, active?, checkpoints:[{id?, name, qr_code? , sla_minutes? (null = no SLA), order_index, floorplan_id?, plan_x?, plan_y?}]}` — ≤ 500 checkpoints. `lat/lng` are **server-owned** (D-059): submitted values are ignored, an edit keeps the stored ones, and the worker learns them from scans (median of the QR scans with GPS of the last 30 days, once there are ≥ 5 by ≥ 2 guards; manual and `qr_invalid` scans ignored); they enable the `gps_far`/`too_fast` checks for sessions started afterwards. QR: without `qr_code` the server generates a **signed** code (`qr_signed: true`, `qr_version: 1`); a custom `qr_code` is a **legacy** (unsigned) code |
 | PUT | `/patrol/routes/:id` | admin | `{name, checkpoints, active?}` — checkpoints may carry a floor-plan position `floorplan_id, plan_x, plan_y` (all three or none; x/y 0..1 from the top-left of the image; the plan must belong to the route's site: 400 `invalid_plan_position`, `unknown_floorplan`; same on POST). Editing a route does not change sessions already started (they keep their snapshot) — a signed checkpoint (same `id`) keeps its code and version whatever `qr_code` is sent; a legacy one keeps the sent code, or becomes signed when `qr_code` is empty. `qr_signed`/`qr_version` in the body are ignored. Deactivating cancels the route's pending scheduled patrols; reactivating plans them again |

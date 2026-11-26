@@ -87,8 +87,7 @@ Mobile (D-024) — open audit items, see docs/audit-2026-10.md
 | Task | Agent | Date | Ref |
 |---|---|---|---|
 | Backend: per-site hash chain over attendance, scan and incident records, migration 011, `FirstChainBreak` (D-069, TAQ-17; verification endpoint is TAQ-18) | `mikbalt/taq-17-chain` | 2026-11-26 | this PR |
-
-| Time-bound checkpoint QR: `SP2:` payload with a signed window (`QR_WINDOW`, default 30 d), scans judged by event time with 10 min skew, stale scans accepted but flagged `qr_stale`; mobile parses SP2; no migration (D-070, TAQ-19) | `mokhataq/taq-19` | 2026-11-26 | this PR |
+| Time-bound checkpoint QR: `SP2:` payload with a signed window (`QR_WINDOW`, default 30 d), scans judged by event time with 10 min skew, stale scans accepted but flagged `qr_stale`; mobile parses SP2; no migration (D-072, TAQ-19) | `mokhataq/taq-19` | 2026-11-26 | this PR |
 | Web: platform-admin-only user no longer calls `GET /sites` (403 on every page, header 'No sites yet'): `viewSites` capability gates the site list, header says 'Install-wide (no sites)'; API unchanged (D-068, TAQ-41) | `mokhataq/taq-41` | 2026-11-23 | this PR |
 | Load test 2 sites / 10 guards (TAQ-13, docs/load-test.md, harness infra/loadtest) and manual UI pass, all roles, EN + ID (TAQ-14, docs/ui-pass-2026-11.md); fixed on the way: API /metrics 500 (#58), fresh-install 503 kc_unavailable (#59); open: TAQ-41 | `mikbalt/agent-taq-13-load` | 2026-11-23 | this PR |
 | Audit 2026-11-21 fixes: failure counters at 0 for alerts; rollback with RESTORE_FRESH=1 + VERSION pinned early; offline clock-out with unknown attendance_id; site check on device reset; web: site list retry, SOS polling ungated, site edit keeps scan_radius_m, on-duty night shifts, SOS badge polling, push test language | `muhamhad-pc1/claude-verify` | 2026-11-21 | no migration |
