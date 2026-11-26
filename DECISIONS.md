@@ -714,3 +714,15 @@ The review queue (`/attendance?tab=review`, `reviewAttendance`) is admin/supervi
 - Known limits: `scanned_at` is client-supplied (bounded by `ClientTime`, plus `late_sync`/`clock_ahead`), and the web
   session-progress view still shows the stored windowless SP1 text. The signed-heads signer is a separate task.
 
+### D-070 — Fraud-signal dashboard: review marks live in their own table
+
+- **Date:** 2026-11-26 · **Status:** Accepted (TAQ-21; defaults taken by the agent, owner may overrule)
+- `GET /flags` lists the existing plausibility flags (D-035) across attendance, scans, sessions, incidents, SOS,
+  defects and visitors, one row per flag; `POST /flags/review` marks one reviewed. Roles: `admin`, `supervisor`
+  (same as the attendance review queue). Read-only for `hr` and `client-readonly`: they get 403.
+- The mark is a row in `flag_reviews` keyed by (kind, record id, flag). The flagged record is never written, so
+  records covered by a hash chain stay intact. The first review wins; there is no un-review.
+- `qr_unsigned` (legacy plain QR) is hidden unless asked for, as in the patrol report's flagged-scan count.
+- The page has its own site/guard filters (all sites by default) instead of the global site selector, like the
+  audit log; it is realm-wide. "Open record" opens the right page, tab and (attendance) day; the pages do not
+  focus a single record yet.

@@ -131,6 +131,10 @@ export const ERROR_CODES: Record<string, Pair> = {
   invalid_time: { en: 'The time is not valid.', id: 'Waktu tidak valid.' },
   invalid_date: { en: 'The date is not valid.', id: 'Tanggal tidak valid.' },
   invalid_month: { en: 'The month is not valid.', id: 'Bulan tidak valid.' },
+  invalid_guard_id: { en: 'The guard is not valid.', id: 'Satpam tidak valid.' },
+  invalid_reviewed: { en: 'The review filter is not valid.', id: 'Filter tinjauan tidak valid.' },
+  invalid_flag_kind: { en: 'Unknown kind of record.', id: 'Jenis catatan tidak dikenal.' },
+  invalid_record_id: { en: 'The record is not valid.', id: 'Catatan tidak valid.' },
   invalid_offset: { en: 'Invalid page.', id: 'Halaman tidak valid.' },
   shift_has_attendance: {
     en: 'This shift already has attendance — use an attendance override instead.',

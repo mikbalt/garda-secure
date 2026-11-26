@@ -3,6 +3,7 @@ import { peopleId } from './people.id'
 import { opsId } from './ops.id'
 import { adminId } from './admin.id'
 import { platformId } from './platform.id'
+import { flagsId } from './flags.id'
 import { usersId } from './users.id'
 import { patrol2Id } from './patrol2.id'
 import { pushId } from './push.id'
@@ -422,6 +423,7 @@ export const id: Dict = {
   ...opsId,
   ...adminId,
   ...platformId,
+  ...flagsId,
   ...usersId,
   ...patrol2Id,
   ...pushId,

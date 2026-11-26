@@ -36,6 +36,8 @@ export const CAPABILITIES = {
   viewSettings: ['admin', 'platform-admin'] as Role[],
   viewSetup: ADMIN,
   viewAudit: ADMIN,
+  /** Fraud-signal dashboard: list plausibility flags and mark them reviewed (GET /flags, POST /flags/review). */
+  reviewFlags: OPS,
   /** Own push notifications (/notifications): every web role. */
   viewNotifications: [...WEB, 'platform-admin'] as Role[],
   // settings sections
