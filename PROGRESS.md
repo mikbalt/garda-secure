@@ -9,6 +9,7 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
+| TAQ-17 hash-chained record log (attendance, scans, incidents) | `mikbalt/taq-17-chain` | 2026-11-26 | migration 011 |
 
 ## Migration numbers
 
@@ -24,7 +25,8 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 | 008 | push (subscriptions, preferences, device push tokens, SOS escalations) | `muhamhad-pc1/claude-push` | pushed |
 | 009 | site_active (`sites.active`) | `mokhataq/site-deactivation` | pushed |
 | 010 | sos_unverified_ack (`sos_alerts.unverified_ack_by/at`) | `muhamhad-pc1/claude-verify` | pushed |
-| 011 | *(next free)* | | |
+| 011 | record_chain (per-site hash chain, TAQ-17) | `mikbalt/taq-17-chain` | in progress |
+| 012 | *(next free)* | | |
 
 ## Milestones (PRD §11)
 
