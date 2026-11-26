@@ -74,6 +74,13 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, "embedded postgres:", err)
 		os.Exit(1)
 	}
+	// The runtime and signer roles exist before the migrations run, as on an
+	// installed stack (infra/postgres/init), so migration 012 can grant to them.
+	if err := createRoles(dsn); err != nil {
+		_ = pg.Stop()
+		fmt.Fprintln(os.Stderr, "roles:", err)
+		os.Exit(1)
+	}
 	if err := db.RunMigrations(dsn, "../../migrations"); err != nil {
 		_ = pg.Stop()
 		fmt.Fprintln(os.Stderr, "migrations:", err)
@@ -83,6 +90,23 @@ func TestMain(m *testing.M) {
 	_ = pg.Stop()
 	_ = os.RemoveAll(dir)
 	os.Exit(code)
+}
+
+// createRoles creates the non-owner roles the stack has (sp_runtime for the
+// API and worker, sp_signer for the signer); their password is "<name>-pw".
+func createRoles(adminDSN string) error {
+	ctx := context.Background()
+	pool, err := db.New(ctx, adminDSN, db.Options{})
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	for _, r := range []string{"sp_runtime", "sp_signer"} {
+		if _, err := pool.Exec(ctx, fmt.Sprintf(`CREATE ROLE %s LOGIN PASSWORD '%s-pw'`, r, r)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ── Test environment ─────────────────────────────────────────────────────────

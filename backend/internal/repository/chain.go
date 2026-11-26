@@ -6,6 +6,8 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/securepatrol/backend/internal/signer"
 )
 
 // Kinds of records in the per-site hash chain (migration 011, TAQ-17).
@@ -66,4 +68,24 @@ func inTx(ctx context.Context, db DBTX, fn func(DBTX) error) error {
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// VerifyChain is FirstChainBreak plus the signature check (TAQ-56): the chain
+// must also match every head the signer has signed. pins are the signer key
+// fingerprints the caller holds out of band (none = trust the genesis key on
+// first use); opts adds the staleness limit and the signer's own record. A past that was rewritten and re-chained passes FirstChainBreak
+// but fails here. The first break by seq is returned.
+func VerifyChain(ctx context.Context, db DBTX, siteID string, pins []string, opts signer.VerifyOptions) (*ChainBreak, error) {
+	b, err := FirstChainBreak(ctx, db, siteID)
+	if err != nil {
+		return nil, err
+	}
+	hb, err := signer.Verify(ctx, db, siteID, pins, opts)
+	if err != nil {
+		return nil, fmt.Errorf("VerifyChain: %w", err)
+	}
+	if hb != nil && (b == nil || hb.Seq < b.Seq) {
+		return &ChainBreak{Seq: hb.Seq, Reason: "signed head " + hb.Status + ": " + hb.Reason}, nil
+	}
+	return b, nil
 }

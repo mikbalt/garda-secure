@@ -8,7 +8,7 @@ COMPOSE_INFRA = $(COMPOSE) -f docker-compose.yml
 SERVER_HOST ?=
 
 .PHONY: help env certs certs-renew acme-issue acme-renew preflight up up-infra down logs ps build restart \
-        keycloak-config keycloak-smoke backup-db offsite-backup offsite-check offsite-snapshots
+        keycloak-config keycloak-smoke signer-key db-roles backup-db offsite-backup offsite-check offsite-snapshots
 
 help:
 	@echo "make env SERVER_HOST=<dns|ip> - create .env with random secrets (once)"
@@ -20,6 +20,8 @@ help:
 	@echo "make up-infra                 - infrastructure only (local backend/web dev)"
 	@echo "make keycloak-config          - sync redirect URIs, OTP policy, token scopes into running realms"
 	@echo "make keycloak-smoke [REALM=r] - end-to-end login/token check (after Keycloak upgrades)"
+	@echo "make signer-key              - create the chain-head signer key on its volume (once; prints the fingerprint)"
+	@echo "make db-roles                 - create sp_runtime/sp_signer on an existing database volume (runbook)"
 	@echo "make backup-db                - dump app + Keycloak DBs to infra/backups/"
 	@echo "make offsite-backup           - run the off-site (restic) backup now"
 	@echo "make offsite-check            - verify the off-site repository (reads 10 % of data)"
@@ -50,8 +52,10 @@ preflight:
 up: preflight
 	@if grep -q '^VERSION=dev$$' .env; then \
 	  $(COMPOSE) build api web backup-offsite && \
+	  sh scripts/signer-key.sh && \
 	  $(COMPOSE) up -d --remove-orphans --wait --wait-timeout 600; \
 	else \
+	  sh scripts/signer-key.sh && \
 	  $(COMPOSE) up -d --no-build --remove-orphans --wait --wait-timeout 600; \
 	fi
 	sh scripts/keycloak-config.sh
@@ -59,6 +63,12 @@ up: preflight
 up-infra:
 	@test -f .env || (echo "missing infra/.env — run: make env SERVER_HOST=localhost" && exit 1)
 	$(COMPOSE_INFRA) up -d
+
+signer-key:
+	sh scripts/signer-key.sh
+
+db-roles:
+	sh scripts/db-roles.sh
 
 keycloak-smoke:
 	sh scripts/keycloak-smoke.sh $(REALM)

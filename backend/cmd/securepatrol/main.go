@@ -94,7 +94,7 @@ func main() {
 
 	// ── Migrations (API only, so two processes never race on them) ─────────
 	if mode == "api" {
-		if err := db.RunMigrations(cfg.DatabaseURL, cfg.MigrationsPath); err != nil {
+		if err := db.RunMigrations(cfg.MigrationDatabaseURL, cfg.MigrationsPath); err != nil {
 			logger.Fatal().Err(err).Msg("migrations failed")
 		}
 		logger.Info().Msg("migrations applied")

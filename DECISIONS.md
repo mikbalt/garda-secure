@@ -733,3 +733,53 @@ The review queue (`/attendance?tab=review`, `reviewAttendance`) is admin/supervi
 - The page has its own site/guard filters (all sites by default) instead of the global site selector, like the
   audit log; it is realm-wide. "Open record" opens the right page, tab and (attendance) day; the pages do not
   focus a single record yet.
+
+### D-071 — Signed chain heads, signer service, owner/runtime role split (TAQ-56)
+- Closes the "edit laundering" limit of D-069 as far as it can be closed in software: a separate **signer** container
+  (own uid 10010, Ed25519 key in a `0400` file on its own volume, DB role `sp_signer`: SELECT on the chain tables,
+  INSERT on `signed_heads` and `keyring`) signs `{site, seq, entry_hash, time, key_id}` hourly, at the site's day end
+  and on demand. It refuses a lower seq, a different hash at a signed seq, a changed entry at its last signed seq and
+  broken links since. Migration 013 also enforces the first two with a trigger (the signer role cannot bypass it).
+- `signed_heads` and `keyring` are append-only. Keyring: `genesis` (epoch 1), `rotation` (same epoch; signed by the new
+  key and the old key), `new_epoch` (after loss/compromise; signed by the new key only, so every client must re-pin its
+  fingerprint out of band). A key is retired when its successor appears; heads it signs later are refused.
+  `signer.VerifyHeads` / `repository.VerifyChain` = chain check + signatures + "the entry at each signed seq still
+  has the signed hash" + "the chain still reaches the highest signed seq". It catches a rewritten and re-chained
+  past, which `chain_first_break` alone accepts. Endpoint and offline CLI: TAQ-18.
+- **Role split.** The migration owner (`APP_DB_USER`, `MIGRATION_DATABASE_URL`) owns the tables; api and worker run as
+  `sp_runtime` (DML, no ownership, no DDL, no write on the chain/signer tables, cannot `DISABLE TRIGGER`). New tables
+  reach it through default privileges. Without the roles (dev DB) the grants are skipped and one role owns everything.
+- **EXECUTE decision.** `chain_entry_hash` and `chain_links_break` are revoked from PUBLIC (runtime has no direct access;
+  `chain_first_break` and `chain_append` now run as the owner, `SECURITY DEFINER`, fixed `search_path`).
+  **`chain_append` stays executable by `sp_runtime`**: the repository calls it in the transaction of every record write
+  and a trigger-based redesign would rewrite D-069. Compensating controls: it is `SECURITY DEFINER` so the runtime role
+  needs no write access to the chain; it only appends an entry that reflects the record's *current* state (visible, with
+  `origin` and time); the past entries are append-only and anchored by `signed_heads`.
+- **Does not buy:** the app role can still edit a record and chain the false state as a new entry; a superuser/host
+  owner can rewrite database and chain, but then not the signed past, unless they also take the signer's key (separate
+  volume/uid; an operator with root on the host can read it: file-based key, TPM sealing is the upgrade path, no HSM) or
+  the client's pinned fingerprint. Claim wording: "tamper-evident history anchored outside the app", not "no trust in the vendor".
+- **The signer does not trust the database for its memory (review of #66).** `signed_heads` is writable by the owner role,
+  so on its own it is no defence: wipe it, rewrite the past, re-chain, and the signer would sign the rewrite with the
+  same legitimate key. The signer therefore keeps its own append-only record, `/keys/signed-heads.jsonl` on its volume,
+  with every head (and signature) it signed, written and fsynced BEFORE the database insert. It refuses a lower seq or a
+  different hash at a seq in that file, whatever the database says, and when the file holds heads the database lacks it
+  refuses to sign that site, logs "SIGNED HEADS LOST FROM THE DATABASE" and the health goes red (the one repaired case:
+  the newest head, when the chain still holds exactly that entry, i.e. a crash between disk and insert). `signer
+  restore-heads` re-inserts from the file after the loss has been looked at. `signer export` writes the heads (from the
+  file) and the keyring as JSON, to be copied off the box (daily delivery: TAQ-22). `signer verify` also checks the file.
+- Verifier rules (review of #66): a key is trusted only if reachable from a pinned fingerprint (a pinned key is trusted as
+  such; with no pin at all only the first genesis key); a key that more than one valid handover leads away from is a fork
+  and none of its successors is trusted; site ids are validated and canonicalised (lowercase, hyphenated) before signing and
+  in the payload; the table checks hash/signature/key lengths; a chain with entries and no signed head is `UNSIGNED`;
+  `--max-age` reports `STALE` when entries follow the newest head and that head is older than the limit (a quiet site is
+  never stale).
+- **What remains.** Someone who controls the host as root and can write the signer volume (or has the key) can rewrite
+  the file and the database together and sign a rewritten past. This raises the bar from "database owner" to "host root
+  plus the signer volume", and the export gives an anchor that can leave the box: once a head has been copied off
+  (TAQ-22) or pinned, even that attacker cannot change what was already anchored without it showing. Between two
+  exports the newest heads are only as safe as the host.
+- Migration numbers: 011 (#63), 012 (#65, TAQ-21), 013 (this). golang-migrate tolerates the gap while 012 is missing, but
+  a database that has applied 013 would skip a later-arriving 012: merge order is #63, #65, #66.
+- The signer binary ships in the api image (`/app/signer`) and runs as its own service; a minimal separate image is a
+  later hardening. The key is created at install time (`make signer-key`), never in an image, `.env` or log.
