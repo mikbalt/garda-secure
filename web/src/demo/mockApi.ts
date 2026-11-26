@@ -6,6 +6,7 @@
 import type { AxiosAdapter, AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios'
 import type {
   AuditRow,
+  FlagRow,
   CheckpointProgress,
   DailyAttendanceRow,
   GuardKpiRow,
@@ -767,6 +768,62 @@ on('GET', '/audit', ({ query }) => {
     })
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
   return { rows: rows.slice(offset, offset + limit), limit, offset, has_more: rows.length > offset + limit }
+})
+
+// Fraud-signal dashboard (TAQ-21): flags of the demo records; review marks are kept apart from the records.
+const flagReviews = new Map<string, { by: string; at: string; note?: string }>()
+function demoFlags(): FlagRow[] {
+  const sites = new Set(visibleSites(w.sites).map((s) => s.id))
+  const siteOf = (id: string) => w.sites.find((s) => s.id === id)
+  const guardOf = (id: string) => w.guards.find((g) => g.id === id)
+  const out: FlagRow[] = []
+  const add = (kind: FlagRow['kind'], id: string, siteId: string, guardId: string, at: string, flags: string[] | undefined) => {
+    if (!sites.has(siteId)) return
+    for (const flag of flags ?? []) {
+      if (flag === 'qr_unsigned') continue
+      const rv = flagReviews.get(`${kind}:${id}:${flag}`)
+      out.push({
+        kind, record_id: id, flag, site_id: siteId, site_name: siteOf(siteId)?.name ?? '', guard_id: guardId, guard_name: guardOf(guardId)?.name ?? '',
+        event_at: at, ...(rv && { reviewed_by: rv.by, reviewed_at: rv.at, note: rv.note }),
+      })
+    }
+  }
+  for (const r of w.attendance) add('attendance', r.id, r.site_id, r.guard_id, r.clock_in_at ?? r.created_at, r.flags)
+  for (const r of w.sos) add('sos', r.id, r.site_id, r.guard_id, r.fired_at, r.flags)
+  for (const r of w.incidents) add('incident', r.id, r.site_id, r.guard_id, r.occurred_at ?? r.created_at, r.flags)
+  for (const r of w.sessions) add('session', r.id, r.site_id, r.guard_id, r.started_at, r.flags)
+  for (const r of w.scans) {
+    const ses = w.sessions.find((x) => x.id === r.session_id)
+    if (ses) add('scan', r.id, ses.site_id, r.guard_id, r.scanned_at, r.flags)
+  }
+  return out
+}
+on('GET', '/flags', ({ query }) => {
+  requireRoles('admin', 'supervisor')
+  const from = query.from ? Date.parse(query.from) : -Infinity
+  const to = query.to ? Date.parse(query.to) : Infinity
+  const limit = Math.min(Math.max(Number(query.limit) || 50, 1), 200)
+  const offset = Math.max(Number(query.offset) || 0, 0)
+  const rows = demoFlags()
+    .filter((r) => {
+      const at = Date.parse(r.event_at)
+      if (at < from || at >= to) return false
+      if (query.site_id && r.site_id !== query.site_id) return false
+      if (query.guard_id && r.guard_id !== query.guard_id) return false
+      if (query.flag ? r.flag !== query.flag : false) return false
+      if (query.reviewed && !!r.reviewed_at !== (query.reviewed === 'true')) return false
+      return true
+    })
+    .sort((x, y) => y.event_at.localeCompare(x.event_at))
+  return { rows: rows.slice(offset, offset + limit), limit, offset, has_more: rows.length > offset + limit }
+})
+on('POST', '/flags/review', ({ body }) => {
+  requireRoles('admin', 'supervisor')
+  const key = `${body.kind}:${body.record_id}:${body.flag}`
+  const find = () => demoFlags().find((r) => `${r.kind}:${r.record_id}:${r.flag}` === key)
+  if (!find()) throw new HttpError(404, 'not_found', 'not found')
+  if (!flagReviews.has(key)) flagReviews.set(key, { by: demoMe(w.sites).username, at: iso(now()), note: typeof body.note === 'string' && body.note ? body.note : undefined })
+  return find()
 })
 
 on('GET', '/backups', () => (requirePlatform(), [...w.backups].sort((a, b) => b.created_at.localeCompare(a.created_at))))

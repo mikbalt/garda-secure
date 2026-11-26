@@ -619,3 +619,28 @@ export interface AuditPage {
 }
 
 export * from './patrol'
+
+/** Kinds of records that carry plausibility flags (GET /flags). */
+export type FlagKind = 'attendance' | 'scan' | 'session' | 'incident' | 'sos' | 'defect' | 'visitor'
+
+/** One flag on one record (GET /flags), with its review mark if reviewed. */
+export interface FlagRow {
+  kind: FlagKind
+  record_id: string
+  flag: string
+  site_id: string
+  site_name: string
+  guard_id: string
+  guard_name: string
+  event_at: string
+  reviewed_by?: string
+  reviewed_at?: string
+  note?: string
+}
+
+export interface FlagPage {
+  rows: FlagRow[]
+  limit: number
+  offset: number
+  has_more: boolean
+}

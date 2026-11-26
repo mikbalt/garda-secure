@@ -20,7 +20,7 @@ export function SiteProvider({ children }: { children: ReactNode }) {
     // network blip) keep trying instead of staying broken until a reload.
     refetchInterval: (query) => (query.state.status === 'error' ? SITES_RETRY_MS : false),
   })
-  const [chosen, setChosen] = useState<string>(() => readStored(STORAGE_KEYS.site) ?? '')
+  const [chosen, setChosen] = useState<string>(() => new URLSearchParams(window.location.search).get('site') ?? readStored(STORAGE_KEYS.site) ?? '')
 
   const setSiteId = useCallback((id: string) => {
     setChosen(id)

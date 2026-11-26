@@ -220,6 +220,10 @@ func (h *Handler) Register(api fiber.Router) {
 
 	api.Get("/audit", web(rolesAdmin...), h.listAudit)
 
+	// Fraud-signal dashboard (TAQ-21): plausibility flags and their review marks.
+	api.Get("/flags", web(rolesOps...), h.listFlags)
+	api.Post("/flags/review", web(rolesOps...), h.reviewFlag)
+
 	// Browser push for dashboard users: each user manages their own browsers
 	// and event preferences.
 	// A platform-admin-only user may open the page (no events available).

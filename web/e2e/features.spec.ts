@@ -73,6 +73,25 @@ test.describe('hardening features (demo) @desktop', () => {
     expect(problems).toEqual([])
   })
 
+  test('fraud signals: a supervisor reviews a flag, hr and client-readonly do not get the page', async ({ page, problems }) => {
+    await openAs(page, 'supervisor', '/flags')
+    await page.getByLabel('Status').selectOption('')
+    await page.getByRole('button', { name: 'Terapkan filter' }).click()
+    const button = page.getByRole('button', { name: /^Tandai sudah ditinjau:/ }).first()
+    await expect(button).toBeVisible()
+    await expect(page.getByRole('link', { name: /^Buka catatan:/ }).first()).toHaveAttribute('href', /^\/(attendance|incidents|patrol)/)
+    await button.click()
+    await expect(page.getByText('Tanda ditandai sudah ditinjau.').first()).toBeVisible()
+    await expect(page.getByText(/^Ditinjau oleh /).first()).toBeVisible()
+    expect(problems).toEqual([])
+    for (const role of ['hr', 'client-readonly'] as const) {
+      await openAs(page, role, '/flags')
+      await expect(page.getByRole('heading', { level: 1, name: 'Sinyal kecurangan' })).toHaveCount(0)
+      await expect(page.getByRole('button', { name: 'Terapkan filter' })).toHaveCount(0)
+      await expect(page.getByRole('link', { name: 'Sinyal kecurangan' })).toHaveCount(0)
+    }
+  })
+
   test('client-readonly does not get selfie buttons', async ({ page, problems }) => {
     await openAs(page, 'client-readonly', '/attendance')
     await expect(page.getByRole('columnheader', { name: 'Swafoto' })).toHaveCount(0)

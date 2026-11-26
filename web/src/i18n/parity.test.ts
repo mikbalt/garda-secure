@@ -37,4 +37,15 @@ describe('i18n EN/ID parity', () => {
     expect(translate('id', 'idle.countdown', { s: 9 })).toBe('Keluar dalam 9 detik')
     expect(translate('en', 'aud.page', { n: 2 })).toBe('Page 2')
   })
+
+  it('words the fraud-signal dashboard strings for guards as "Satpam", never "Petugas"', () => {
+    const keys = Object.keys(en).filter((k) => k.startsWith('fd.')) as (keyof typeof en)[]
+    expect(keys.length).toBeGreaterThan(15)
+    for (const k of keys) {
+      expect(id[k], k).not.toMatch(/petugas/i)
+      expect(en[k], k).not.toMatch(/petugas/i)
+    }
+    expect(id['fd.guard']).toBe('Satpam')
+    expect(en['fd.guard']).toBe('Guard')
+  })
 })

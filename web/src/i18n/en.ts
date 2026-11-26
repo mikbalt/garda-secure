@@ -3,6 +3,7 @@ import { peopleEn } from './people.en'
 import { opsEn } from './ops.en'
 import { adminEn } from './admin.en'
 import { platformEn } from './platform.en'
+import { flagsEn } from './flags.en'
 import { usersEn } from './users.en'
 import { patrol2En } from './patrol2.en'
 import { pushEn } from './push.en'
@@ -436,6 +437,7 @@ export const en = {
   ...opsEn,
   ...adminEn,
   ...platformEn,
+  ...flagsEn,
   ...usersEn,
   ...patrol2En,
   ...pushEn,

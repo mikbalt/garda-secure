@@ -25,7 +25,8 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 | 009 | site_active (`sites.active`) | `mokhataq/site-deactivation` | pushed |
 | 010 | sos_unverified_ack (`sos_alerts.unverified_ack_by/at`) | `muhamhad-pc1/claude-verify` | pushed |
 | 011 | record_chain (per-site hash chain, TAQ-17) | `mikbalt/taq-17-chain` | pushed |
-| 012 | *(next free)* | | |
+| 012 | flag_reviews (TAQ-21) | `mikbalt/guard-fraud` | in review |
+| 013 | *(next free)* | | |
 
 ## Milestones (PRD §11)
 

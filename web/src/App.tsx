@@ -21,6 +21,7 @@ const Incidents = lazy(() => import('./pages/Incidents'))
 const Reports = lazy(() => import('./pages/Reports'))
 const Settings = lazy(() => import('./pages/Settings'))
 const Setup = lazy(() => import('./pages/Setup'))
+const Flags = lazy(() => import('./pages/Flags'))
 const Audit = lazy(() => import('./pages/Audit'))
 const Users = lazy(() => import('./pages/Users'))
 const Notifications = lazy(() => import('./pages/Notifications'))
@@ -71,6 +72,7 @@ export function App() {
                     <Route path="/reports" element={page('viewReports', <Reports />)} />
                     <Route path="/setup" element={page('viewSetup', <Setup />)} />
                     <Route path="/settings" element={page('viewSettings', <Settings />)} />
+                    <Route path="/flags" element={page('reviewFlags', <Flags />)} />
                     <Route path="/audit" element={page('viewAudit', <Audit />)} />
                     <Route path="/users" element={page('manageUsers', <Users />)} />
                     <Route path="/notifications" element={page('viewNotifications', <Notifications />)} />

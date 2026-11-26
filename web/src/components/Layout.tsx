@@ -9,6 +9,7 @@ import {
   ChevronsUpDown,
   ClipboardCheck,
   FileClock,
+  Flag,
   LayoutGrid,
   ListChecks,
   LogOut,
@@ -57,6 +58,7 @@ const groups: { label?: Key; items: NavItem[] }[] = [
       { to: '/patrol', label: 'nav.patrol', icon: Route, cap: 'viewPatrol' },
       { to: '/incidents', label: 'nav.incidents', icon: ShieldAlert, cap: 'viewIncidents' },
       { to: '/attendance', label: 'nav.attendance', icon: ClipboardCheck, cap: 'viewAttendance' },
+      { to: '/flags', label: 'nav.flags', icon: Flag, cap: 'reviewFlags' },
     ],
   },
   {
