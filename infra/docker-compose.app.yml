@@ -24,7 +24,9 @@ x-app-hardening: &app-hardening
 
 # Passwords are embedded in URLs: preflight requires URL-safe secrets (INF-D6).
 x-backend-env: &backend-env
-  DATABASE_URL: postgres://${APP_DB_USER}:${APP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+  # Runtime role: table DML only, no ownership (D-071). The API applies
+  # migrations as the owner (APP_DB_USER) through MIGRATION_DATABASE_URL.
+  DATABASE_URL: postgres://sp_runtime:${SP_RUNTIME_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
   DB_MAX_CONNS: ${DB_MAX_CONNS:-20}
   DB_STATEMENT_TIMEOUT: ${DB_STATEMENT_TIMEOUT:-30s}
   REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
@@ -124,6 +126,7 @@ services:
     environment:
       <<: *backend-env
       PORT: "8080"
+      MIGRATION_DATABASE_URL: postgres://${APP_DB_USER}:${APP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
     secrets:
       - keycloak_admin_clients
       - fcm_service_account
@@ -178,6 +181,39 @@ services:
       timeout: 5s
       retries: 3
       start_period: 60s
+    networks:
+      - securepatrol
+
+  # Chain-head signer (TAQ-56, D-071): signs each site's record-chain head with
+  # an Ed25519 key that only this container can read (own uid, 0400 file on its
+  # own volume) and writes signed_heads with a role that can read the chain
+  # tables and append to signed_heads/keyring, nothing else. The key is created
+  # at install time by `make signer-key` (scripts/signer-key.sh), not in the image.
+  signer:
+    image: ${IMAGE_REPO:-securepatrol}/api:${VERSION:-dev}
+    restart: always
+    <<: *app-hardening
+    logging: *logging
+    entrypoint: ["/app/signer"]
+    command: ["run"]
+    user: "10010:10010"
+    environment:
+      SIGNER_DATABASE_URL: postgres://sp_signer:${SP_SIGNER_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      SIGNER_KEY_FILE: /keys/signer.key
+      SIGNER_ADDR: ":9092"
+      SIGNER_INTERVAL: ${SIGNER_INTERVAL:-1m}
+      TZ: ${TZ:-Asia/Jakarta}
+    volumes:
+      - signer_keys:/keys
+    depends_on:
+      api:
+        condition: service_healthy # api applies migration 013 (tables, grants) first
+    healthcheck:
+      test: ["CMD", "/app/signer", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     networks:
       - securepatrol
 

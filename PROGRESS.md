@@ -25,8 +25,9 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 | 009 | site_active (`sites.active`) | `mokhataq/site-deactivation` | pushed |
 | 010 | sos_unverified_ack (`sos_alerts.unverified_ack_by/at`) | `muhamhad-pc1/claude-verify` | pushed |
 | 011 | record_chain (per-site hash chain, TAQ-17) | `mikbalt/taq-17-chain` | pushed |
-| 012 | flag_reviews (TAQ-21) | `mikbalt/guard-fraud` | in review |
-| 013 | *(next free)* | | |
+| 012 | flag_reviews (TAQ-21) | `mikbalt/guard-fraud` | pushed |
+| 013 | signed_heads, keyring, owner/runtime role split (TAQ-56) | `mikbalt/taq-56-signer` | in review |
+| 014 | *(next free)* | | |
 
 ## Milestones (PRD §11)
 
@@ -129,3 +130,4 @@ Mobile (D-024) — open audit items, see docs/audit-2026-10.md
 | Dependabot clean-up: merged minor updates (Go x/crypto + miniredis, npm minor group, Prometheus 3.15, Alpine 3.24), closed majors/obsolete PRs, monthly grouped config without majors; docs/maintenance.md; stabilised push e2e | `muhamhad-pc1/claude` | 2026-10-14 | merge deps-2026-10 |
 | CI green on all workflows: excelize CVE fixes, `apk upgrade` in images, full Chromium for e2e, stable axe checks, Keycloak port check; first successful APK build (geolocator_android pinned to 4.6.1 for Flutter 3.24) | `muhamhad-pc1/claude` | 2026-10-14 | 7bbc6bb, 6e617ba |
 | Flutter 3.47.7 + AGP 9 / Gradle 9.1 / Kotlin 2.2 (mokhataq), plugins for API 35+, macOS node-exporter mode; CI pins Flutter 3.47.7; installable debug APK artifact on every CI run (D-058) | `mokhataq`, `muhamhad-pc1/claude` | 2026-10-16 | merge merge/mokhataq-2026-10-16 |
+| Signer service, `signed_heads` + `keyring` (migration 013), owner/runtime role split, `signer verify`, runbook §10 "Signer service" (D-071, TAQ-56; stacked on #63; offline CLI TAQ-18, anchor delivery TAQ-22; follow-up: Prometheus alert on signer down, separate minimal image) | `mikbalt/taq-56-signer` | 2026-11-26 | this PR |

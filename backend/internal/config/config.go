@@ -107,6 +107,9 @@ type Config struct {
 	Push Push
 
 	MigrationsPath string
+	// MigrationDatabaseURL is the table owner's connection, used only to apply
+	// migrations (D-071). Empty in the environment = same as DatabaseURL.
+	MigrationDatabaseURL string
 
 	LogLevel string
 	Port     string
@@ -149,6 +152,7 @@ func Load() (*Config, error) {
 		WhatsAppPhoneNumberID:   os.Getenv("WHATSAPP_PHONE_NUMBER_ID"),
 		WhatsAppTemplateName:    os.Getenv("WHATSAPP_TEMPLATE_NAME"),
 		WhatsAppTemplateLang:    envOrDefault("WHATSAPP_TEMPLATE_LANG", "id"),
+		MigrationDatabaseURL:    os.Getenv("MIGRATION_DATABASE_URL"),
 		MigrationsPath:          envOrDefault("MIGRATIONS_PATH", "/migrations"),
 		LogLevel:                envOrDefault("LOG_LEVEL", "info"),
 		Port:                    envOrDefault("PORT", "8080"),
@@ -198,6 +202,9 @@ func Load() (*Config, error) {
 
 	if cfg.DatabaseURL == "" {
 		return nil, errors.New("DATABASE_URL is required")
+	}
+	if cfg.MigrationDatabaseURL == "" {
+		cfg.MigrationDatabaseURL = cfg.DatabaseURL
 	}
 	if cfg.KeycloakURL == "" {
 		return nil, errors.New("KEYCLOAK_URL is required")

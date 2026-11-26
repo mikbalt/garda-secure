@@ -33,6 +33,8 @@ services:
       KC_DB_USER: ${KC_DB_USER}
       KC_DB_PASSWORD: ${KC_DB_PASSWORD}
       PG_MONITOR_PASSWORD: ${PG_MONITOR_PASSWORD}
+      SP_RUNTIME_DB_PASSWORD: ${SP_RUNTIME_DB_PASSWORD}
+      SP_SIGNER_DB_PASSWORD: ${SP_SIGNER_DB_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
@@ -212,6 +214,7 @@ services:
       - securepatrol
 
 volumes:
+  signer_keys:
   pgdata:
   redisdata:
   miniodata:

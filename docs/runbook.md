@@ -76,6 +76,16 @@ restore only.
 * The worker dumps the Keycloak database with the `KC_DB_USER` credentials
   (`BACKUP_KEYCLOAK_DATABASE_URL`, set in `docker-compose.app.yml`; §5).
 
+**Owner / runtime split (D-071).** The migrations run as the owner `securepatrol_app`
+(`MIGRATION_DATABASE_URL`, API only). api and worker run as `sp_runtime`
+(`SP_RUNTIME_DB_PASSWORD`): table DML, no ownership, no DDL, no write to the chain tables
+and cannot disable their triggers. `sp_signer` (`SP_SIGNER_DB_PASSWORD`) is the signer's
+role (§10 "Signer service"). A volume that has the app role but not these two (created
+before TAQ-56): `make db-roles` (creates both from `.env`, applies the grants; idempotent),
+**then** deploy. Migration 013 grants to the roles at startup; tables added by later
+migrations are granted to `sp_runtime` through default privileges. Restores run as the
+superuser; run `make db-roles` after restoring into a fresh volume.
+
 A volume created before this change still has the old single superuser. Migrate it
 once: with the **old** `.env`, `make backup-db`; then `docker compose down`, remove the
 volume (`docker volume rm infra_pgdata`), switch to the new `.env`, `docker compose up -d
@@ -1090,6 +1100,64 @@ outbox backlog, SOS pending, clock offset, recent errors. The web *Devices* page
 shows the latest one; Prometheus gets `sp_device_outbox_pending{device}` from the
 API. A tablet whose beacon is old or whose outbox keeps growing is offline or
 stuck (see §3).
+
+### Signer service (chain-head anchoring, TAQ-56, D-071)
+
+The `signer` container signs the head of every site's record chain (migration 011) with an
+Ed25519 key that only it can read, and stores the result in `signed_heads`. After a head is
+signed, the past cannot be rewritten *and re-chained* without the signature check
+(`repository.VerifyChain`) noticing. It does **not** stop the application role from
+appending a false change: that appears as a new chain entry with its origin. The claim is
+"tamper-evident history anchored outside the app".
+
+* **What runs.** Own uid (10010), key file `0400` on its own volume `signer_keys` (`/keys`),
+  DB role `sp_signer` (read chain tables, append to `signed_heads` and `keyring`, nothing
+  else). Signs due heads every minute: *hourly*, *day_end* (first signature after the
+  site's local midnight) and *on_demand*: `POST http://signer:9092/sign?site_id=<uuid>`
+  from inside the compose network (for a proof-pack export). Refuses a lower seq, a different
+  hash at a signed seq, a changed entry at the last signed seq and broken links since then
+  (logged as errors; the signer stays up). `GET /health`, `GET /pubkey`.
+* **Key generation (install time).** `make signer-key` (`make up` and `deploy.sh` run it):
+  creates `/keys/signer.key` if missing, prints the **fingerprint**. Record the fingerprint
+  somewhere that is not this server (owner's safe, the client contract): verifiers pin it.
+  The key is never in an image, `.env`, a log or the repo. Without a key the signer exits.
+* **Backup.** Copy the key once, offline, to the owner's safe:
+  `docker compose run --rm --no-deps -T --entrypoint cat signer /keys/signer.key`
+  (prints the seed to the terminal: do it on the server console, not over a logged session).
+  It is deliberately **not** part of `make backup-db` or the off-site backup: the vendor
+  who holds database backups must not hold the key. The `keyring` and `signed_heads` rows
+  are in the database dump.
+* **Rotation (planned, e.g. yearly or staff change).** Generate the new key on a scratch
+  volume/path, then, with both key files readable by the command:
+  `signer rotate --old-key OLD --new-key NEW` (needs `SIGNER_DATABASE_URL`). Both keys sign
+  the keyring entry (new key = possession, old key = handover). Put NEW at
+  `/keys/signer.key` (remove OLD from the volume, keep it offline), restart the signer. Old
+  heads stay valid; clients that pinned the old fingerprint follow the chain of handovers
+  and need no new pin. Heads signed with the old key *after* the rotation are refused.
+* **Loss or compromise.** The old key cannot vouch for a successor. Start a new epoch:
+  `signer new-epoch --new-key NEW --reason "key leaked"` , install NEW, restart. Epoch n+1
+  keys are **not** trusted until each client re-pins the new fingerprint out of band;
+  heads signed in epoch n stay verifiable under the old pin but a compromise means nothing
+  signed by that key after the leak is evidence: note the date in the incident log. If the
+  key is merely lost the same procedure applies (there is no recovery of a lost key).
+* **The signer's own record.** `/keys/signed-heads.jsonl` (same volume, 0600) lists every head it signed, written
+  before the database insert. If `signed_heads` loses rows (wiped, restored from an old dump) the signer logs `SIGNED
+  HEADS LOST FROM THE DATABASE`, refuses to sign the affected sites and goes unhealthy: look at who changed the
+  database, then `docker compose exec signer /app/signer restore-heads`. A crash in the middle of a write leaves a torn last line; the signer drops it at start (nothing was
+  signed from it), any other damage stops the signer from starting. Back this file up with the key (offline); it is
+  small. Losing it removes the signer's memory, not the evidence already in the database.
+* **Export for offline anchoring.** `docker compose exec -T signer /app/signer export > heads.json` (all sites, or
+  `--site`): heads from the signer's own record plus the keyring, JSON, verifiable with the public key and the
+  `garda-head:v1|site|seq|entry_hash|signed_at|key_id` payload. Copy it off the box (daily delivery is TAQ-22).
+* **Check.** `docker compose exec signer /app/signer verify --site <uuid> --pin <fingerprint> --max-age 26h`: exit 1 with
+  `BROKEN`, `UNSIGNED` (entries, no signed head) or `STALE` (entries after a head older than the limit).
+* **Verify.** `repository.VerifyChain(site, pins, opts)` = chain break check + signature check
+  (`pins` = fingerprints held by the client; none = trust the first key). The offline CLI
+  and the HTTP endpoint are TAQ-18.
+* **Monitoring.** `docker compose ps signer` (healthy), `docker compose logs signer` (`sign
+  due heads` errors = a site's chain does not verify: treat as an incident).
+* **Upgrade path.** A TPM/HSM-sealed key can replace the file behind `LoadKeyFile` without
+  changing the data model.
 
 ## 11. Troubleshooting
 

@@ -66,6 +66,9 @@ if [ "${SKIP_PRE_DEPLOY_BACKUP:-0}" != 1 ]; then
   sh scripts/backup-db.sh "pre-$version-from-$previous"
 fi
 
+info "signer key (created once, on its own volume)"
+(cd "$INFRA_DIR" && sh scripts/signer-key.sh)
+
 info "starting $version"
 if ! compose up -d --no-build --remove-orphans --wait --wait-timeout 600; then
   compose ps -a || true

@@ -668,7 +668,7 @@ func TestChainMigrationBackfillsExistingRows(t *testing.T) {
 	}
 
 	// The down migration works and the chain can be rebuilt by migrating up again.
-	if err := m.Steps(-1); err != nil {
+	if err := m.Migrate(10); err != nil { // down through every later migration, 011 (chain) included
 		t.Fatal(err)
 	}
 	if err := m.Up(); err != nil {

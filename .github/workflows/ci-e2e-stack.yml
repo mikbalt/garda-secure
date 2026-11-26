@@ -56,8 +56,48 @@ jobs:
       - name: Build images (api/worker, web, backup-offsite)
         run: docker compose build api web backup-offsite
 
+      - name: Create the signer key (install-time step, D-071)
+        run: sh scripts/signer-key.sh
+
       - name: Start the stack (docker compose up --wait)
         run: docker compose up -d --wait --wait-timeout 900
+
+      - name: Signer signs a head and the runtime role cannot touch the chain (D-071)
+        run: |
+          # .env is not shell-safe (values with spaces): read single values.
+          envv() { grep "^$1=" .env | head -1 | cut -d= -f2-; }
+          POSTGRES_DB=$(envv POSTGRES_DB); SP_RUNTIME_DB_PASSWORD=$(envv SP_RUNTIME_DB_PASSWORD)
+          psql_as() { docker compose exec -T -e PGPASSWORD="$2" postgres psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -U "$1" -d "$POSTGRES_DB" -At "${@:3}"; }
+          site=$(psql_as sp_runtime "$SP_RUNTIME_DB_PASSWORD" -c "insert into sites (name, keycloak_realm) values ('ci chain','ci') returning id" | head -1)
+          guard=$(psql_as sp_runtime "$SP_RUNTIME_DB_PASSWORD" -c "insert into guards (name, role, site_id) values ('G','guard','$site') returning id" | head -1)
+          inc=$(psql_as sp_runtime "$SP_RUNTIME_DB_PASSWORD" -c "insert into incidents (site_id, guard_id, type, severity, occurred_at) values ('$site','$guard','theft','low',now()) returning id" | head -1)
+          psql_as sp_runtime "$SP_RUNTIME_DB_PASSWORD" -c "select chain_append('incident','$inc')" >/dev/null
+          docker compose exec -T signer wget -qO- --post-data= "http://127.0.0.1:9092/sign?site_id=$site"
+          docker compose exec -T signer /app/signer verify --site "$site"
+          # The owner wipes signed_heads, rewrites the past and re-chains: the signer must still refuse.
+          APP_DB_USER=$(envv APP_DB_USER); APP_DB_PASSWORD=$(envv APP_DB_PASSWORD)
+          psql_as "$APP_DB_USER" "$APP_DB_PASSWORD" <<SQL
+          alter table signed_heads disable trigger user;
+          delete from signed_heads where site_id = '$site';
+          alter table signed_heads enable trigger user;
+          alter table record_chain disable trigger user;
+          alter table record_chain_heads disable trigger user;
+          update incidents set description = 'nothing happened' where id = '$inc';
+          delete from record_chain where site_id = '$site';
+          delete from record_chain_heads where site_id = '$site';
+          select chain_append('incident', '$inc');
+          alter table record_chain enable trigger user;
+          alter table record_chain_heads enable trigger user;
+          SQL
+          if docker compose exec -T signer wget -qO- --post-data= "http://127.0.0.1:9092/sign?site_id=$site"; then
+            echo "signer re-signed a rewritten past after signed_heads was wiped" >&2; exit 1
+          fi
+          if docker compose exec -T signer /app/signer verify --site "$site"; then
+            echo "verify accepted a rewritten past" >&2; exit 1
+          fi
+          if psql_as sp_runtime "$SP_RUNTIME_DB_PASSWORD" -c "alter table record_chain disable trigger user" 2>/dev/null; then
+            echo "runtime role can disable chain triggers" >&2; exit 1
+          fi
 
       - name: Configure Keycloak (redirect URIs, OTP flow) — idempotent, run twice
         run: |
