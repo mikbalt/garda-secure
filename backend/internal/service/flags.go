@@ -38,6 +38,10 @@ const (
 	// FlagQRUnsigned: a QR scan carried no signed payload (legacy plain
 	// code, or only a checkpoint ID).
 	FlagQRUnsigned = "qr_unsigned"
+	// FlagQRStale: the QR signature is genuine but the scan's event time is
+	// outside the printed code's signed time window (an old print or a photo
+	// of one), or the code carries no window (printed before TAQ-19).
+	FlagQRStale = "qr_stale"
 )
 
 // GuardFlags returns [guard_unverified] unless auth verifies the acting

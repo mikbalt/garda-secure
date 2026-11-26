@@ -681,3 +681,36 @@ The review queue (`/attendance?tab=review`, `reviewAttendance`) is admin/supervi
   rewrite records, chain and head together. Hardening follow-ups: split the migration owner from the runtime role and
   REVOKE EXECUTE on `chain_append`, together with the signer service. Closing it needs an external anchor (head hash published outside the
   database) or signed heads. It is not "verifiable without trusting the operator" yet; the owner decides how to handle it.
+
+### D-072 - Time-bound checkpoint QR codes (TAQ-19)
+
+- **Date:** 2026-11-26 · **Status:** Accepted (defaults taken by the agent, owner may overrule)
+- The printed text is now `SP2:<checkpoint id>:<from>:<to>:<sig>` (Unix seconds). `sig` is the first 22 base64url
+  characters of HMAC-SHA256 over `SP2:<id>:<qr_version>:<from>:<to>` with the **same QR key** as D-037 (HKDF info
+  unchanged, so `QR_SIGNING_SECRET` rotation and *Regenerate QR codes* still invalidate every print). The `SP2:`
+  prefix is inside the signed text, so an SP1 signature cannot be replayed as SP2.
+- Issued on every read: `GET /patrol/routes`, `GET /patrol/routes/:id` and the create/update/regenerate responses
+  decorate each signed checkpoint with a window of `[now, now + QR_WINDOW]`. Nothing is stored; **the print flow for
+  admins is unchanged** - printing issues a fresh window.
+- `QR_WINDOW` default **720h (30 days)**, allowed 1h..8784h. Reason: a printed sticker cannot rotate, so the window
+  is the replay horizon of a photo of the sticker and also the reprint interval. Short windows would make guards'
+  scans stale on schedule. Per-site / per-route windows are not built (simpler first).
+- Verification uses the scan's **event time** (`scanned_at`) with `QRSkew` = 10 min at both ends for tablet clock
+  drift, **and** the server's receipt time: `scanned_at` is client-supplied and `ClientTime` accepts anything from the
+  last 7 days, so the event time alone would let a photo of a code that expired days ago be backdated into the
+  window. A scan is therefore `qr_stale` unless the event time is inside the window **and** it is received no later
+  than `QROfflineGrace` (24 h) + skew after the window ends. A scan captured offline inside the window still
+  verifies when it syncs, including up to a day after expiry; the offline queue does not need the window open.
+- **Replay horizon:** window + 10 min + 24 h (about 31 days), not window + 7 days. Remaining limit: a guard who
+  is offline (or whose tablet clock is set back) and lies about the time can still replay a photo of a code until
+  that horizon; `late_sync`/`clock_ahead` and the GPS/photo checks are the other signals. A genuine offline scan
+  synced more than a day after the window ended is flagged, not dropped.
+- Stale scans are **accepted and flagged `qr_stale`** (never rejected, never dropped), like `qr_invalid` (D-037):
+  an offline scan older than the window must not be lost, and a wrong clock or a late reprint must not stop a
+  patrol. A genuine windowless `SP1:` code is flagged `qr_stale` too (reprint to get a window); the tampered
+  window, wrong version or wrong key remain `qr_invalid`. Both count as flagged scans for review.
+- Tablets still never receive payloads; the mobile app parses SP2 only to find the checkpoint, forwards the raw text
+  with `scanned_at`, and does not judge the window (no key). The clock-skew and offline rules are the server's.
+- Known limits: `scanned_at` is client-supplied (bounded by `ClientTime`, plus `late_sync`/`clock_ahead`), and the web
+  session-progress view still shows the stored windowless SP1 text. The signed-heads signer is a separate task.
+

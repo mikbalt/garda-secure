@@ -52,6 +52,8 @@ export const platformId: Record<keyof typeof platformEn, string> = {
   'flag.qr_invalid.desc': 'Tanda tangan kode QR yang dipindai tidak cocok — mungkin salinan.',
   'flag.qr_unsigned': 'QR tanpa tanda tangan',
   'flag.qr_unsigned.desc': 'Kode QR titik ini belum bertanda tangan (dicetak sebelum kode bertanda tangan diperkenalkan). Cetak ulang lembar QR.',
+  'flag.qr_stale': 'QR kedaluwarsa',
+  'flag.qr_stale.desc': 'Kode QR asli tetapi dipindai di luar jendela waktu yang tercetak di dalamnya (cetakan lama, atau foto cetakan), atau tidak punya jendela waktu. Cetak ulang lembar QR.',
   'flag.unknown.desc': 'Server menandai data ini untuk diperiksa ({flag}).',
 
   // pengaturan platform-admin (D-025, D-032)

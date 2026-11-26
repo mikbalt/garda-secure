@@ -128,7 +128,7 @@ class Checkpoint {
   /// ships their codes to tablets, D-035).
   final String qrCode;
 
-  /// The checkpoint's QR is a signed `SP1:` payload.
+  /// The checkpoint's QR is a signed `SP1:`/`SP2:` payload.
   final bool qrSigned;
   final int? slaMinutes;
   final int orderIndex;
@@ -146,22 +146,33 @@ class Checkpoint {
       {'id': id, 'name': name, 'qr_code': qrCode.isEmpty ? null : qrCode, 'qr_signed': qrSigned, 'sla_minutes': slaMinutes, 'order_index': orderIndex};
 }
 
-/// A signed checkpoint QR payload `SP1:<checkpoint uuid>:<signature>`. The
-/// tablet cannot verify the signature (the key stays on the server); it
-/// matches the checkpoint locally and sends the raw payload for the server
-/// to verify (it may flag the scan `qr_invalid`).
+/// A signed checkpoint QR payload: the time-bound
+/// `SP2:<checkpoint uuid>:<from>:<to>:<signature>` (Unix seconds, TAQ-19) or
+/// the older windowless `SP1:<checkpoint uuid>:<signature>`. The tablet cannot
+/// verify the signature (the key stays on the server); it matches the
+/// checkpoint locally and sends the raw payload with the scan's event time for
+/// the server to verify (it may flag the scan `qr_invalid` or `qr_stale`). An
+/// offline scan is queued whatever the window says, never dropped.
 class SignedQr {
-  const SignedQr(this.checkpointId, this.raw);
+  const SignedQr(this.checkpointId, this.raw, {this.expiresAt});
 
   final String checkpointId;
   final String raw;
 
+  /// End of the printed window (SP2 only; informational, the server decides).
+  final DateTime? expiresAt;
+
   static final _re = RegExp(r'^SP1:([0-9a-f-]{36}):[A-Za-z0-9_-]+$');
+  static final _re2 = RegExp(r'^SP2:([0-9a-f-]{36}):(\d{1,12}):(\d{1,12}):[A-Za-z0-9_-]+$');
 
   static SignedQr? parse(String scanned) {
     final raw = scanned.trim();
     final m = _re.firstMatch(raw);
-    return m == null ? null : SignedQr(m.group(1)!, raw);
+    if (m != null) return SignedQr(m.group(1)!, raw);
+    final w = _re2.firstMatch(raw);
+    if (w == null) return null;
+    final to = DateTime.fromMillisecondsSinceEpoch(int.parse(w.group(3)!) * 1000, isUtc: true);
+    return SignedQr(w.group(1)!, raw, expiresAt: to);
   }
 }
 
@@ -186,7 +197,7 @@ class PatrolRoute {
 
   int get totalSlaMinutes => checkpoints.fold(0, (n, c) => n + (c.slaMinutes ?? 0));
 
-  /// Matches a scanned QR: a signed `SP1:` payload by checkpoint ID, a legacy
+  /// Matches a scanned QR: a signed `SP1:`/`SP2:` payload by checkpoint ID, a legacy
   /// code by exact text. Anything else (incl. a bare checkpoint ID) is no
   /// match.
   QrMatch? matchQr(String scanned) {

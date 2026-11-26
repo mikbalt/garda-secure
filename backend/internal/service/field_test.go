@@ -2,6 +2,7 @@ package service
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -72,8 +73,13 @@ func TestRouteQRAssignment(t *testing.T) {
 	stale.Checkpoints = slices.Clone(upd.Checkpoints)
 	stale.Checkpoints[0].QRCode = "stale"
 	DecorateQR(&stale, qr)
-	if stale.Checkpoints[0].QRCode != upd.Checkpoints[0].QRCode {
-		t.Fatal("DecorateQR did not restore the payload")
+	if got := stale.Checkpoints[0].QRCode; !strings.HasPrefix(got, "SP2:"+upd.Checkpoints[0].ID+":") {
+		t.Fatalf("DecorateQR did not restore a windowed payload: %q", got)
+	}
+	legacyOnly := model.Route{Checkpoints: []model.Checkpoint{{ID: "l", QRCode: "LOBBY-1"}}}
+	DecorateQR(&legacyOnly, qr)
+	if legacyOnly.Checkpoints[0].QRCode != "LOBBY-1" {
+		t.Fatalf("DecorateQR must leave legacy codes alone: %q", legacyOnly.Checkpoints[0].QRCode)
 	}
 	p := SessionProgress{Checkpoints: []CheckpointProgress{{Checkpoint: upd.Checkpoints[0]}, {Checkpoint: dock}}}
 	HideSignedQR(&p)
@@ -98,14 +104,26 @@ func TestResolveCheckpointQR(t *testing.T) {
 		t.Fatal(err)
 	}
 	signed, legacy := r.Checkpoints[0], r.Checkpoints[1]
+	// The code as an admin prints it now (windowed SP2 payload).
+	printedAt := time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)
+	scanAt := printedAt.Add(2 * time.Hour)
+	fresh := qr.WindowedPayload(signed.ID, signed.QRVersion, printedAt)
+	origNow := Now
+	defer func() { Now = origNow }()
+	Now = func() time.Time { return scanAt }
 	cases := []struct {
 		name   string
 		in     ScanInput
 		wantID string
 		flag   string
 	}{
-		{"valid signed payload", ScanInput{QRPayload: signed.QRCode, Method: "qr"}, signed.ID, ""},
-		{"signed payload sent as qr_code", ScanInput{QRCode: signed.QRCode, Method: "qr"}, signed.ID, ""},
+		{"valid signed payload", ScanInput{QRPayload: fresh, Method: "qr"}, signed.ID, ""},
+		{"signed payload sent as qr_code", ScanInput{QRCode: fresh, Method: "qr"}, signed.ID, ""},
+		{"printed SP1 code has no window", ScanInput{QRPayload: signed.QRCode, Method: "qr"}, signed.ID, FlagQRStale},
+		{"tampered window", ScanInput{QRPayload: strings.Replace(fresh, ":"+strconv.FormatInt(printedAt.Add(qr.Window()).Unix(), 10)+":",
+			":"+strconv.FormatInt(printedAt.Add(10*qr.Window()).Unix(), 10)+":", 1), Method: "qr"}, signed.ID, FlagQRInvalid},
+		{"windowed code of an old version", ScanInput{QRPayload: qr.WindowedPayload(signed.ID, 0, printedAt), Method: "qr"}, signed.ID, FlagQRInvalid},
+		{"windowed code for a legacy checkpoint", ScanInput{QRPayload: qr.WindowedPayload(legacy.ID, 1, printedAt), Method: "qr"}, legacy.ID, FlagQRInvalid},
 		{"old version", ScanInput{QRPayload: qr.Payload(signed.ID, 0), Method: "qr"}, signed.ID, FlagQRInvalid},
 		{"forged signature", ScanInput{QRPayload: "SP1:" + signed.ID + ":AAAAAAAAAAAAAAAAAAAAAA", Method: "qr"}, signed.ID, FlagQRInvalid},
 		{"payload for a legacy checkpoint", ScanInput{QRPayload: qr.Payload(legacy.ID, 1), Method: "qr"}, legacy.ID, FlagQRInvalid},
@@ -119,7 +137,7 @@ func TestResolveCheckpointQR(t *testing.T) {
 	}
 	for _, tc := range cases {
 		tc.in.QR = qr
-		cp, flag := resolveCheckpoint(&r, tc.in)
+		cp, flag := resolveCheckpoint(&r, tc.in, scanAt)
 		gotID := ""
 		if cp != nil {
 			gotID = cp.ID
@@ -250,5 +268,68 @@ func TestRouteKeepsLearnedPositions(t *testing.T) {
 	}
 	if c := upd.Checkpoints[1]; c.Lat != nil || c.Lng != nil {
 		t.Fatalf("submitted position not ignored: %+v", c)
+	}
+}
+
+// A printed code carries a signed window; scans are judged by their event
+// time, so an offline scan made inside the window still verifies when it
+// syncs days later, and a photo replayed after the window is flagged.
+func TestResolveCheckpointQRWindow(t *testing.T) {
+	qr := testSigner()
+	r := model.Route{Name: "R", Checkpoints: []model.Checkpoint{{Name: "Signed"}}}
+	if err := NormalizeRoute(&r, nil, qr); err != nil {
+		t.Fatal(err)
+	}
+	cp := r.Checkpoints[0]
+	printedAt := time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)
+	payload := qr.WindowedPayload(cp.ID, cp.QRVersion, printedAt)
+	expires := printedAt.Add(qr.Window())
+	orig := Now
+	defer func() { Now = orig }()
+	// Online scans: the server receives them at their event time.
+	received := func(at time.Time) { Now = func() time.Time { return at } }
+	cases := []struct {
+		name string
+		at   time.Time
+		flag string
+	}{
+		{"scanned right after printing", printedAt.Add(time.Minute), ""},
+		{"scanned mid-window", printedAt.Add(qr.Window() / 2), ""},
+		{"clock a little behind the print", printedAt.Add(-fieldauth.QRSkew), ""},
+		{"event before the print", printedAt.Add(-fieldauth.QRSkew - time.Minute), FlagQRStale},
+		{"clock a little past expiry", expires.Add(fieldauth.QRSkew), ""},
+		{"photo replayed after expiry", expires.Add(fieldauth.QRSkew + time.Minute), FlagQRStale},
+		{"photo replayed months later", expires.Add(120 * 24 * time.Hour), FlagQRStale},
+	}
+	for _, tc := range cases {
+		received(tc.at)
+		got, flag := resolveCheckpoint(&r, ScanInput{QRPayload: payload, Method: "qr", QR: qr}, tc.at)
+		if got == nil || got.ID != cp.ID || flag != tc.flag {
+			t.Errorf("%s: flag %q, want %q (checkpoint %v)", tc.name, flag, tc.flag, got != nil)
+		}
+	}
+	// Replay: a photo of a QR that expired 3 days ago, scanned_at backdated to
+	// 1 day ago (inside ClientTime's 7-day window, outside the QR's).
+	received(expires.Add(72 * time.Hour))
+	if _, flag := resolveCheckpoint(&r, ScanInput{QRPayload: payload, Method: "qr", QR: qr}, expires.Add(48*time.Hour)); flag != FlagQRStale {
+		t.Errorf("backdated replay of an expired QR: flag %q", flag)
+	}
+	// Backdated into the window: the receipt time gives it away.
+	if _, flag := resolveCheckpoint(&r, ScanInput{QRPayload: payload, Method: "qr", QR: qr}, expires.Add(-time.Hour)); flag != FlagQRStale {
+		t.Errorf("event backdated into the window, received days later: flag %q", flag)
+	}
+	// A genuine offline scan queued 2 hours ago inside the window.
+	received(printedAt.Add(26 * time.Hour))
+	if _, flag := resolveCheckpoint(&r, ScanInput{QRPayload: payload, Method: "qr", QR: qr}, printedAt.Add(24*time.Hour)); flag != "" {
+		t.Errorf("offline scan 2 h old inside the window: flag %q", flag)
+	}
+	// Made before expiry, synced the next morning: still not flagged.
+	received(expires.Add(8 * time.Hour))
+	if _, flag := resolveCheckpoint(&r, ScanInput{QRPayload: payload, Method: "qr", QR: qr}, expires.Add(-time.Hour)); flag != "" {
+		t.Errorf("offline scan synced 8 h after expiry: flag %q", flag)
+	}
+	// Manual check-ins carry no QR flag, however late.
+	if _, flag := resolveCheckpoint(&r, ScanInput{CheckpointID: cp.ID, Method: "manual", QR: qr}, expires.Add(time.Hour*24*400)); flag != "" {
+		t.Errorf("manual check-in flagged %q", flag)
 	}
 }

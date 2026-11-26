@@ -390,7 +390,7 @@ queue. Five wrong PINs in a row lock that guard's server PIN check for 15 minute
 locked attempts are in the audit log (`resource_type=device.guard-sessions`).
 
 **Checkpoint QR codes (D-035).** New checkpoints get signed codes
-(`SP1:<checkpoint>:<signature>`); the server verifies every scan and tablets never
+(`SP2:<checkpoint>:<from>:<to>:<signature>`, time-bound, D-072); the server verifies every scan and tablets never
 receive the codes, so a code cannot be scanned without the printed sticker. Old
 plain codes keep working but their scans are flagged `qr_unsigned`. To switch a
 route to signed codes — or after a sticker was copied or lost — use *Regenerate QR
@@ -398,6 +398,9 @@ codes* on the route (`POST /patrol/routes/:id/regenerate-qr`) and **reprint the
 whole sheet**: every previously printed code of that route is then flagged
 `qr_invalid`. Changing `QR_SIGNING_SECRET` (or `SETTINGS_ENCRYPTION_KEY` while it
 is unset) invalidates all signed stickers of all routes — regenerate and reprint.
+A printed code is also valid for `QR_WINDOW` (default 30 days) from the moment the sheet was
+opened for printing; scans outside it, or of an older windowless `SP1` sticker, are accepted but
+flagged `qr_stale`: reprint the sheet (printing always issues a fresh window).
 
 **Patrol schedules (D-035).** Give a route schedule windows (e.g. day 08:00–16:00
 every 60 min, night 22:00–06:00 every 120 min, grace 15 min). The worker plans the
@@ -1114,7 +1117,7 @@ stuck (see §3).
 | Tablet "guard_not_allowed" | Guard inactive or assigned to another site. |
 | Tablet "pin_locked" | Five wrong PINs: wait 15 min, or set a new PIN for the guard in *Guards*. |
 | Many `guard_unverified` records | Tablets unlock offline or the guard token is rejected: check the tablet's connectivity; after changing `GUARD_TOKEN_SECRET` guards must unlock online once. |
-| Scans flagged `qr_invalid` | Sticker printed before *Regenerate QR codes* (or a copied/forged code); reprint the route's QR sheet. `qr_unsigned` = route still uses old plain codes. |
+| Scans flagged `qr_invalid` | Sticker printed before *Regenerate QR codes* (or a copied/forged code); reprint the route's QR sheet. `qr_unsigned` = route still uses old plain codes. `qr_stale` = sticker older than `QR_WINDOW` (or printed before time windows existed, or a photo of one): reprint. |
 | `patrol_not_started` while patrols happen | The route's schedule window/grace does not match practice, or the tablet is offline (the alert is real until the session syncs). Check *Patrol compliance*. |
 | Admin gets 403 `platform_admin_required` on Settings → Channels/Backups | Assign the `platform-admin` role (§2) and check `PLATFORM_ADMIN_REALMS`. |
 | Everyone sees 403 after login | Token issued to an unexpected client: check `KEYCLOAK_WEB_CLIENT`/`KEYCLOAK_TABLET_CLIENT` match the Keycloak client IDs. |

@@ -273,7 +273,7 @@ class FieldActions extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Records a checkpoint scan from a scanned QR [code] (signed `SP1:`
+  /// Records a checkpoint scan from a scanned QR [code] (signed `SP1:`/`SP2:`
   /// payload or legacy text), or a manual check-in of [checkpoint]. Returns
   /// the checkpoint, or null when the code is not on the route. A repeated
   /// scan is ignored (returns the checkpoint).

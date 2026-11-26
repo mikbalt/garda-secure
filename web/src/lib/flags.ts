@@ -12,6 +12,7 @@ export const KNOWN_FLAGS = [
   'guard_unverified',
   'qr_invalid',
   'qr_unsigned',
+  'qr_stale',
 ] as const
 
 /** Label + explanation of a flag; unknown flags get a generic text. */

@@ -53,6 +53,8 @@ export const platformEn = {
   'flag.qr_invalid.desc': "The scanned QR code's signature did not match — it may be a copy.",
   'flag.qr_unsigned': 'Unsigned QR',
   'flag.qr_unsigned.desc': 'The checkpoint QR code has no signature (printed before signed codes were introduced). Reprint the QR sheet.',
+  'flag.qr_stale': 'Expired QR',
+  'flag.qr_stale.desc': 'The QR code is genuine but was scanned outside the time window printed into it (an old print, or a photo of one), or it has no window. Reprint the QR sheet.',
   'flag.unknown.desc': 'The server flagged this record for review ({flag}).',
 
   // platform-admin settings (D-025, D-032)

@@ -123,9 +123,29 @@ void main() {
       expect(q?.raw, 'SP1:$signedId:AbC_-09');
       expect(SignedQr.parse('SP1:$signedId:'), isNull, reason: 'no signature');
       expect(SignedQr.parse('SP1:$signedId:abc=def'), isNull, reason: 'not base64url');
-      expect(SignedQr.parse('SP2:$signedId:abc'), isNull);
+      expect(SignedQr.parse('SP2:$signedId:abc'), isNull, reason: 'SP2 needs a window');
       expect(SignedQr.parse('SP1:${signedId.toUpperCase()}:abc'), isNull);
       expect(SignedQr.parse('SP1:not-a-uuid:abc'), isNull);
+    });
+
+    test('time-bound SP2 payload parsing (TAQ-19)', () {
+      final q = SignedQr.parse(' SP2:$signedId:1795686924:1798278924:AbC_-09 ');
+      expect(q?.checkpointId, signedId);
+      expect(q?.raw, 'SP2:$signedId:1795686924:1798278924:AbC_-09');
+      expect(q?.expiresAt, DateTime.fromMillisecondsSinceEpoch(1798278924 * 1000, isUtc: true));
+      expect(SignedQr.parse('SP1:$signedId:abc')?.expiresAt, isNull, reason: 'SP1 has no window');
+      expect(SignedQr.parse('SP2:$signedId:x:1798278924:abc'), isNull);
+      expect(SignedQr.parse('SP2:$signedId:1795686924:abc'), isNull, reason: 'window end missing');
+      expect(SignedQr.parse('SP2:$signedId:1795686924:1798278924:'), isNull);
+      expect(SignedQr.parse('SP2:$signedId:1795686924:1798278924:ab=c'), isNull);
+    });
+
+    test('a time-bound code still matches its checkpoint offline and is sent raw', () {
+      const raw = 'SP2:$signedId:1795686924:1798278924:sig';
+      final m = route.matchQr(raw);
+      expect(m?.checkpoint.name, 'Signed');
+      expect(m?.signed?.raw, raw, reason: 'the server verifies the window; the tablet only forwards the text');
+      expect(route.matchQr('SP2:00000000-0000-4000-8000-000000000000:1:2:sig'), isNull);
     });
 
     test('matching against the active route', () {

@@ -112,6 +112,6 @@ func FieldAuth(cfg *config.Config) (*fieldauth.GuardTokens, *fieldauth.QRSigner)
 	tokens := fieldauth.NewGuardTokens(
 		fieldauth.DeriveKey(cfg.GuardTokenSecret, cfg.SettingsEncryptionKey, fieldauth.GuardTokenInfo),
 		cfg.GuardSessionTTL, cfg.GuardTokenGrace)
-	qr := fieldauth.NewQRSigner(fieldauth.DeriveKey(cfg.QRSigningSecret, cfg.SettingsEncryptionKey, fieldauth.QRInfo))
+	qr := fieldauth.NewQRSigner(fieldauth.DeriveKey(cfg.QRSigningSecret, cfg.SettingsEncryptionKey, fieldauth.QRInfo)).WithWindow(cfg.QRWindow)
 	return tokens, qr
 }

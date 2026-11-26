@@ -15,6 +15,19 @@ func TestLoadFieldDefaultsAndValidation(t *testing.T) {
 		t.Fatalf("defaults = %+v", c)
 	}
 
+	if c.QRWindow != 30*24*time.Hour {
+		t.Fatalf("default QR window = %v", c.QRWindow)
+	}
+	t.Setenv("QR_WINDOW", "10m")
+	if err := (&Config{}).loadField(); err == nil || !strings.Contains(err.Error(), "QR_WINDOW") {
+		t.Fatalf("QR window below 1h accepted: %v", err)
+	}
+	t.Setenv("QR_WINDOW", "168h")
+	if cw := (&Config{}); cw.loadField() != nil || cw.QRWindow != 168*time.Hour {
+		t.Fatalf("QR_WINDOW not read: %+v", cw)
+	}
+	t.Setenv("QR_WINDOW", "")
+
 	t.Setenv("GUARD_TOKEN_SECRET", "too-short")
 	if err := (&Config{}).loadField(); err == nil || !strings.Contains(err.Error(), "GUARD_TOKEN_SECRET") {
 		t.Fatalf("short guard secret: %v", err)
