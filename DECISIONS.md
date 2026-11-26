@@ -783,3 +783,34 @@ The review queue (`/attendance?tab=review`, `reviewAttendance`) is admin/supervi
   a database that has applied 013 would skip a later-arriving 012: merge order is #63, #65, #66.
 - The signer binary ships in the api image (`/app/signer`) and runs as its own service; a minimal separate image is a
   later hardening. The key is created at install time (`make signer-key`), never in an image, `.env` or log.
+
+### D-073 - Chain verification: one verifier, a bundle, an endpoint and an offline CLI (TAQ-18)
+- **One engine.** `internal/chainproof` verifies a *bundle* (pure Go, no database). The online endpoint builds the bundle
+  from the database and runs the same `Verify`; the offline `garda-verify` reads the bundle from a file. Same data, same
+  answer. It reuses the signer's key rules (`signer.NewTrust`: pins, rotation, forks, retirement) and recomputes the
+  hash_version 1 entry hash of migration 011. It does not touch chain writing or signing.
+- **Bundle** (zip, `garda-chain-bundle/v1`): `manifest.json` (site, range, `anchor_seq`, seq range, the chain's own head, sha256 of
+  the other files), `entries.jsonl`, `heads.json` + `keyring.json` (the `signer export` shapes; public keys and signatures only),
+  `README.txt`. The sha256 of `manifest.json` is the bundle's integrity hash (header `X-Bundle-SHA256`, printed by the CLI): it
+  catches damage and a casual edit; an edit made together with the manifest is caught by the chain and the signed heads.
+- **Record data.** Each entry carries the exact text that `record_hash` hashes (`record`) for the newest entry of a record
+  (new function `chain_record_canonical`, migration 014; a test fails if it drifts from `chain_record_hash`). Older states are
+  not kept anywhere, so superseded entries are checked as chain links only (`record_state`, `next_seq`); `records_not_checked`
+  counts entries whose next state lies beyond the range. A record deleted or edited in the database shows as such.
+  The text holds personal data (guard ids, GPS, descriptions, photo keys), so the export is `admin`/`supervisor` only; the
+  verify result (no content) is also open to `client-readonly`.
+- **Range by checkpoint.** A date range maps to a seq range; the bundle starts at the newest signed head before it (the anchor:
+  its signature vouches for the prev_hash of the first entry) and ends at the first signed head at or after it (or the chain's end).
+  A month therefore costs the distance between heads, not the site's history. With no earlier head it starts at the genesis value.
+  Tests show the range gives the same first break as the full check for any edit inside it; an edit before the anchor is outside what
+  that range proves (the full check finds it). Not covered by the bundle: records with no chain entry at all (`chain_unchained_records`
+  scans the whole site) and the age of a *range* that nobody asked about; an empty range is reported as "no entries".
+- **Bounded cost.** Online: read-only repeatable-read transaction, `SET LOCAL statement_timeout` 15 s, ≤ 20 000 entries,
+  two at a time per process; over the limit or timed out -> 400 `verify_too_large` ("use the offline bundle"). Export: 60 s, 250 000
+  entries. Index `(site_id, created_at)` finds the range without a scan. No background job: a result is returned or refused.
+- **Trust.** The CLI refuses to run without `--pin` (or the explicit `--trust-first-use`, which says so in its output). Wrong fingerprint
+  = exit 4. Exit codes: 0 valid, 1 chain/record broken, 2 usage, 3 bundle unreadable/changed, 4 head/key/signature, 5 UNSIGNED, 6 STALE
+  (`--max-age`, default 26 h). A broken chain or head outranks UNSIGNED/STALE; the first break by seq wins.
+- **Does not do:** prove the date range is complete (a range is the exporter's claim; the heads before and after it prove nothing is
+  missing *between* them); replace the signer's own record (`signer export` heads can be cross-checked by hand; an `--anchor` option is a follow-up with TAQ-22).
+

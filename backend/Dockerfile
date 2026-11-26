@@ -15,7 +15,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -ldflags="-w -s" \
     -o securepatrol \
     ./cmd/securepatrol \
- && CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o signer ./cmd/signer
+ && CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o signer ./cmd/signer \
+ && CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o garda-verify ./cmd/garda-verify
 
 # ── Stage 2: Run ─────────────────────────────────────────────────────────────
 # Alpine (not distroless) because the worker runs pg_dump for backups (D-015);
@@ -32,6 +33,8 @@ COPY --from=builder /app/securepatrol /app/securepatrol
 # The chain-head signer (D-071) ships in this image but runs as its own
 # container with its own uid (10010) and key volume: `/app/signer run`.
 COPY --from=builder /app/signer /app/signer
+# Offline chain verifier (D-073): needs no database; also released as a static binary.
+COPY --from=builder /app/garda-verify /app/garda-verify
 RUN mkdir /keys && chown 10010:10010 /keys && chmod 0700 /keys
 COPY --from=builder /app/migrations   /migrations
 

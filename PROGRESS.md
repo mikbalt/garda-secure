@@ -28,7 +28,8 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 | 011 | record_chain (per-site hash chain, TAQ-17) | `mikbalt/taq-17-chain` | pushed |
 | 012 | flag_reviews (TAQ-21) | `mikbalt/guard-fraud` | pushed |
 | 013 | signed_heads, keyring, owner/runtime role split (TAQ-56) | `mikbalt/taq-56-signer` | in review |
-| 014 | *(next free)* | | |
+| 014 | chain_export (`chain_record_canonical`, chain time index; TAQ-18) | `mikbalt/taq-18-verify` | in review |
+| 015 | *(next free)* | | |
 
 ## Milestones (PRD §11)
 
@@ -132,3 +133,4 @@ Mobile (D-024) — open audit items, see docs/audit-2026-10.md
 | CI green on all workflows: excelize CVE fixes, `apk upgrade` in images, full Chromium for e2e, stable axe checks, Keycloak port check; first successful APK build (geolocator_android pinned to 4.6.1 for Flutter 3.24) | `muhamhad-pc1/claude` | 2026-10-14 | 7bbc6bb, 6e617ba |
 | Flutter 3.47.7 + AGP 9 / Gradle 9.1 / Kotlin 2.2 (mokhataq), plugins for API 35+, macOS node-exporter mode; CI pins Flutter 3.47.7; installable debug APK artifact on every CI run (D-058) | `mokhataq`, `muhamhad-pc1/claude` | 2026-10-16 | merge merge/mokhataq-2026-10-16 |
 | Signer service, `signed_heads` + `keyring` (migration 013), owner/runtime role split, `signer verify`, runbook §10 "Signer service" (D-071, TAQ-56; stacked on #63; offline CLI TAQ-18, anchor delivery TAQ-22; follow-up: Prometheus alert on signer down, separate minimal image) | `mikbalt/taq-56-signer` | 2026-11-26 | this PR |
+| Verification endpoint and offline CLI: `GET /sites/:id/chain/verify` + `/chain/export`, `garda-verify` (static binary), bundle format, `internal/chainproof`, migration 014, docs/chain-verification (EN, ID) (D-073, TAQ-18; follow-ups: web UI button, audit-log of exports, TAQ-22 anchor delivery can feed `--anchor`) | `mikbalt/taq-18-verify` | 2026-11-26 | this PR |

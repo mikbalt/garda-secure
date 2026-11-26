@@ -93,6 +93,9 @@ func (h *Handler) Register(api fiber.Router) {
 	sites.Put("/:id", web(rolesAdmin...), h.updateSite)
 	sites.Patch("/:id/deactivate", web(rolesAdmin...), h.deactivateSite)
 	sites.Patch("/:id/activate", web(rolesAdmin...), h.activateSite)
+	// Chain verification (TAQ-18): the result needs no record content; the bundle has it.
+	sites.Get("/:id/chain/verify", web(rolesOpsCli...), h.verifyChain)
+	sites.Get("/:id/chain/export", web(rolesOps...), h.exportChainBundle)
 	sites.Get("/:id/floorplans", web(rolesWeb...), h.listFloorplans)
 	sites.Post("/:id/floorplans", web(rolesAdmin...), h.uploadFloorplan)
 	sites.Delete("/:id/floorplans/:floorplanId", web(rolesAdmin...), h.deleteFloorplan)
