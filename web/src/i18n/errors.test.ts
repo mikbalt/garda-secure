@@ -11,6 +11,8 @@ function apiError(status: number, data: unknown, headers: Record<string, string>
 /** Every code documented in docs/api.md (WEB-7). */
 const DOCUMENTED = [
   'id_conflict',
+  'range_required',
+  'range_too_long',
   'invalid_guard_id',
   'invalid_reviewed',
   'invalid_flag_kind',

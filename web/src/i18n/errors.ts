@@ -135,6 +135,7 @@ export const ERROR_CODES: Record<string, Pair> = {
   invalid_reviewed: { en: 'The review filter is not valid.', id: 'Filter tinjauan tidak valid.' },
   invalid_flag_kind: { en: 'Unknown kind of record.', id: 'Jenis catatan tidak dikenal.' },
   invalid_record_id: { en: 'The record is not valid.', id: 'Catatan tidak valid.' },
+  range_required: { en: 'Choose a start and end date.', id: 'Pilih tanggal awal dan akhir.' },
   invalid_offset: { en: 'Invalid page.', id: 'Halaman tidak valid.' },
   shift_has_attendance: {
     en: 'This shift already has attendance — use an attendance override instead.',

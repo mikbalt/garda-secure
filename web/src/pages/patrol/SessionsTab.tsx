@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import { ChevronRight, Flag, History } from 'lucide-react'
 import { apiGet } from '../../api/client'
 import { TableSkeleton } from '../../components/LoadingSkeleton'
 import { StatusBadge } from '../../components/ui/Badge'
 import { EmptyState, ErrorState, Notice, Toolbar } from '../../components/ui/States'
 import { useI18n } from '../../i18n/context'
-import { daysBetween, formatDay, formatTime, localDateOf } from '../../lib/time'
+import { dayParam, daysBetween, formatDay, formatTime, localDateOf } from '../../lib/time'
 import { fmtDuration, presetRange } from './format'
 import { DateRangeFilter, MiniBar, Segmented } from './kit'
 import { SessionDrawer } from './SessionDrawer'
@@ -18,7 +19,12 @@ type StatusFilter = 'all' | SessionStatus
 export function SessionsTab({ site }: { site: Site }) {
   const { t, lang } = useI18n()
   const tz = site.timezone
-  const [range, setRange] = useState(() => presetRange('7d', tz))
+  // A flag link opens the day of its record (?date=).
+  const [params] = useSearchParams()
+  const [range, setRange] = useState(() => {
+    const day = dayParam(params.get('date'))
+    return day ? { from: day, to: day } : presetRange('7d', tz)
+  })
   const [status, setStatus] = useState<StatusFilter>('all')
   const [selected, setSelected] = useState<SessionSummary | null>(null)
   const { from, to } = range

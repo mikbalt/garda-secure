@@ -12,6 +12,8 @@ export const flagsEn = {
   'fd.statusReviewed': 'Reviewed',
   'fd.apply': 'Apply filters',
   'fd.rangeInvalid': 'The start date must not be after the end date.',
+  'fd.rangeTooLong': 'Choose at most 92 days.',
+  'fd.alreadyReviewed': 'Already reviewed by {name}; the first review stays.',
   'fd.tzNote': 'Dates are in time zone {tz}.',
   'fd.when': 'When',
   'fd.record': 'Record',

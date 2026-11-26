@@ -12,8 +12,12 @@ vi.mock('../api/client', () => ({
   default: { post: (...a: unknown[]) => post(...a) },
 }))
 vi.mock('../config', () => ({ config: { apiUrl: '/api/v1', demo: false, realms: [] } }))
+const setSiteId = vi.fn()
+const toast = { success: vi.fn(), error: vi.fn(), info: vi.fn() }
+vi.mock('../components/toast/context', () => ({ useToast: () => toast, useErrorToast: () => vi.fn() }))
 vi.mock('../context/site', () => ({
   useSite: () => ({
+    setSiteId,
     sites: [
       { id: 's1', name: 'Gate A', timezone: 'Asia/Jakarta' },
       { id: 's2', name: 'Depot B', timezone: 'Asia/Jakarta' },
@@ -55,6 +59,9 @@ function mount() {
 
 beforeEach(() => {
   get.mockReset().mockResolvedValue({ rows: [row({}), row({ kind: 'sos', record_id: 'x1', flag: 'guard_unverified' })], limit: 50, offset: 0, has_more: false })
+  setSiteId.mockReset()
+  toast.success.mockReset()
+  toast.info.mockReset()
   post.mockReset().mockResolvedValue({ data: { reviewed_at: '2026-03-11T00:00:00Z', reviewed_by: 'demo.supervisor' } })
 })
 
@@ -62,7 +69,7 @@ describe('Flags page', () => {
   it('lists flags and links each one to its record', async () => {
     mount()
     const links = await screen.findAllByRole('link', { name: /record|catatan/i })
-    expect(links.map((l) => l.getAttribute('href'))).toEqual(['/attendance?date=2026-03-10', '/incidents?tab=sos'])
+    expect(links.map((l) => l.getAttribute('href'))).toEqual(['/attendance?site=s1&date=2026-03-10', '/incidents?tab=sos&site=s1'])
   })
 
   it('sends the guard, site and date filters to the API', async () => {
@@ -71,6 +78,7 @@ describe('Flags page', () => {
     fireEvent.change(screen.getByLabelText(/^(Site|Lokasi)/), { target: { value: 's2' } })
     fireEvent.change(screen.getByLabelText(/^(Guard|Satpam)/), { target: { value: 'g1' } })
     fireEvent.change(screen.getByLabelText(/^(From|Dari)/), { target: { value: '2026-03-01' } })
+    fireEvent.change(screen.getByLabelText(/^(To|Sampai)/), { target: { value: '2026-03-05' } })
     fireEvent.click(screen.getByRole('button', { name: /apply|terapkan/i }))
     await waitFor(() => {
       const last = get.mock.calls.at(-1)!
@@ -94,5 +102,21 @@ describe('Flags page', () => {
     await waitFor(() => expect(post).toHaveBeenCalledWith('/flags/review', { kind: 'attendance', record_id: 'a1', flag: 'late_sync' }))
     expect(await screen.findByText(/demo\.supervisor/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /mark reviewed|tandai/i })).toBeNull()
+  })
+
+  it('switches the top-bar site to the site of the flag when the record link is used', async () => {
+    mount()
+    const [link] = await screen.findAllByRole('link', { name: /record|catatan/i })
+    fireEvent.click(link)
+    expect(setSiteId).toHaveBeenCalledWith('s1')
+  })
+
+  it('says so when the flag was already reviewed by someone else', async () => {
+    post.mockResolvedValue({ data: { already_reviewed: true, reviewed_by: 'other.sup', reviewed_at: '2026-03-11T00:00:00Z' } })
+    mount()
+    const first = (await screen.findAllByRole('row'))[1]
+    fireEvent.click(within(first).getByRole('button', { name: /mark reviewed|tandai/i }))
+    await waitFor(() => expect(toast.info).toHaveBeenCalledWith(expect.stringMatching(/other\.sup/)))
+    expect(toast.success).not.toHaveBeenCalled()
   })
 })

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useInfiniteQuery } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import { Camera, ChevronRight, Clock4, MapPin, ShieldAlert, SlidersHorizontal, UserRound, X } from 'lucide-react'
 import { apiGetPage, flattenPages, nextOffset } from '../../api/paging'
 import { AmendedBadge } from '../../components/AmendedBadge'
@@ -12,7 +13,7 @@ import { Button } from '../../components/ui/Button'
 import { Select } from '../../components/ui/Form'
 import { EmptyState, ErrorState, Notice, Toolbar } from '../../components/ui/States'
 import { incidentTypeLabel, useI18n } from '../../i18n/context'
-import { addDays, daysBetween, formatDay, formatTime, localDateOf, todayIn } from '../../lib/time'
+import { addDays, dayParam, daysBetween, formatDay, formatTime, localDateOf, todayIn } from '../../lib/time'
 import { ChipGroup, DateRangeFilter, Meta, Segmented } from '../patrol/kit'
 import { IncidentDrawer } from './IncidentDrawer'
 import { KNOWN_TYPES, SEVERITIES, WORKFLOW, sevBar } from './constants'
@@ -61,7 +62,12 @@ function IncidentRow({ inc, tz, onOpen }: { inc: Incident; tz: string; onOpen: (
 export function IncidentsTab({ site }: { site: Site }) {
   const { t, lang } = useI18n()
   const tz = site.timezone
-  const [filter, setFilter] = useState<IncidentFilterValue>(() => defaultIncidentFilter(tz))
+  // A flag link opens the day of its record (?date=).
+  const [params] = useSearchParams()
+  const [filter, setFilter] = useState<IncidentFilterValue>(() => {
+    const day = dayParam(params.get('date'))
+    return day ? { ...defaultIncidentFilter(tz), from: day, to: day } : defaultIncidentFilter(tz)
+  })
   const [openId, setOpenId] = useState<string | null>(null)
   const [showFilters, setShowFilters] = useState(false)
   const valid = !!filter.from && !!filter.to && filter.from <= filter.to && daysBetween(filter.from, filter.to) <= MAX_DAYS

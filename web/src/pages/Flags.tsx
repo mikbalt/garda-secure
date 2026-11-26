@@ -13,11 +13,13 @@ import { useSite } from '../context/site'
 import { useGuards } from '../hooks/useGuards'
 import { translateMaybe, useI18n } from '../i18n/context'
 import { flagRecordLink, flagText, KNOWN_FLAGS } from '../lib/flags'
-import { addDays, formatDateTime, todayIn, zonedToUtcIso } from '../lib/time'
+import { addDays, daysBetween, formatDateTime, todayIn, zonedToUtcIso } from '../lib/time'
 import type { FlagPage, FlagRow } from '../types'
 
 const PAGE_SIZE = 50
 const DEFAULT_TZ = 'Asia/Jakarta'
+/** The API accepts at most this many days per request. */
+const MAX_DAYS = 92
 
 interface Filters {
   site: string
@@ -31,7 +33,7 @@ interface Filters {
 /** Fraud-signal dashboard (TAQ-21): plausibility flags per guard and site. Read-only for the records. */
 export default function Flags() {
   const { t, lang } = useI18n()
-  const { sites, site } = useSite()
+  const { sites, site, setSiteId } = useSite()
   const toast = useToast()
   const onError = useErrorToast()
   const qc = useQueryClient()
@@ -43,7 +45,8 @@ export default function Flags() {
   const [applied, setApplied] = useState<Filters>(initial)
   const [offset, setOffset] = useState(0)
   const formId = useId()
-  const valid = !!draft.from && !!draft.to && draft.from <= draft.to
+  const tooLong = !!draft.from && !!draft.to && daysBetween(draft.from, draft.to) > MAX_DAYS
+  const valid = !!draft.from && !!draft.to && draft.from <= draft.to && !tooLong
   const siteTz = (id: string) => sites.find((s) => s.id === id)?.timezone ?? tz
   const { guards } = useGuards(draft.site)
 
@@ -64,9 +67,10 @@ export default function Flags() {
   })
 
   const review = useMutation({
-    mutationFn: (r: FlagRow) => apiClient.post('/flags/review', { kind: r.kind, record_id: r.record_id, flag: r.flag }),
-    onSuccess: () => {
-      toast.success(t('fd.reviewedDone'))
+    mutationFn: (r: FlagRow) => apiClient.post<{ already_reviewed?: boolean; reviewed_by?: string }>('/flags/review', { kind: r.kind, record_id: r.record_id, flag: r.flag }),
+    onSuccess: ({ data }) => {
+      if (data.already_reviewed) toast.info(t('fd.alreadyReviewed', { name: data.reviewed_by ?? '—' }))
+      else toast.success(t('fd.reviewedDone'))
       qc.invalidateQueries({ queryKey: ['flags'] })
     },
     onError,
@@ -111,6 +115,7 @@ export default function Flags() {
       cell: (r) => (
         <Link
           to={flagRecordLink(r, siteTz(r.site_id))}
+          onClick={() => setSiteId(r.site_id)}
           aria-label={t('fd.openRecordFor', { flag: flagText(r.flag, lang).label, guard: r.guard_name })}
           className="inline-flex items-center gap-1 text-sm font-medium text-primary-700 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
         >
@@ -188,7 +193,7 @@ export default function Flags() {
               <option value="true">{t('fd.statusReviewed')}</option>
             </Select>
           </Field>
-          <Field label={t('common.from')} className="w-40" error={!valid ? t('fd.rangeInvalid') : undefined}>
+          <Field label={t('common.from')} className="w-40" error={!valid ? t(tooLong ? 'fd.rangeTooLong' : 'fd.rangeInvalid') : undefined}>
             <Input type="date" value={draft.from} max={today} onChange={(e) => setDraft((d) => ({ ...d, from: e.target.value }))} />
           </Field>
           <Field label={t('common.to')} className="w-40">

@@ -15,3 +15,18 @@ CREATE TABLE flag_reviews (
     UNIQUE (kind, record_id, flag)
 );
 CREATE INDEX idx_flag_reviews_site ON flag_reviews (site_id, reviewed_at);
+
+-- A review mark is never changed afterwards (first review wins). The app role
+-- owns the table, so REVOKE would not bind it; a trigger does, like audit_log.
+-- DELETE stays allowed: rows go with their site (ON DELETE CASCADE).
+CREATE FUNCTION flag_reviews_immutable() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION 'flag_reviews rows cannot be updated'
+        USING ERRCODE = 'insufficient_privilege';
+END;
+$$;
+
+CREATE TRIGGER trg_flag_reviews_immutable
+    BEFORE UPDATE ON flag_reviews
+    FOR EACH ROW EXECUTE FUNCTION flag_reviews_immutable();

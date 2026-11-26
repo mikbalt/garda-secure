@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   addDays,
+  dayParam,
   daysBetween,
   formatTime,
   isoToLocalInput,
@@ -75,5 +76,15 @@ describe('calendar dates', () => {
   it('counts days inclusively', () => {
     expect(daysBetween('2026-10-01', '2026-10-01')).toBe(1)
     expect(daysBetween('2026-10-01', '2026-10-31')).toBe(31)
+  })
+})
+
+describe('dayParam', () => {
+  it('accepts a calendar date and nothing else', () => {
+    expect(dayParam('2026-03-10')).toBe('2026-03-10')
+    expect(dayParam('2026-3-10')).toBeUndefined()
+    expect(dayParam('2026-13-40')).toBeUndefined()
+    expect(dayParam('')).toBeUndefined()
+    expect(dayParam(null)).toBeUndefined()
   })
 })

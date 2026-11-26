@@ -4,6 +4,7 @@ package integration
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 )
@@ -43,7 +44,7 @@ func TestFlagDashboard(t *testing.T) {
 
 	list := func(token, query string) []map[string]any {
 		t.Helper()
-		r := e.expect(e.do("GET", "/api/v1/flags"+query+limitParam(query), token, "", nil), 200, "list flags "+query)
+		r := e.expect(e.do("GET", "/api/v1/flags"+flagQuery(query), token, "", nil), 200, "list flags "+query)
 		out := []map[string]any{}
 		for _, row := range r.obj()["rows"].([]any) {
 			m := row.(map[string]any)
@@ -99,8 +100,54 @@ func TestFlagDashboard(t *testing.T) {
 	if got := list(sup, "?flag=late_sync"); len(got) != 2 {
 		t.Fatalf("flag filter = %v", got)
 	}
-	e.expect(e.do("GET", "/api/v1/flags?from=nope", sup, "", nil), 400, "bad date")
-	e.expect(e.do("GET", "/api/v1/flags?site_id="+a.site+"&guard_id="+b.guard, sup, "", nil), 200, "guard of other site is just empty")
+	e.expect(e.do("GET", "/api/v1/flags?from=nope&to=2026-03-12", sup, "", nil), 400, "bad date")
+	if got := list(sup, "?site_id="+a.site+"&guard_id="+b.guard); len(got) != 0 {
+		t.Fatalf("guard of other site = %v", got)
+	}
+	// The range is required and bounded; deep offsets are refused.
+	e.expect(e.do("GET", "/api/v1/flags", sup, "", nil), 400, "range required")
+	e.expect(e.do("GET", "/api/v1/flags?from=2026-03-01", sup, "", nil), 400, "to required")
+	e.expect(e.do("GET", "/api/v1/flags?from=2026-01-01&to=2026-06-30", sup, "", nil), 400, "range too long")
+	e.expect(e.do("GET", "/api/v1/flags?from=2026-03-01&to=2026-03-31&offset=5001", sup, "", nil), 400, "offset cap")
+	e.expect(e.do("GET", "/api/v1/flags?from=2026-03-01&to=2026-05-31", sup, "", nil), 200, "92 days is allowed")
+
+	// Pagination: site A has 4 flag rows.
+	pg := e.expect(e.do("GET", "/api/v1/flags"+flagQuery("?site_id="+a.site+"&limit=3"), sup, "", nil), 200, "page 1").obj()
+	if len(pg["rows"].([]any)) != 3 || pg["has_more"] != true {
+		t.Fatalf("page 1 = %v", pg)
+	}
+	pg = e.expect(e.do("GET", "/api/v1/flags"+flagQuery("?site_id="+a.site+"&limit=3&offset=3"), sup, "", nil), 200, "page 2").obj()
+	if len(pg["rows"].([]any)) != 1 || pg["has_more"] != false {
+		t.Fatalf("page 2 = %v", pg)
+	}
+
+	// Another realm's guard with our site filter yields nothing, never their rows.
+	other := e.newFieldSite(realm4, otherAdmin, "Flag Dash Other")
+	if _, err := e.pool.Exec(ctx, `INSERT INTO attendance_records (guard_id, site_id, clock_in_at, status, received_at, flags)
+		VALUES ($1, $2, $3, 'present', $3, '{late_sync}')`, other.guard, other.site, day1); err != nil {
+		t.Fatal(err)
+	}
+	if got := list(sup, "?site_id="+a.site+"&guard_id="+other.guard); len(got) != 0 {
+		t.Fatalf("other realm guard leaked: %v", got)
+	}
+	for _, row := range e.expect(e.do("GET", "/api/v1/flags"+flagQuery(""), sup, "", nil), 200, "all").obj()["rows"].([]any) {
+		if row.(map[string]any)["site_id"] == other.site {
+			t.Fatalf("other realm row visible: %v", row)
+		}
+	}
+
+	// A supervisor limited to site A sees and reviews only site A.
+	supA := e.webSites(realm3, "fd-sup-a", []string{a.site}, "supervisor")
+	for _, row := range list(supA, "") {
+		if row["site_id"] != a.site {
+			t.Fatalf("restricted supervisor sees %v", row)
+		}
+	}
+	if got := list(supA, ""); len(got) != 4 {
+		t.Fatalf("restricted supervisor rows = %d, want 4", len(got))
+	}
+	e.expect(e.do("GET", "/api/v1/flags"+flagQuery("?site_id="+b.site), supA, "", nil), 404, "restricted: other site filter")
+	e.expect(e.do("POST", "/api/v1/flags/review", supA, "", map[string]any{"kind": "attendance", "record_id": attB, "flag": "late_sync"}), 404, "restricted: review other site")
 
 	// Review: stores a mark, the record stays as it was.
 	snapshot := func() string {
@@ -116,11 +163,25 @@ func TestFlagDashboard(t *testing.T) {
 	if r["reviewed_by"] == nil || r["reviewed_at"] == nil || r["note"] != "checked with the guard" {
 		t.Fatalf("review response = %v", r)
 	}
-	e.expect(e.do("POST", "/api/v1/flags/review", sup, "", rv), 200, "review is idempotent")
+	if r["already_reviewed"] != false {
+		t.Fatalf("first review already_reviewed = %v", r["already_reviewed"])
+	}
+	again := e.expect(e.do("POST", "/api/v1/flags/review", admin, "", map[string]any{
+		"kind": "attendance", "record_id": att1, "flag": "late_sync", "note": "a different note",
+	}), 200, "repeat review").obj()
+	if again["already_reviewed"] != true || again["note"] != "checked with the guard" || again["reviewed_by"] != r["reviewed_by"] {
+		t.Fatalf("first review must win: %v", again)
+	}
+	if n := e.count(`SELECT count(*) FROM audit_log WHERE method = 'POST' AND route LIKE '%/flags/review' AND status_code = 200`); n < 2 {
+		t.Fatalf("audit rows for flag review = %d, want >= 2", n)
+	}
+	if _, err := e.pool.Exec(ctx, `UPDATE flag_reviews SET note = 'tampered'`); err == nil {
+		t.Fatal("flag_reviews must not be updatable")
+	}
 	if after := snapshot(); after != before {
 		t.Fatalf("record changed by review:\n%s\n%s", before, after)
 	}
-	if n := e.count(`SELECT count(*) FROM flag_reviews`); n != 1 {
+	if n := e.count(`SELECT count(*) FROM flag_reviews WHERE site_id = $1`, a.site); n != 1 {
 		t.Fatalf("flag_reviews = %d, want 1", n)
 	}
 	rows := list(sup, "?site_id="+a.site+"&guard_id="+a.guard)
@@ -135,6 +196,28 @@ func TestFlagDashboard(t *testing.T) {
 	}
 	if got := list(sup, "?reviewed=true"); len(got) != 1 {
 		t.Fatalf("reviewed=true = %v", got)
+	}
+
+	// Two reviews of the same flag at once: one wins, one row.
+	par := map[string]any{"kind": "attendance", "record_id": att2, "flag": "clock_ahead"}
+	res := make(chan resp, 2)
+	for _, tok := range []string{sup, admin} {
+		go func(tok string) { res <- e.do("POST", "/api/v1/flags/review", tok, "", par) }(tok)
+	}
+	first := 0
+	for i := 0; i < 2; i++ {
+		rr := <-res
+		e.expect(rr, 200, "parallel review")
+		if rr.obj()["already_reviewed"] == false {
+			first++
+		}
+	}
+	if first != 1 || e.count(`SELECT count(*) FROM flag_reviews WHERE record_id = $1`, att2) != 1 {
+		t.Fatalf("parallel reviews: %d winners", first)
+	}
+	// Put the state back for the counts below.
+	if _, err := e.pool.Exec(ctx, `DELETE FROM flag_reviews WHERE record_id = $1`, att2); err != nil {
+		t.Fatal(err)
 	}
 
 	// Review input is checked: the flag must exist on the record.
@@ -155,10 +238,19 @@ func TestFlagDashboard(t *testing.T) {
 	e.expect(e.do("GET", "/api/v1/flags?site_id="+a.site, otherAdmin, "", nil), 404, "other realm site filter")
 }
 
-// limitParam asks for the largest page so rows of other tests cannot push ours out.
-func limitParam(query string) string {
+// flagQuery adds the mandatory date range (unless given) and the largest page,
+// so rows of other tests cannot push ours out.
+func flagQuery(query string) string {
+	sep := "&"
 	if query == "" {
-		return "?limit=200"
+		query, sep = "?", ""
 	}
-	return "&limit=200"
+	if !strings.Contains(query, "from=") {
+		query += sep + "from=2026-03-01&to=2026-03-31"
+		sep = "&"
+	}
+	if !strings.Contains(query, "limit=") {
+		query += sep + "limit=200"
+	}
+	return query
 }

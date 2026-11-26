@@ -26,23 +26,25 @@ export function flagText(flag: string, lang: Lang): { label: string; desc: strin
 }
 
 /**
- * Where to see the record behind a flag. The pages open on the right tab (and
- * day, for attendance); the site is the one chosen in the top bar.
+ * Where to see the record behind a flag: the page and tab, the flag's site and,
+ * where the page filters by day, the day (in the site's time zone).
  */
-export function flagRecordLink(row: Pick<FlagRow, 'kind' | 'event_at'>, tz: string): string {
+export function flagRecordLink(row: Pick<FlagRow, 'kind' | 'event_at' | 'site_id'>, tz: string): string {
+  const site = `site=${encodeURIComponent(row.site_id)}`
+  const date = `date=${localDateOf(row.event_at, tz)}`
   switch (row.kind) {
     case 'attendance':
-      return `/attendance?date=${localDateOf(row.event_at, tz)}`
+      return `/attendance?${site}&${date}`
     case 'incident':
-      return '/incidents?tab=incidents'
+      return `/incidents?tab=incidents&${site}&${date}`
     case 'sos':
-      return '/incidents?tab=sos'
+      return `/incidents?tab=sos&${site}`
     case 'defect':
-      return '/incidents?tab=defects'
+      return `/incidents?tab=defects&${site}`
     case 'visitor':
-      return '/incidents?tab=visitors'
+      return `/incidents?tab=visitors&${site}`
     case 'scan':
     case 'session':
-      return '/patrol?tab=sessions'
+      return `/patrol?tab=sessions&${site}&${date}`
   }
 }

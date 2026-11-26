@@ -14,6 +14,8 @@ export const flagsId: Record<keyof typeof flagsEn, string> = {
   'fd.statusReviewed': 'Sudah ditinjau',
   'fd.apply': 'Terapkan filter',
   'fd.rangeInvalid': 'Tanggal awal tidak boleh melewati tanggal akhir.',
+  'fd.rangeTooLong': 'Pilih paling banyak 92 hari.',
+  'fd.alreadyReviewed': 'Sudah ditinjau oleh {name}; tinjauan pertama tetap berlaku.',
   'fd.tzNote': 'Tanggal memakai zona waktu {tz}.',
   'fd.when': 'Waktu',
   'fd.record': 'Catatan',

@@ -29,6 +29,13 @@ function safeTz(tz: string | undefined): string {
   }
 }
 
+/** A `?date=` query value when it is a real calendar date (YYYY-MM-DD), else undefined. */
+export function dayParam(v: string | null | undefined): string | undefined {
+  if (!v || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return undefined
+  const d = new Date(`${v}T00:00:00Z`)
+  return Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== v ? undefined : v
+}
+
 /** Calendar date (YYYY-MM-DD) of an instant in a time zone. */
 export function localDateOf(iso: string | Date, tz: string): string {
   const p = parts(typeof iso === 'string' ? new Date(iso) : iso, safeTz(tz))
