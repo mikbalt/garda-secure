@@ -182,6 +182,22 @@ func scanScanRows(rows pgx.Rows) (model.CheckpointScan, error) { return scanScan
 
 // InsertScan records a checkpoint scan; idempotent on a client-supplied ID.
 func InsertScan(ctx context.Context, db DBTX, s model.CheckpointScan, clientID *string) (*model.CheckpointScan, bool, error) {
+	var out *model.CheckpointScan
+	var created bool
+	err := inTx(ctx, db, func(db DBTX) error {
+		var err error
+		if out, created, err = insertScan(ctx, db, s, clientID); err != nil || !created {
+			return err
+		}
+		return chainAppend(ctx, db, chainScan, out.ID)
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	return out, created, nil
+}
+
+func insertScan(ctx context.Context, db DBTX, s model.CheckpointScan, clientID *string) (*model.CheckpointScan, bool, error) {
 	out, err := scanScan(db.QueryRow(ctx, `
 		INSERT INTO checkpoint_scans
 		  (id, session_id, route_id, checkpoint_id, guard_id, device_id, scanned_at, method,

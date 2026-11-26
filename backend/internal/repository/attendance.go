@@ -84,6 +84,12 @@ type ClockInParams struct {
 
 // InsertClockIn creates the attendance record of a shift.
 func InsertClockIn(ctx context.Context, db DBTX, p ClockInParams) (*model.AttendanceRecord, error) {
+	return chainedAttendance(ctx, db, func(db DBTX) (model.AttendanceRecord, error) {
+		return insertClockIn(ctx, db, p)
+	})
+}
+
+func insertClockIn(ctx context.Context, db DBTX, p ClockInParams) (model.AttendanceRecord, error) {
 	r, err := scanAttendance(db.QueryRow(ctx, `
 		INSERT INTO attendance_records
 		  (id, shift_id, guard_id, site_id, device_id, clock_in_at, status, late_minutes,
@@ -94,14 +100,20 @@ func InsertClockIn(ctx context.Context, db DBTX, p ClockInParams) (*model.Attend
 		p.ID, p.ShiftID, p.GuardID, p.SiteID, p.DeviceID, p.ClockInAt, p.Status, p.LateMinutes,
 		p.SelfieObjectKey, p.GPSLat, p.GPSLng, p.ReceivedAt, flagsOrEmpty(p.Flags), p.NeedsReview))
 	if err != nil {
-		return nil, fmt.Errorf("InsertClockIn: %w", err)
+		return r, fmt.Errorf("InsertClockIn: %w", err)
 	}
-	return &r, nil
+	return r, nil
 }
 
 // ApplyClockInToAbsent converts an auto-flagged absent record into a clock-in
 // that arrived late through offline sync, and queues it for supervisor review.
 func ApplyClockInToAbsent(ctx context.Context, db DBTX, recordID string, p ClockInParams, note string) (*model.AttendanceRecord, error) {
+	return chainedAttendance(ctx, db, func(db DBTX) (model.AttendanceRecord, error) {
+		return applyClockInToAbsent(ctx, db, recordID, p, note)
+	})
+}
+
+func applyClockInToAbsent(ctx context.Context, db DBTX, recordID string, p ClockInParams, note string) (model.AttendanceRecord, error) {
 	r, err := scanAttendance(db.QueryRow(ctx, `
 		UPDATE attendance_records
 		SET clock_in_at = $2, status = $3, late_minutes = $4, selfie_object_key = $5,
@@ -111,25 +123,25 @@ func ApplyClockInToAbsent(ctx context.Context, db DBTX, recordID string, p Clock
 		RETURNING `+attendanceColumns,
 		recordID, p.ClockInAt, p.Status, p.LateMinutes, p.SelfieObjectKey,
 		p.GPSLat, p.GPSLng, p.DeviceID, note, p.ReceivedAt, flagsOrEmpty(p.Flags)))
-	if err != nil {
-		return nil, mapNoRows(err)
-	}
-	return &r, nil
+	return r, mapNoRows(err)
 }
 
 // SetClockOut records the clock-out of an attendance record; addFlag (e.g.
 // guard_unverified) is appended to the record's flags once.
 func SetClockOut(ctx context.Context, db DBTX, id string, at time.Time, earlyOutMinutes int, lat, lng *float64, addFlag string) (*model.AttendanceRecord, error) {
+	return chainedAttendance(ctx, db, func(db DBTX) (model.AttendanceRecord, error) {
+		return setClockOut(ctx, db, id, at, earlyOutMinutes, lat, lng, addFlag)
+	})
+}
+
+func setClockOut(ctx context.Context, db DBTX, id string, at time.Time, earlyOutMinutes int, lat, lng *float64, addFlag string) (model.AttendanceRecord, error) {
 	r, err := scanAttendance(db.QueryRow(ctx, `
 		UPDATE attendance_records
 		SET clock_out_at = $2, early_out_minutes = $3, clock_out_gps_lat = $4, clock_out_gps_lng = $5,
 		    flags = CASE WHEN $6::text = '' OR $6::text = ANY(flags) THEN flags ELSE array_append(flags, $6::text) END
 		WHERE id = $1
 		RETURNING `+attendanceColumns, id, at, earlyOutMinutes, lat, lng, addFlag))
-	if err != nil {
-		return nil, mapNoRows(err)
-	}
-	return &r, nil
+	return r, mapNoRows(err)
 }
 
 // OverrideParams carries an admin attendance correction for a shift.
@@ -147,6 +159,12 @@ type OverrideParams struct {
 // OverrideAttendance upserts the record of a shift with an admin-chosen status.
 // Supplied clock times replace the stored ones; omitted ones are kept.
 func OverrideAttendance(ctx context.Context, db DBTX, p OverrideParams) (*model.AttendanceRecord, error) {
+	return chainedAttendance(ctx, db, func(db DBTX) (model.AttendanceRecord, error) {
+		return overrideAttendance(ctx, db, p)
+	})
+}
+
+func overrideAttendance(ctx context.Context, db DBTX, p OverrideParams) (model.AttendanceRecord, error) {
 	r, err := scanAttendance(db.QueryRow(ctx, `
 		INSERT INTO attendance_records
 		  (shift_id, guard_id, site_id, status, clock_in_at, clock_out_at,
@@ -166,23 +184,43 @@ func OverrideAttendance(ctx context.Context, db DBTX, p OverrideParams) (*model.
 		RETURNING `+attendanceColumns,
 		p.ShiftID, p.GuardID, p.SiteID, p.Status, p.ClockInAt, p.ClockOutAt, p.Reason, p.Actor))
 	if err != nil {
-		return nil, fmt.Errorf("OverrideAttendance: %w", err)
+		return r, fmt.Errorf("OverrideAttendance: %w", err)
 	}
-	return &r, nil
+	return r, nil
 }
 
 // MarkAttendanceReviewed clears the review flag of a record.
 func MarkAttendanceReviewed(ctx context.Context, db DBTX, id, actor string, note *string) (*model.AttendanceRecord, error) {
+	return chainedAttendance(ctx, db, func(db DBTX) (model.AttendanceRecord, error) {
+		return markAttendanceReviewed(ctx, db, id, actor, note)
+	})
+}
+
+func markAttendanceReviewed(ctx context.Context, db DBTX, id, actor string, note *string) (model.AttendanceRecord, error) {
 	r, err := scanAttendance(db.QueryRow(ctx, `
 		UPDATE attendance_records
 		SET needs_review = false, reviewed_by = $2, reviewed_at = now(),
 		    review_note = COALESCE($3, review_note)
 		WHERE id = $1
 		RETURNING `+attendanceColumns, id, actor, note))
+	return r, mapNoRows(err)
+}
+
+// chainedAttendance runs a write that returns the attendance record in one
+// transaction with its chain entry.
+func chainedAttendance(ctx context.Context, db DBTX, write func(DBTX) (model.AttendanceRecord, error)) (*model.AttendanceRecord, error) {
+	var out model.AttendanceRecord
+	err := inTx(ctx, db, func(db DBTX) error {
+		var err error
+		if out, err = write(db); err != nil {
+			return err
+		}
+		return chainAppend(ctx, db, chainAttendance, out.ID)
+	})
 	if err != nil {
-		return nil, mapNoRows(err)
+		return nil, err
 	}
-	return &r, nil
+	return &out, nil
 }
 
 // ListReviewQueue returns the records of a site awaiting supervisor review.
@@ -212,6 +250,26 @@ type AbsentFlag struct {
 // lookback) and has no attendance yet. Safe to run repeatedly. Shifts locked
 // by a concurrent clock-in are skipped; the next run sees the clock-in.
 func FlagAbsentees(ctx context.Context, db DBTX, siteID string, defaultAbsentAfterMinutes int, lookback time.Duration) ([]AbsentFlag, error) {
+	var flags []AbsentFlag
+	err := inTx(ctx, db, func(db DBTX) error {
+		var err error
+		if flags, err = flagAbsentees(ctx, db, siteID, defaultAbsentAfterMinutes, lookback); err != nil {
+			return err
+		}
+		for _, f := range flags {
+			if err := chainAppend(ctx, db, chainAttendance, f.RecordID); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return flags, nil
+}
+
+func flagAbsentees(ctx context.Context, db DBTX, siteID string, defaultAbsentAfterMinutes int, lookback time.Duration) ([]AbsentFlag, error) {
 	rows, err := db.Query(ctx, `
 		WITH due AS (
 		  SELECT s.id, s.guard_id, s.site_id, s.start_time

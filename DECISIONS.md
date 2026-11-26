@@ -658,3 +658,26 @@ The review queue (`/attendance?tab=review`, `reviewAttendance`) is admin/supervi
   is `enabled` only with it, and the header shows "Install-wide (no sites)" instead.
 - Install-wide pages (Settings: channels, backups, ops alerts/log) do not need a site. A site-less platform
   view across realms (site/guard overview per realm) is not planned; it would need its own endpoints.
+
+### D-069 — Per-site hash chain over attendance, scan and incident records (TAQ-17)
+- Migration 011: `record_chain` (append-only, like `audit_log`) + `record_chain_heads`. Each write of an attendance
+  record, checkpoint scan, incident or incident amendment appends an entry in the same transaction
+  (`repository.inTx` + `chain_append`): `record_hash` = sha256 of the record's canonical form, `entry_hash` =
+  sha256(version, site, seq, kind, record id, record_hash, prev_hash, origin, created_at). The first `prev_hash` is a per-site genesis value.
+- Canonical form: the listed columns as jsonb text (keys sorted), timestamps in UTC, function-pinned session settings.
+  Columns added later are not covered until a new `hash_version` lists them (a new column is not a break).
+- Order: `chain_append` locks the site's head row, so writers of one site take turns; `seq` has no gaps.
+- Every legitimate change (clock-out, status, override, retention clearing GPS/photos) appends a new entry; the
+  verifier compares the live record with its latest entry. `chain_first_break(site)` / `repository.FirstChainBreak`
+  returns the first broken seq (gap, link, entry content, record edited/deleted, dropped tail). Endpoint/CLI: TAQ-18.
+- Existing rows are chained by the migration (`origin = 'backfill'`, oldest first per site): they vouch for the state
+  at migration time only. Run the migration with the app stopped; later unchained writes by old code are not flagged.
+- Also found: records with no chain entry (forged inserts, or entries deleted together with the head), a missing
+  or mismatching head, reordered entries. The head row only advances by one (trigger); deleting or resetting it is blocked.
+- **Open limit (not solved here):** this detects edits and deletions made *outside* the application path. The app/owner
+  role (the one that runs migrations and owns the tables) can disable the triggers, call `chain_append` and
+  `chain_entry_hash` and advance the head by one (the tests do `ALTER TABLE ... DISABLE TRIGGER USER` through the app
+  pool), so an edit followed by `chain_append` is chained as the new truth, and anyone with superuser rights can
+  rewrite records, chain and head together. Hardening follow-ups: split the migration owner from the runtime role and
+  REVOKE EXECUTE on `chain_append`, together with the signer service. Closing it needs an external anchor (head hash published outside the
+  database) or signed heads. It is not "verifiable without trusting the operator" yet; the owner decides how to handle it.
