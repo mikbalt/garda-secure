@@ -19,7 +19,7 @@ CREATE TABLE record_chain (
     record_id    UUID        NOT NULL,
     record_hash  BYTEA       NOT NULL,   -- sha256 of the record's canonical form
     prev_hash    BYTEA       NOT NULL,   -- entry_hash of seq-1, or the site genesis value
-    entry_hash   BYTEA       NOT NULL,
+    entry_hash   BYTEA       NOT NULL,   -- also covers origin and created_at
     hash_version SMALLINT    NOT NULL DEFAULT 1,
     origin       TEXT        NOT NULL DEFAULT 'live' CHECK (origin IN ('live', 'backfill')),
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -41,6 +41,24 @@ CREATE TRIGGER trg_record_chain_append_only
 CREATE TRIGGER trg_record_chain_no_truncate
     BEFORE TRUNCATE ON record_chain
     FOR EACH STATEMENT EXECUTE FUNCTION record_chain_append_only();
+
+-- The head may only move forward by one entry; it cannot be deleted or reset.
+CREATE FUNCTION record_chain_heads_guard() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+BEGIN
+    IF TG_OP = 'UPDATE' AND NEW.site_id = OLD.site_id AND NEW.last_seq = OLD.last_seq + 1 THEN
+        RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'record_chain_heads may only advance by one entry (% blocked)', TG_OP
+        USING ERRCODE = 'insufficient_privilege';
+END;
+$$;
+CREATE TRIGGER trg_record_chain_heads_guard
+    BEFORE UPDATE OR DELETE ON record_chain_heads
+    FOR EACH ROW EXECUTE FUNCTION record_chain_heads_guard();
+CREATE TRIGGER trg_record_chain_heads_no_truncate
+    BEFORE TRUNCATE ON record_chain_heads
+    FOR EACH STATEMENT EXECUTE FUNCTION record_chain_heads_guard();
 
 -- Genesis value: per site, so chains cannot be spliced into each other.
 CREATE FUNCTION chain_genesis(p_site UUID) RETURNS BYTEA
@@ -100,11 +118,16 @@ BEGIN
     RETURN sha256(convert_to(p_kind || ':' || v::text, 'UTF8'));
 END $$;
 
+-- Entry hash: sha256 of version, site, seq, kind, record id, record_hash,
+-- prev_hash, origin and created_at (UTC, microseconds), joined with '|'.
 CREATE FUNCTION chain_entry_hash(p_site UUID, p_seq BIGINT, p_kind TEXT, p_id UUID,
-                                 p_record BYTEA, p_prev BYTEA, p_version SMALLINT) RETURNS BYTEA
+                                 p_record BYTEA, p_prev BYTEA, p_version SMALLINT,
+                                 p_origin TEXT, p_created TIMESTAMPTZ) RETURNS BYTEA
     LANGUAGE sql IMMUTABLE AS
 $$ SELECT sha256(convert_to(p_version || '|' || p_site || '|' || p_seq || '|' || p_kind || '|' || p_id
-                            || '|' || encode(p_record, 'hex') || '|' || encode(p_prev, 'hex'), 'UTF8')) $$;
+                            || '|' || encode(p_record, 'hex') || '|' || encode(p_prev, 'hex')
+                            || '|' || p_origin
+                            || '|' || to_char(p_created AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US'), 'UTF8')) $$;
 
 -- Append the record's current state to its site's chain; returns the new seq.
 -- Call it in the transaction that wrote the record. The head row lock makes
@@ -118,6 +141,7 @@ DECLARE
     v_prev BYTEA;
     v_rec  BYTEA;
     v_hash BYTEA;
+    v_now  TIMESTAMPTZ := clock_timestamp();
 BEGIN
     IF v_site IS NULL THEN
         RAISE EXCEPTION 'chain_append: % % not found', p_kind, p_id;
@@ -130,12 +154,28 @@ BEGIN
     -- Read the record only after the lock: a writer that waited sees the
     -- committed state of its predecessor.
     v_rec  := chain_record_hash(p_kind, p_id);
-    v_hash := chain_entry_hash(v_site, v_seq, p_kind, p_id, v_rec, v_prev, 1::smallint);
-    INSERT INTO record_chain (site_id, seq, kind, record_id, record_hash, prev_hash, entry_hash, origin)
-    VALUES (v_site, v_seq, p_kind, p_id, v_rec, v_prev, v_hash, p_origin);
+    v_hash := chain_entry_hash(v_site, v_seq, p_kind, p_id, v_rec, v_prev, 1::smallint, p_origin, v_now);
+    INSERT INTO record_chain (site_id, seq, kind, record_id, record_hash, prev_hash, entry_hash, origin, created_at)
+    VALUES (v_site, v_seq, p_kind, p_id, v_rec, v_prev, v_hash, p_origin, v_now);
     UPDATE record_chain_heads SET last_seq = v_seq, last_hash = v_hash WHERE site_id = v_site;
     RETURN v_seq;
 END $$;
+
+-- Records of a site that have no chain entry.
+CREATE FUNCTION chain_unchained_records(p_site UUID) RETURNS TABLE (kind TEXT, record_id UUID)
+    LANGUAGE sql STABLE AS
+$$ SELECT u.kind, u.id FROM (
+       SELECT 'attendance' AS kind, id FROM attendance_records WHERE site_id = p_site
+       UNION ALL
+       SELECT 'scan', s.id FROM checkpoint_scans s JOIN routes r ON r.id = s.route_id WHERE r.site_id = p_site
+       UNION ALL
+       SELECT 'incident', id FROM incidents WHERE site_id = p_site
+       UNION ALL
+       SELECT 'incident_amendment', a.id FROM incident_amendments a JOIN incidents i ON i.id = a.incident_id
+        WHERE i.site_id = p_site
+   ) u
+   WHERE NOT EXISTS (SELECT 1 FROM record_chain c
+                     WHERE c.site_id = p_site AND c.kind = u.kind AND c.record_id = u.id) $$;
 
 -- First broken link of a site's chain, or no row when it is intact. Checks,
 -- in seq order: no gap (a deleted entry), prev_hash links, entry_hash matches
@@ -161,7 +201,7 @@ BEGIN
             RETURN;
         END IF;
         IF r.entry_hash <> chain_entry_hash(r.site_id, r.seq, r.kind, r.record_id, r.record_hash,
-                                            r.prev_hash, r.hash_version) THEN
+                                            r.prev_hash, r.hash_version, r.origin, r.created_at) THEN
             RETURN QUERY SELECT r.seq, 'entry content does not match its hash'::text;
             RETURN;
         END IF;
@@ -180,9 +220,21 @@ BEGIN
         v_prev   := r.entry_hash;
         v_expect := v_expect + 1;
     END LOOP;
+    -- The head must exist once the chain has entries, and match its last one.
     SELECT * INTO h FROM record_chain_heads WHERE site_id = p_site;
-    IF FOUND AND (h.last_seq <> v_expect - 1 OR h.last_hash <> v_prev) THEN
-        RETURN QUERY SELECT v_expect, 'entry missing (chain head is ahead)'::text;
+    IF NOT FOUND THEN
+        IF v_expect > 1 THEN
+            RETURN QUERY SELECT v_expect, 'chain head missing'::text;
+            RETURN;
+        END IF;
+    ELSIF h.last_seq <> v_expect - 1 OR h.last_hash <> v_prev THEN
+        RETURN QUERY SELECT v_expect, 'chain head does not match the last entry'::text;
+        RETURN;
+    END IF;
+    -- Records with no chain entry at all (rows inserted outside the application,
+    -- or whose entries were all deleted).
+    IF EXISTS (SELECT 1 FROM chain_unchained_records(p_site)) THEN
+        RETURN QUERY SELECT v_expect, 'record has no chain entry'::text;
     END IF;
 END $$;
 

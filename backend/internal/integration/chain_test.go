@@ -324,6 +324,252 @@ func TestChainTableIsAppendOnly(t *testing.T) {
 	}
 }
 
+func wantBreakReason(t *testing.T, pool *pgxpool.Pool, site, reason string) {
+	t.Helper()
+	b, err := repository.FirstChainBreak(context.Background(), pool, site)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b == nil || b.Reason != reason {
+		t.Fatalf("break = %+v, want reason %q", b, reason)
+	}
+}
+
+func TestChainDetectsForgedInsert(t *testing.T) {
+	pool := chainPool(t)
+	ctx := context.Background()
+	s := chainSeed(t, pool, "chain forged")
+	s.scan(t, pool)
+	wantValid(t, pool, s.site)
+	// A row inserted behind the application's back never gets a chain entry.
+	if _, err := pool.Exec(ctx, `INSERT INTO checkpoint_scans (session_id, route_id, checkpoint_id, guard_id, scanned_at)
+		VALUES ($1, $2, 'forged', $3, now())`, s.session, s.route, s.guard); err != nil {
+		t.Fatal(err)
+	}
+	wantBreakAt(t, pool, s.site, 2)
+	wantBreakReason(t, pool, s.site, "record has no chain entry")
+	// Same for an incident, and for a site that has no chain at all yet.
+	s2 := chainSeed(t, pool, "chain forged empty")
+	if _, err := pool.Exec(ctx, `INSERT INTO incidents (site_id, guard_id, type, severity, occurred_at)
+		VALUES ($1, $2, 'theft', 'low', now())`, s2.site, s2.guard); err != nil {
+		t.Fatal(err)
+	}
+	wantBreakAt(t, pool, s2.site, 1)
+}
+
+func TestChainDetectsReorderedEntries(t *testing.T) {
+	pool := chainPool(t)
+	ctx := context.Background()
+	s := chainSeed(t, pool, "chain reorder")
+	for range 4 {
+		s.scan(t, pool)
+	}
+	withoutGuard(t, pool, "record_chain", func() {
+		for _, q := range []string{ // swap seq 2 and 3 through a free value
+			`UPDATE record_chain SET seq = 99 WHERE site_id = $1 AND seq = 2`,
+			`UPDATE record_chain SET seq = 2 WHERE site_id = $1 AND seq = 3`,
+			`UPDATE record_chain SET seq = 3 WHERE site_id = $1 AND seq = 99`,
+		} {
+			if _, err := pool.Exec(ctx, q, s.site); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+	wantBreakAt(t, pool, s.site, 2)
+}
+
+func TestChainDetectsTamperedMetadata(t *testing.T) {
+	pool := chainPool(t)
+	ctx := context.Background()
+	for _, set := range []string{`origin = 'backfill'`, `created_at = created_at - interval '1 day'`} {
+		s := chainSeed(t, pool, "chain meta "+set[:6])
+		s.scan(t, pool)
+		s.scan(t, pool)
+		withoutGuard(t, pool, "record_chain", func() {
+			if _, err := pool.Exec(ctx, `UPDATE record_chain SET `+set+` WHERE site_id = $1 AND seq = 2`, s.site); err != nil {
+				t.Fatal(err)
+			}
+		})
+		wantBreakAt(t, pool, s.site, 2)
+	}
+}
+
+func TestChainDetectsDeletedHead(t *testing.T) {
+	pool := chainPool(t)
+	ctx := context.Background()
+
+	s := chainSeed(t, pool, "head only")
+	s.scan(t, pool)
+	s.scan(t, pool)
+	withoutGuard(t, pool, "record_chain_heads", func() {
+		if _, err := pool.Exec(ctx, `DELETE FROM record_chain_heads WHERE site_id = $1`, s.site); err != nil {
+			t.Fatal(err)
+		}
+	})
+	wantBreakReason(t, pool, s.site, "chain head missing")
+
+	// Head and the newest entry gone: the dropped tail is still found.
+	s2 := chainSeed(t, pool, "head and tail")
+	s2.scan(t, pool)
+	s2.scan(t, pool)
+	withoutGuard(t, pool, "record_chain", func() {
+		if _, err := pool.Exec(ctx, `DELETE FROM record_chain WHERE site_id = $1 AND seq = 2`, s2.site); err != nil {
+			t.Fatal(err)
+		}
+	})
+	withoutGuard(t, pool, "record_chain_heads", func() {
+		if _, err := pool.Exec(ctx, `DELETE FROM record_chain_heads WHERE site_id = $1`, s2.site); err != nil {
+			t.Fatal(err)
+		}
+	})
+	wantBreakAt(t, pool, s2.site, 2) // the second scan has no entry
+
+	// Head and every entry gone: the records without entries give it away.
+	s3 := chainSeed(t, pool, "head and all")
+	s3.scan(t, pool)
+	s3.incident(t, pool)
+	withoutGuard(t, pool, "record_chain", func() {
+		if _, err := pool.Exec(ctx, `DELETE FROM record_chain WHERE site_id = $1`, s3.site); err != nil {
+			t.Fatal(err)
+		}
+	})
+	withoutGuard(t, pool, "record_chain_heads", func() {
+		if _, err := pool.Exec(ctx, `DELETE FROM record_chain_heads WHERE site_id = $1`, s3.site); err != nil {
+			t.Fatal(err)
+		}
+	})
+	wantBreakAt(t, pool, s3.site, 1)
+	wantBreakReason(t, pool, s3.site, "record has no chain entry")
+}
+
+func TestChainHeadIsNotMutableByTheApp(t *testing.T) {
+	pool := chainPool(t)
+	ctx := context.Background()
+	s := chainSeed(t, pool, "head guard")
+	s.scan(t, pool)
+	for _, q := range []string{
+		`DELETE FROM record_chain_heads WHERE site_id = $1`,
+		`UPDATE record_chain_heads SET last_seq = 0 WHERE site_id = $1`,
+		`UPDATE record_chain_heads SET last_hash = sha256('x'::bytea) WHERE site_id = $1`,
+		`UPDATE record_chain_heads SET last_seq = last_seq + 5 WHERE site_id = $1`,
+	} {
+		if _, err := pool.Exec(ctx, q, s.site); err == nil {
+			t.Fatalf("must be rejected: %s", q)
+		}
+	}
+	if _, err := pool.Exec(ctx, `TRUNCATE record_chain_heads`); err == nil {
+		t.Fatal("TRUNCATE record_chain_heads must be rejected")
+	}
+	s.scan(t, pool) // normal appends still work
+	wantValid(t, pool, s.site)
+}
+
+func TestChainCoversOtherWritePaths(t *testing.T) {
+	pool := chainPool(t)
+	ctx := context.Background()
+	s := chainSeed(t, pool, "chain paths")
+
+	// FlagAbsentees: a shift that started 2 h ago with no clock-in.
+	if _, err := pool.Exec(ctx, `INSERT INTO shifts (guard_id, site_id, start_time, end_time)
+		VALUES ($1, $2, now() - interval '2 hours', now() + interval '6 hours')`, s.guard, s.site); err != nil {
+		t.Fatal(err)
+	}
+	flags, err := repository.FlagAbsentees(ctx, pool, s.site, 30, 24*time.Hour)
+	if err != nil || len(flags) != 1 {
+		t.Fatalf("FlagAbsentees = %v, %v", flags, err)
+	}
+	if n := chainLen(t, pool, s.site); n != 1 {
+		t.Fatalf("chain length after FlagAbsentees = %d, want 1", n)
+	}
+	wantValid(t, pool, s.site)
+
+	// Override of that record, and of a shift that has no record yet.
+	var shift string
+	if err := pool.QueryRow(ctx, `INSERT INTO shifts (guard_id, site_id, start_time, end_time)
+		VALUES ($1, $2, now(), now() + interval '8 hours') RETURNING id`, s.guard, s.site).Scan(&shift); err != nil {
+		t.Fatal(err)
+	}
+	for _, sh := range []string{flags[0].ShiftID, shift} {
+		if _, err := repository.OverrideAttendance(ctx, pool, repository.OverrideParams{
+			ShiftID: sh, GuardID: s.guard, SiteID: s.site, Status: "present", Reason: "sick cover", Actor: "admin",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := chainLen(t, pool, s.site); n != 3 {
+		t.Fatalf("chain length after overrides = %d, want 3", n)
+	}
+	wantValid(t, pool, s.site)
+
+	// Bulk retention clearing of GPS chains every changed row.
+	att := s.attendance(t, pool)
+	sc := s.scan(t, pool)
+	if _, err := pool.Exec(ctx, `UPDATE attendance_records SET gps_lat = 1, gps_lng = 2 WHERE id = $1`, att); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE checkpoint_scans SET gps_lat = 1, gps_lng = 2 WHERE id = $1`, sc); err != nil {
+		t.Fatal(err)
+	}
+	wantBreakAt(t, pool, s.site, 4) // the out-of-band GPS edits are seen...
+	before := chainLen(t, pool, s.site)
+	// ...and the retention job's own clearing is chained, so a rewrite through it is not a break.
+	cutoff := time.Now().Add(time.Hour)
+	if _, err := repository.ClearAttendanceGPS(ctx, pool, cutoff, 100); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.ClearScanGPS(ctx, pool, cutoff, 100); err != nil {
+		t.Fatal(err)
+	}
+	if n := chainLen(t, pool, s.site); n <= before {
+		t.Fatalf("retention did not chain: %d -> %d", before, n)
+	}
+	wantValid(t, pool, s.site)
+}
+
+func TestChainRolledBackWriteLeavesNoEntry(t *testing.T) {
+	pool := chainPool(t)
+	ctx := context.Background()
+	s := chainSeed(t, pool, "chain rollback")
+	s.scan(t, pool)
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := repository.InsertScan(ctx, tx, model.CheckpointScan{
+		SessionID: &s.session, RouteID: s.route, CheckpointID: "rolled", GuardID: s.guard, ScannedAt: time.Now(), Method: "qr",
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Rollback(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n := chainLen(t, pool, s.site); n != 1 {
+		t.Fatalf("chain length after rollback = %d, want 1", n)
+	}
+	var head int
+	if err := pool.QueryRow(ctx, `SELECT last_seq FROM record_chain_heads WHERE site_id = $1`, s.site).Scan(&head); err != nil || head != 1 {
+		t.Fatalf("head seq = %d (%v), want 1", head, err)
+	}
+	s.scan(t, pool) // next write takes seq 2, no gap
+	wantValid(t, pool, s.site)
+
+	// A failed chained write inside a caller's transaction rolls back only itself (savepoint).
+	tx, err = pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.CreateAmendment(ctx, tx, "00000000-0000-0000-0000-000000000000", []byte(`{}`), "r", "a"); err == nil {
+		t.Fatal("amendment of an unknown incident must fail")
+	}
+	s2 := s.scanIn(t, tx)
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	_ = s2
+	wantValid(t, pool, s.site)
+}
+
 // Rows written before migration 011 are chained by the migration itself.
 func TestChainMigrationBackfillsExistingRows(t *testing.T) {
 	ctx := context.Background()
@@ -403,6 +649,17 @@ func TestChainMigrationBackfillsExistingRows(t *testing.T) {
 		wantValid(t, pool, site)
 	}
 
+	// The down migration works and the chain can be rebuilt by migrating up again.
+	if err := m.Steps(-1); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Up(); err != nil {
+		t.Fatal(err)
+	}
+	for _, site := range sites {
+		wantValid(t, pool, site)
+	}
+
 	// New writes continue the same chain, and tampering with old data is found.
 	if _, err := pool.Exec(ctx, `UPDATE incidents SET description = 'edited' WHERE site_id = $1`, sites[0]); err != nil {
 		t.Fatal(err)
@@ -411,4 +668,15 @@ func TestChainMigrationBackfillsExistingRows(t *testing.T) {
 	if err != nil || b == nil {
 		t.Fatalf("edit of a backfilled record not detected: %v %v", b, err)
 	}
+}
+
+func (s chainSite) scanIn(t *testing.T, db repository.DBTX) string {
+	t.Helper()
+	sc, _, err := repository.InsertScan(context.Background(), db, model.CheckpointScan{
+		SessionID: &s.session, RouteID: s.route, CheckpointID: "in-tx", GuardID: s.guard, ScannedAt: time.Now(), Method: "qr",
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sc.ID
 }
