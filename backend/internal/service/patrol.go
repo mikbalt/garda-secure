@@ -324,7 +324,7 @@ func RecordScan(ctx context.Context, pool *pgxpool.Pool, in ScanInput) (*model.C
 	if err != nil {
 		return nil, false, err
 	}
-	cp, qrFlag := resolveCheckpoint(route, in)
+	cp, qrFlag := resolveCheckpoint(route, in, at)
 	if cp == nil {
 		return nil, false, BadRequest("unknown_checkpoint", "checkpoint is not part of this route")
 	}
@@ -354,14 +354,16 @@ func RecordScan(ctx context.Context, pool *pgxpool.Pool, in ScanInput) (*model.C
 
 // resolveCheckpoint finds the scanned checkpoint of the route and the QR
 // verification flag of a QR scan (D-035):
-//   - a signed payload (qr_payload, or an SP1: text in qr_code) names the
-//     checkpoint; a signature that does not match its current version is
-//     accepted but flagged qr_invalid;
+//   - a signed payload (qr_payload, or an SP1:/SP2: text in qr_code) names
+//     the checkpoint; a signature that does not match its current version
+//     (or, for SP2, its window) is accepted but flagged qr_invalid; a genuine
+//     SP2 code whose window does not contain the scan's event time, or a
+//     windowless SP1 code, is accepted but flagged qr_stale (TAQ-19);
 //   - a plain code matches a legacy checkpoint's qr_code: qr_unsigned;
 //   - a checkpoint_id alone proves no scan: qr_unsigned.
 //
 // Manual check-ins (photo required) get no QR flag.
-func resolveCheckpoint(route *model.Route, in ScanInput) (*model.Checkpoint, string) {
+func resolveCheckpoint(route *model.Route, in ScanInput, at time.Time) (*model.Checkpoint, string) {
 	byID := func(id string) *model.Checkpoint {
 		for i := range route.Checkpoints {
 			if route.Checkpoints[i].ID == id {
@@ -385,10 +387,25 @@ func resolveCheckpoint(route *model.Route, in ScanInput) (*model.Checkpoint, str
 		return f
 	}
 	payload := strings.TrimSpace(in.QRPayload)
-	if payload == "" && strings.HasPrefix(in.QRCode, fieldauth.QRPrefix) {
+	if payload == "" && (strings.HasPrefix(in.QRCode, fieldauth.QRPrefix) || strings.HasPrefix(in.QRCode, fieldauth.QRPrefixWindowed)) {
 		payload = in.QRCode
 	}
 	switch {
+	case strings.HasPrefix(payload, fieldauth.QRPrefixWindowed):
+		id, w, sig, ok := fieldauth.ParseWindowedQR(payload)
+		if !ok {
+			return nil, ""
+		}
+		cp := byID(id)
+		switch {
+		case cp == nil:
+			return nil, ""
+		case !cp.QRSigned || in.QR == nil || !in.QR.ValidWindowed(cp.ID, cp.QRVersion, w, sig):
+			return cp, qrFlag(FlagQRInvalid)
+		case !w.Contains(at):
+			return cp, qrFlag(FlagQRStale)
+		}
+		return cp, ""
 	case payload != "":
 		id, sig, ok := fieldauth.ParseQR(payload)
 		if !ok { // raw text of a legacy plain code
@@ -402,7 +419,7 @@ func resolveCheckpoint(route *model.Route, in ScanInput) (*model.Checkpoint, str
 			return nil, ""
 		}
 		if cp.QRSigned && in.QR != nil && in.QR.Valid(cp.ID, cp.QRVersion, sig) {
-			return cp, ""
+			return cp, qrFlag(FlagQRStale) // genuine, but no time window
 		}
 		return cp, qrFlag(FlagQRInvalid)
 	case in.QRCode != "":
@@ -508,12 +525,13 @@ func RegenerateQR(r *model.Route, qr *fieldauth.QRSigner) {
 	}
 }
 
-// DecorateQR fills in the current signed payload of every signed checkpoint
-// (web responses; the stored text may predate a key change).
+// DecorateQR fills in a fresh time-bound payload (valid from now) for every
+// signed checkpoint (web responses, hence every print; the stored text is
+// only a placeholder and may predate a key change).
 func DecorateQR(r *model.Route, qr *fieldauth.QRSigner) {
 	for i := range r.Checkpoints {
 		if cp := &r.Checkpoints[i]; cp.QRSigned && qr != nil {
-			cp.QRCode = qr.Payload(cp.ID, cp.QRVersion)
+			cp.QRCode = qr.WindowedPayload(cp.ID, cp.QRVersion, Now())
 		}
 	}
 }

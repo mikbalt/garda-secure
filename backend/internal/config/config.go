@@ -65,6 +65,7 @@ type Config struct {
 	GuardSessionTTL        time.Duration // GUARD_SESSION_TTL, default 12h
 	GuardTokenGrace        time.Duration // GUARD_TOKEN_GRACE, default 168h (= offline sync window)
 	QRSigningSecret        string        // QR_SIGNING_SECRET (>= 32 bytes when set)
+	QRWindow               time.Duration // QR_WINDOW, default 720h: validity of a printed checkpoint QR (TAQ-19)
 	RateLimitGuardSessions int           // RATE_LIMIT_GUARD_SESSIONS_PER_MIN, PIN checks per tablet
 
 	// Channel defaults; admins can override them from the web UI.
@@ -280,6 +281,12 @@ func (c *Config) loadField() error {
 	}
 	if c.GuardTokenGrace < time.Minute || c.GuardTokenGrace > 30*24*time.Hour {
 		return errors.New("GUARD_TOKEN_GRACE must be between 1m and 720h")
+	}
+	if c.QRWindow, err = envDuration("QR_WINDOW", 30*24*time.Hour); err != nil {
+		return err
+	}
+	if c.QRWindow < time.Hour || c.QRWindow > 366*24*time.Hour {
+		return errors.New("QR_WINDOW must be between 1h and 8784h")
 	}
 	return nil
 }

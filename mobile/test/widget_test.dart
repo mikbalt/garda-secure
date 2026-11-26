@@ -148,5 +148,19 @@ void main() {
       expect(ops[1].body['id'], isA<String>());
       expect(h.actions.patrol!.progress(DateTime.now().toUtc()).scanned, 1);
     });
+    test('offline scans of time-bound codes queue the raw text with the event time (TAQ-19)', () async {
+      const id = '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b';
+      h.seedSite();
+      h.session.routes = const [
+        PatrolRoute(id: 'r-s', name: 'Signed', checkpoints: [Checkpoint(id: id, name: 'Gate', qrSigned: true, orderIndex: 0)]),
+      ];
+      await h.actions.startPatrol(h.session.routes.first);
+      // Window long over: the tablet cannot judge it (no key) and must not drop it.
+      const raw = 'SP2:$id:1000000000:1000086400:AbC_-09';
+      expect((await h.actions.scan(' $raw '))?.id, id);
+      final op = (await h.outbox.list()).firstWhere((o) => o.kind == 'scan');
+      expect(op.body['qr_payload'], raw, reason: 'the server verifies signature and window, from the event time');
+      expect(op.body['scanned_at'], isA<String>());
+    });
   });
 }

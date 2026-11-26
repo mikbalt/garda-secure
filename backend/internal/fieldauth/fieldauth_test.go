@@ -140,3 +140,74 @@ func TestQRSignature(t *testing.T) {
 		t.Errorf("ParseQR with colon in id = %q %v", cp, ok)
 	}
 }
+
+func TestQRWindowedPayload(t *testing.T) {
+	s := NewQRSigner(DeriveKey("", "master", QRInfo)).WithWindow(48 * time.Hour)
+	id := "6f1c2c1e-8a8e-4d4a-9f43-0f2a7e1d9b10"
+	now := time.Date(2026, 11, 26, 8, 0, 0, 0, time.UTC)
+	p := s.WindowedPayload(id, 3, now)
+	if !strings.HasPrefix(p, "SP2:"+id+":") {
+		t.Fatalf("payload = %q", p)
+	}
+	gotID, w, sig, ok := ParseWindowedQR("  " + p + " ")
+	if !ok || gotID != id || !w.NotBefore.Equal(now) || !w.Expires.Equal(now.Add(48*time.Hour)) {
+		t.Fatalf("parse = %q %+v %v", gotID, w, ok)
+	}
+	if !s.ValidWindowed(id, 3, w, sig) {
+		t.Fatal("own windowed signature rejected")
+	}
+	if s.ValidWindowed(id, 4, w, sig) {
+		t.Fatal("signature of an old version accepted")
+	}
+	// A longer window with the old signature = tampering.
+	longer := QRWindow{NotBefore: w.NotBefore, Expires: w.Expires.Add(24 * time.Hour)}
+	if s.ValidWindowed(id, 3, longer, sig) {
+		t.Fatal("tampered expiry accepted")
+	}
+	later := QRWindow{NotBefore: w.NotBefore.Add(24 * time.Hour), Expires: w.Expires.Add(24 * time.Hour)}
+	if s.ValidWindowed(id, 3, later, sig) {
+		t.Fatal("shifted window accepted")
+	}
+	if NewQRSigner([]byte("other")).ValidWindowed(id, 3, w, sig) {
+		t.Fatal("valid under another key")
+	}
+	// An SP1 signature cannot be replayed as an SP2 one.
+	if s.ValidWindowed(id, 3, w, s.Sig(id, 3)) {
+		t.Fatal("SP1 signature accepted as SP2")
+	}
+	for _, bad := range []string{"SP1:" + id + ":sig", "SP2:", "SP2:" + id, "SP2:" + id + ":1:2", "SP2:" + id + ":x:2:sig",
+		"SP2:" + id + ":5:2:sig", "SP2::1:2:sig", "SP2:" + id + ":1:2:"} {
+		if _, _, _, ok := ParseWindowedQR(bad); ok {
+			t.Errorf("ParseWindowedQR(%q) ok", bad)
+		}
+	}
+	if _, _, ok := ParseQR(p); ok {
+		t.Error("ParseQR must stay SP1-only")
+	}
+}
+
+func TestQRWindowContains(t *testing.T) {
+	from := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	w := QRWindow{NotBefore: from, Expires: from.Add(30 * 24 * time.Hour)}
+	cases := []struct {
+		name string
+		at   time.Time
+		want bool
+	}{
+		{"inside", from.Add(24 * time.Hour), true},
+		{"at start", from, true},
+		{"just before start, within skew", from.Add(-QRSkew), true},
+		{"before start beyond skew", from.Add(-QRSkew - time.Second), false},
+		{"just after expiry, within skew", w.Expires.Add(QRSkew), true},
+		{"after expiry beyond skew", w.Expires.Add(QRSkew + time.Second), false},
+		{"long after (reused photo)", w.Expires.Add(90 * 24 * time.Hour), false},
+	}
+	for _, tc := range cases {
+		if got := w.Contains(tc.at); got != tc.want {
+			t.Errorf("%s: Contains = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+	if d := NewQRSigner([]byte("k")).Window(); d != DefaultQRWindow {
+		t.Errorf("default window = %v", d)
+	}
+}

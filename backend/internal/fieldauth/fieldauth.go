@@ -167,10 +167,25 @@ const QRPrefix = "SP1:"
 const qrSigLen = 22
 
 // QRSigner signs and verifies checkpoint QR payloads.
-type QRSigner struct{ key []byte }
+type QRSigner struct {
+	key    []byte
+	window time.Duration
+}
 
-// NewQRSigner creates a signer.
-func NewQRSigner(key []byte) *QRSigner { return &QRSigner{key: key} }
+// NewQRSigner creates a signer whose windowed payloads last DefaultQRWindow.
+func NewQRSigner(key []byte) *QRSigner { return &QRSigner{key: key, window: DefaultQRWindow} }
+
+// WithWindow sets how long a newly issued windowed payload stays valid (zero
+// or negative keeps the current value).
+func (s *QRSigner) WithWindow(d time.Duration) *QRSigner {
+	if d > 0 {
+		s.window = d
+	}
+	return s
+}
+
+// Window is the validity of a newly issued windowed payload.
+func (s *QRSigner) Window() time.Duration { return s.window }
 
 // Sig is base64url_nopad(HMAC-SHA256(key, "SP1:" + id + ":" + version))[:22].
 func (s *QRSigner) Sig(checkpointID string, version int) string {
@@ -202,4 +217,71 @@ func ParseQR(payload string) (checkpointID, sig string, ok bool) {
 		return "", "", false
 	}
 	return rest[:i], rest[i+1:], true
+}
+
+// ── Time-bound checkpoint QR codes (TAQ-19) ─────────────────────────────────
+
+// QRPrefixWindowed starts a time-bound payload:
+// SP2:<checkpoint id>:<not before>:<expires>:<sig>, times in Unix seconds.
+const QRPrefixWindowed = "SP2:"
+
+// Window defaults: a printed code is good for DefaultQRWindow from the print
+// (every GET of the route issues a fresh one, so reprinting renews it) and a
+// scan is judged with QRSkew of tolerance for tablet clock drift.
+const (
+	DefaultQRWindow = 30 * 24 * time.Hour
+	QRSkew          = 10 * time.Minute
+)
+
+// QRWindow is the signed validity of a printed code.
+type QRWindow struct{ NotBefore, Expires time.Time }
+
+// Contains reports whether a scan made at the event time at falls inside the
+// window, allowing QRSkew at both ends. The event time is the scan's own
+// timestamp, not the time it reached the server, so a scan queued offline
+// inside the window still counts when it syncs later.
+func (w QRWindow) Contains(at time.Time) bool {
+	return !at.Before(w.NotBefore.Add(-QRSkew)) && !at.After(w.Expires.Add(QRSkew))
+}
+
+func (s *QRSigner) windowSig(checkpointID string, version int, w QRWindow) string {
+	m := hmac.New(sha256.New, s.key)
+	m.Write([]byte(QRPrefixWindowed + checkpointID + ":" + strconv.Itoa(version) + ":" +
+		strconv.FormatInt(w.NotBefore.Unix(), 10) + ":" + strconv.FormatInt(w.Expires.Unix(), 10)))
+	return base64.RawURLEncoding.EncodeToString(m.Sum(nil))[:qrSigLen]
+}
+
+// WindowedPayload is the text printed for a checkpoint at time now: valid
+// from now for the signer's window.
+func (s *QRSigner) WindowedPayload(checkpointID string, version int, now time.Time) string {
+	w := QRWindow{NotBefore: now.Truncate(time.Second), Expires: now.Truncate(time.Second).Add(s.window)}
+	return QRPrefixWindowed + checkpointID + ":" + strconv.FormatInt(w.NotBefore.Unix(), 10) + ":" +
+		strconv.FormatInt(w.Expires.Unix(), 10) + ":" + s.windowSig(checkpointID, version, w)
+}
+
+// ValidWindowed reports whether sig signs this checkpoint version and window
+// (constant-time comparison). It does not look at the clock: see Contains.
+func (s *QRSigner) ValidWindowed(checkpointID string, version int, w QRWindow, sig string) bool {
+	return hmac.Equal([]byte(sig), []byte(s.windowSig(checkpointID, version, w)))
+}
+
+// ParseWindowedQR splits a scanned "SP2:<id>:<from>:<to>:<sig>" payload. ok is
+// false for any other text or a window that ends before it starts.
+func ParseWindowedQR(payload string) (checkpointID string, w QRWindow, sig string, ok bool) {
+	rest, found := strings.CutPrefix(strings.TrimSpace(payload), QRPrefixWindowed)
+	if !found {
+		return "", QRWindow{}, "", false
+	}
+	parts := strings.Split(rest, ":")
+	if len(parts) < 4 {
+		return "", QRWindow{}, "", false
+	}
+	n := len(parts)
+	from, err1 := strconv.ParseInt(parts[n-3], 10, 64)
+	to, err2 := strconv.ParseInt(parts[n-2], 10, 64)
+	checkpointID, sig = strings.Join(parts[:n-3], ":"), parts[n-1]
+	if err1 != nil || err2 != nil || to < from || checkpointID == "" || sig == "" {
+		return "", QRWindow{}, "", false
+	}
+	return checkpointID, QRWindow{NotBefore: time.Unix(from, 0).UTC(), Expires: time.Unix(to, 0).UTC()}, sig, true
 }

@@ -249,11 +249,11 @@ func TestSignedQRCodes(t *testing.T) {
 	cps := route["checkpoints"].([]any)
 	gate, dock := cps[0].(map[string]any), cps[1].(map[string]any)
 	gatePayload := gate["qr_code"].(string)
-	if gate["qr_signed"] != true || !strings.HasPrefix(gatePayload, "SP1:"+gate["id"].(string)+":") || dock["qr_signed"] != false {
+	if gate["qr_signed"] != true || !strings.HasPrefix(gatePayload, "SP2:"+gate["id"].(string)+":") || dock["qr_signed"] != false {
 		t.Fatalf("route checkpoints = %v", cps)
 	}
 	// Web read (QR print sheet) shows the payload; the tablet never does.
-	if got := e.do("GET", "/api/v1/patrol/routes/"+routeID, sup, "", nil).obj()["checkpoints"].([]any)[0].(map[string]any)["qr_code"]; got != gatePayload {
+	if got := e.do("GET", "/api/v1/patrol/routes/"+routeID, sup, "", nil).obj()["checkpoints"].([]any)[0].(map[string]any)["qr_code"]; got == nil || !strings.HasPrefix(got.(string), "SP2:"+gate["id"].(string)+":") {
 		t.Fatalf("web route qr_code = %v", got)
 	}
 	dr := e.expect(e.do("GET", "/api/v1/device/routes", f.tablet, "", nil), 200, "device routes").list()[0].(map[string]any)["checkpoints"].([]any)
@@ -264,7 +264,7 @@ func TestSignedQRCodes(t *testing.T) {
 		t.Fatalf("device route legacy checkpoint = %v", c)
 	}
 	dev := e.do("GET", "/api/v1/device/routes", f.tablet, "", nil)
-	if bytes.Contains(dev.raw, []byte(gatePayload)) {
+	if bytes.Contains(dev.raw, []byte("SP2:")) || bytes.Contains(dev.raw, []byte("SP1:")) {
 		t.Fatal("device routes leak a signed payload")
 	}
 
@@ -280,6 +280,18 @@ func TestSignedQRCodes(t *testing.T) {
 		t.Fatalf("legacy scan flags = %v", fl)
 	}
 	roofID := cps[2].(map[string]any)["id"].(string)
+	// Time-bound codes (TAQ-19): a code printed 40 days ago (30-day window)
+	// is a stale print or a photo of one; a printed-before-TAQ-19 SP1 code has
+	// no window at all. Both are accepted and flagged, never dropped.
+	_, qrSigner := handler.FieldAuth(e.cfg)
+	old := qrSigner.WindowedPayload(roofID, 1, time.Now().Add(-40*24*time.Hour))
+	if fl := flagsOf(e.expect(scan(map[string]any{"qr_payload": old, "method": "qr"}), 201, "stale scan").obj()["flags"]); !slices.Equal(fl, []string{"qr_stale"}) {
+		t.Fatalf("stale scan flags = %v", fl)
+	}
+	dockID := dock["id"].(string)
+	if fl := flagsOf(e.expect(scan(map[string]any{"qr_payload": qrSigner.Payload(dockID, 1), "method": "qr"}), 201, "unwindowed scan").obj()["flags"]); !slices.Equal(fl, []string{"qr_invalid"}) {
+		t.Fatalf("SP1 code of a legacy checkpoint flags = %v", fl)
+	}
 	forged := e.expect(scan(map[string]any{"qr_payload": "SP1:" + roofID + ":AAAAAAAAAAAAAAAAAAAAAA", "method": "qr"}), 201, "forged scan").obj()
 	if fl := flagsOf(forged["flags"]); !slices.Equal(fl, []string{"qr_invalid"}) {
 		t.Fatalf("forged scan flags = %v", fl)
@@ -289,15 +301,16 @@ func TestSignedQRCodes(t *testing.T) {
 	}
 	// Session progress to the tablet hides payloads; to the web it shows them.
 	prog := e.expect(e.do("GET", "/api/v1/patrol/sessions/"+sess, f.tablet, f.guard, nil), 200, "progress tablet")
-	if bytes.Contains(prog.raw, []byte(gatePayload)) {
+	if bytes.Contains(prog.raw, []byte("SP2:")) || bytes.Contains(prog.raw, []byte("SP1:")) {
 		t.Fatal("tablet progress leaks the signed payload")
 	}
-	if p := e.expect(e.do("GET", "/api/v1/patrol/sessions/"+sess, sup, "", nil), 200, "progress web"); !bytes.Contains(p.raw, []byte(gatePayload)) {
+	if p := e.expect(e.do("GET", "/api/v1/patrol/sessions/"+sess, sup, "", nil), 200, "progress web"); !bytes.Contains(p.raw, []byte(gate["id"].(string)+":")) {
 		t.Fatal("web progress lacks the payload")
 	}
-	// The flagged scan shows up for review; a lone qr_unsigned does not count.
+	// The forged, invalid and stale scans show up for review (3); a lone
+	// qr_unsigned does not count.
 	sums := e.expect(e.do("GET", "/api/v1/patrol/sessions?site_id="+f.site, sup, "", nil), 200, "sessions").list()
-	if s := sums[0].(map[string]any); s["flagged_scans"].(float64) != 1 {
+	if s := sums[0].(map[string]any); s["flagged_scans"].(float64) != 3 {
 		t.Fatalf("flagged_scans = %v", s["flagged_scans"])
 	}
 

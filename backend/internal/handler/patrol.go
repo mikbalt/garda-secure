@@ -77,6 +77,7 @@ func (h *Handler) createRoute(c *fiber.Ctx) error {
 		return h.fail(c, err)
 	}
 	markSync(c, &out.SiteID)
+	service.DecorateQR(out, h.qr)
 	return c.Status(fiber.StatusCreated).JSON(out)
 }
 
