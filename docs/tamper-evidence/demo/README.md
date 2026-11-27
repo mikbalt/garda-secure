@@ -12,10 +12,14 @@
 6. changes a record inside a copy of the exported file: **exit 3** (the file no longer matches its hash); and again with the file hash in the
    manifest corrected as well: **exit 1**.
 
+The script refuses to run unless `DEMO_I_AM_ON_A_DISPOSABLE_STACK=1` is set (never production).
+The demo site belongs to `DEMO_REALM`: every user of that realm can see it, and the scheduled job makes monthly proof packs for it. Use a demo realm only.
+
 It is repeatable: every run makes a new site, and the temporary files are removed on exit. The edit is reverted on any exit, also on an error.
 The demo site stays in the database, on purpose: the chain and the signed heads are append-only, and a real signer remembers what it signed.
 `DEMO_PURGE=1` deletes the demo site, its records, chain and heads at the end. **Use it only on a disposable database** (it switches the
-append-only guards off as the owner), and reset the signer volume with the stack.
+append-only guards off as the owner, inside one transaction). It leaves the signer's own file holding heads that the database no longer has, so the
+signer refuses that site and its health goes red (D-071) unless the signer volume is reset with the stack.
 
 ## Needs
 
@@ -23,6 +27,7 @@ append-only guards off as the owner), and reset the signer volume with the stack
 `PATH`; set `GARDA_VERIFY` to use another binary). A stack with migration 014 or later (the chain export): older stacks stop at step 0.
 
 ```
+export DEMO_I_AM_ON_A_DISPOSABLE_STACK=1             # required
 export DEMO_API=https://garda.example/api/v1       # base URL incl. /api/v1
 export DEMO_TOKEN=...                              # bearer token of an admin or supervisor in DEMO_REALM
 export DEMO_REALM=securepatrol-client1             # realm that owns the demo site

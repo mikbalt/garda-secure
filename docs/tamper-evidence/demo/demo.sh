@@ -10,12 +10,18 @@
 #   DEMO_DB_URL  database URL of the OWNER role (the one that runs migrations)
 #   DEMO_PIN     signer key fingerprint (64 hex): the one you hold, not the one the server shows
 #   DEMO_SIGN_URL  signer base URL that accepts POST /sign?site_id= (internal network only)
+#   DEMO_I_AM_ON_A_DISPOSABLE_STACK=1   required: confirms this is not production
 # Optional: PSQL (psql command, default "psql"), GARDA_VERIFY (path; default: garda-verify on PATH,
 #   else built from backend/cmd/garda-verify), DEMO_PURGE=1 (disposable database only, see README).
 set -euo pipefail
 
 : "${DEMO_API:?}" "${DEMO_TOKEN:?}" "${DEMO_REALM:?}" "${DEMO_DB_URL:?}" "${DEMO_PIN:?}" "${DEMO_SIGN_URL:?}"
 PSQL=${PSQL:-psql}
+[ "${DEMO_I_AM_ON_A_DISPOSABLE_STACK:-}" = 1 ] || {
+  echo "Refusing to run: this script writes demo records into the database and edits one as the owner role."
+  echo "Set DEMO_I_AM_ON_A_DISPOSABLE_STACK=1 only for a demo or disposable stack (never production). See README.md."
+  exit 1
+}
 here=$(cd "$(dirname "$0")" && pwd)
 work=$(mktemp -d "${TMPDIR:-/tmp}/garda-demo.XXXXXX")
 site=""; att=""; orig=""; edited=0
@@ -42,6 +48,7 @@ purge() {
   # Disposable database only: the chain is append-only on purpose, deleting it needs the owner to
   # switch the guards off, and a real signer keeps its own memory of what it signed.
   q <<SQL >/dev/null
+BEGIN;
 ALTER TABLE record_chain DISABLE TRIGGER USER;
 ALTER TABLE record_chain_heads DISABLE TRIGGER USER;
 ALTER TABLE signed_heads DISABLE TRIGGER USER;
@@ -51,6 +58,8 @@ DELETE FROM record_chain_heads WHERE site_id = '$site';
 ALTER TABLE record_chain ENABLE TRIGGER USER;
 ALTER TABLE record_chain_heads ENABLE TRIGGER USER;
 ALTER TABLE signed_heads ENABLE TRIGGER USER;
+COMMIT;
+BEGIN;
 DELETE FROM checkpoint_scans WHERE route_id IN (SELECT id FROM routes WHERE site_id = '$site');
 DELETE FROM patrol_sessions WHERE site_id = '$site';
 DELETE FROM routes WHERE site_id = '$site';
@@ -59,6 +68,7 @@ DELETE FROM incidents WHERE site_id = '$site';
 DELETE FROM shifts WHERE site_id = '$site';
 DELETE FROM guards WHERE site_id = '$site';
 DELETE FROM sites WHERE id = '$site';
+COMMIT;
 SQL
   say "(cleanup) DEMO_PURGE: the demo site and its chain were deleted from this disposable database"
 }
