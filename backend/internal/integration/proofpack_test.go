@@ -5,13 +5,18 @@ package integration
 import (
 	"bytes"
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/securepatrol/backend/internal/handler"
+	"github.com/securepatrol/backend/internal/jobs"
 	"github.com/securepatrol/backend/internal/model"
 	"github.com/securepatrol/backend/internal/proofpack"
 	"github.com/securepatrol/backend/internal/repository"
@@ -21,10 +26,15 @@ import (
 
 // Signed monthly proof pack (TAQ-20, D-074).
 
-// memStore is the object store of the scheduled job.
+// memStore is the object store of the scheduled job; it keeps the status like the real one's metadata.
 type memStore struct {
-	mu   sync.Mutex
-	objs map[string][]byte
+	mu     sync.Mutex
+	objs   map[string][]byte
+	status map[string]string
+}
+
+func newMemStore() *memStore {
+	return &memStore{objs: map[string][]byte{}, status: map[string]string{}}
 }
 
 func (m *memStore) Exists(_ context.Context, _, key string) (bool, error) {
@@ -34,14 +44,27 @@ func (m *memStore) Exists(_ context.Context, _, key string) (bool, error) {
 	return ok, nil
 }
 
-func (m *memStore) PutNew(_ context.Context, _, key string, data []byte, _, _ string) error {
+func (m *memStore) PutNew(_ context.Context, _, key string, data []byte, status string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, ok := m.objs[key]; ok {
 		return storage.ErrExists
 	}
-	m.objs[key] = data
+	m.objs[key], m.status[key] = data, status
 	return nil
+}
+
+func (m *memStore) Put(_ context.Context, _, key string, data []byte, status string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.objs[key], m.status[key] = data, status
+	return nil
+}
+
+func (m *memStore) statusOf(key string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.status[key]
 }
 
 // keysOf are the kept objects of one site: the database is shared with the other tests' sites.
@@ -272,7 +295,7 @@ func TestProofPackScheduleGeneratesOncePerMonth(t *testing.T) {
 	s, _ := newSigner(t)
 	site := packSite(t, e, "Pack Sched")
 	first := nextMonthStart()
-	store := &memStore{objs: map[string][]byte{}}
+	store := newMemStore()
 	month := thisMonth()
 
 	// Not the first days of a month: nothing to do.
@@ -292,7 +315,7 @@ func TestProofPackScheduleGeneratesOncePerMonth(t *testing.T) {
 		}
 	}
 	mine := store.keysOf(site.site)
-	if len(mine) != 1 || !strings.HasSuffix(mine[0], "/"+month+".unsigned.pdf") || !bytes.HasPrefix(store.objs[mine[0]], []byte("%PDF-")) {
+	if len(mine) != 1 || !strings.HasSuffix(mine[0], "/"+month+".open.pdf") || !bytes.HasPrefix(store.objs[mine[0]], []byte("%PDF-")) || store.statusOf(mine[0]) != "unsigned_tail" {
 		t.Fatalf("after day-1 run: %v", mine)
 	}
 
@@ -304,7 +327,8 @@ func TestProofPackScheduleGeneratesOncePerMonth(t *testing.T) {
 		}
 	}
 	signed := store.keysOf(site.site)
-	if len(signed) != 2 || !contains(signed, "proof-packs/"+site.site+"/"+month+".pdf") {
+	if len(signed) != 2 || !contains(signed, "proof-packs/"+site.site+"/"+month+".pdf") ||
+		store.statusOf("proof-packs/"+site.site+"/"+month+".pdf") != "signed" {
 		t.Fatalf("after signing: %v", signed)
 	}
 	// Re-running changes nothing.
@@ -362,4 +386,160 @@ func siteOf(t *testing.T, e *env, id string) *model.Site {
 		t.Fatal(err)
 	}
 	return site
+}
+
+// The job keeps the real status of what it made, and says when it replaces the open copy.
+func TestProofPackScheduleKeepsTheRealStatus(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	s, _ := newSigner(t)
+	month := thisMonth()
+	now := nextMonthStart().Add(8 * time.Hour) // minute 0
+	store := newMemStore()
+	open := func(site string) string { return "proof-packs/" + site + "/" + month + ".open.pdf" }
+
+	// failed: a record edited after it was chained.
+	bad := packSite(t, e, "Pack Job Failed")
+	signAt(t, s, bad.site, nextMonthStart().Add(time.Hour))
+	ownerExec(t, e.pool, `UPDATE incidents SET description = 'edited later' WHERE site_id = '`+bad.site+`'`)
+	// no_activity
+	quiet := chainSeed(t, e.pool, "Pack Job Quiet")
+	ownerExec(t, e.pool, `UPDATE sites SET keycloak_realm = '`+realm4+`', timezone = 'UTC' WHERE id = '`+quiet.site+`'`)
+	if err := e.sched.RunProofPacks(ctx, store, now); err != nil {
+		t.Fatal(err)
+	}
+	for site, want := range map[string]string{bad.site: "failed", quiet.site: "no_activity"} {
+		if got := store.statusOf(open(site)); got != want {
+			t.Errorf("site %s: stored status %q, want %q", site, got, want)
+		}
+		if store.statusOf("proof-packs/"+site+"/"+month+".pdf") != "" {
+			t.Errorf("site %s (%s): a final copy was written", site, want)
+		}
+	}
+
+	// not_proven: a month too large to check here (limit lowered) is still a pack, saying the chain was not checked.
+	jobs.PackMaxEntries = 1
+	t.Cleanup(func() { jobs.PackMaxEntries = 250_000 })
+	late := packSite(t, e, "Pack Job Too Large")
+	signAt(t, s, late.site, nextMonthStart().Add(time.Hour))
+	if err := e.sched.RunProofPacks(ctx, store, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if got := store.statusOf(open(late.site)); got != "not_proven" {
+		t.Errorf("too large: stored status %q, want not_proven", got)
+	}
+	jobs.PackMaxEntries = 250_000
+
+	// Refresh rule: in the first ten minutes of an hour the open copy is replaced by the latest pack;
+	// at other times it is left alone. The final copy is never replaced.
+	quiet.scan(t, e.pool)
+	if err := e.sched.RunProofPacks(ctx, store, now.Add(30*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if got := store.statusOf(open(quiet.site)); got != "no_activity" {
+		t.Errorf("minute 30: open copy changed to %q", got)
+	}
+	if err := e.sched.RunProofPacks(ctx, store, now.Add(time.Hour+5*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if got := store.statusOf(open(quiet.site)); got != "unsigned_tail" {
+		t.Errorf("next hour: open copy has status %q, want unsigned_tail", got)
+	}
+}
+
+func TestProofPackStoredReadsAreRateLimited(t *testing.T) {
+	e := newEnv(t)
+	old := handler.ChainLimits.PerUserPerMinute
+	handler.ChainLimits.PerUserPerMinute = 2
+	t.Cleanup(func() { handler.ChainLimits.PerUserPerMinute = old })
+	site := packSite(t, e, "Pack Stored Limit")
+	admin := e.web(realm4, "pp-stored-limit", "admin")
+	var codes []int
+	for i := 0; i < 3; i++ {
+		codes = append(codes, e.do("GET", packURL(site.site, thisMonth(), "&stored=true"), admin, "", nil).status)
+	}
+	if codes[0] == 429 || codes[1] == 429 || codes[2] != 429 {
+		t.Fatalf("stored reads: %v, want the third to be 429", codes)
+	}
+}
+
+// A guard whose only record is an incident is in the per-guard table, so the rows add up to the total.
+func TestProofPackGuardOnlyInAnIncident(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	site := packSite(t, e, "Pack Incident Only")
+	var other string
+	if err := e.pool.QueryRow(ctx, `INSERT INTO guards (name, role, site_id) VALUES ('Only Incident', 'guard', $1) RETURNING id`, site.site).Scan(&other); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.pool.Exec(ctx, `INSERT INTO incidents (site_id, guard_id, type, severity, occurred_at, photo_object_keys) VALUES ($1, $2, 'theft', 'high', now(), '{}')`, site.site, other); err != nil {
+		t.Fatal(err)
+	}
+	d, err := proofpack.Collect(ctx, e.pool, siteOf(t, e, site.site), thisMonth(), nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum, found := 0, false
+	for _, g := range d.Guards {
+		sum += g.Incidents
+		found = found || g.Name == "Only Incident"
+	}
+	if !found || sum != d.IncidentsTotal || d.IncidentsTotal != 2 {
+		t.Fatalf("guards %+v, incidents total %d", d.Guards, d.IncidentsTotal)
+	}
+}
+
+// The command printed on the last page is run as printed: VALID with the right pin, BROKEN with a wrong one.
+func TestProofPackPrintedCommandRuns(t *testing.T) {
+	if _, err := exec.LookPath("pdftotext"); err != nil {
+		t.Skip("pdftotext (poppler) is not installed")
+	}
+	e := newEnv(t)
+	admin := e.web(realm4, "pp-cmd", "admin")
+	s, key := newSigner(t)
+	site := packSite(t, e, "Pack Command")
+	signAt(t, s, site.site, nextMonthStart().Add(time.Hour))
+
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "garda-verify")
+	if out, err := exec.Command("go", "build", "-o", bin, "../../cmd/garda-verify").CombinedOutput(); err != nil {
+		t.Fatalf("build garda-verify: %v\n%s", err, out)
+	}
+	_, _, pdf := e.raw("GET", packURL(site.site, thisMonth(), "&lang=en"), admin, nil)
+	cmd := exec.Command("pdftotext", "-f", "3", "-l", "3", "-", "-")
+	cmd.Stdin = bytes.NewReader(pdf)
+	raw, err := cmd.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`garda-verify --pin (\S+) --expect-from (\S+) --expect-to (\S+) (\S+\.zip)`).FindStringSubmatch(strings.Join(strings.Fields(string(raw)), " "))
+	if m == nil {
+		t.Fatalf("no command on the last page:\n%s", raw)
+	}
+	pin, from, to, name := m[1], m[2], m[3], m[4]
+	if pin != pubID(key) {
+		t.Fatalf("printed pin %s, signer key %s", pin, pubID(key))
+	}
+	code, hdr, bundle := e.raw("GET", "/api/v1/sites/"+site.site+"/chain/export?from="+from+"&to="+to, admin, nil)
+	if code != 200 || !strings.Contains(hdr.Get("Content-Disposition"), name) {
+		t.Fatalf("export %d %q, printed name %q", code, hdr.Get("Content-Disposition"), name)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), bundle, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run := func(pin string) (string, int) {
+		c := exec.Command(bin, "--pin", pin, "--expect-from", from, "--expect-to", to, name)
+		c.Dir = dir
+		out, err := c.CombinedOutput()
+		if ee, ok := err.(*exec.ExitError); ok {
+			return string(out), ee.ExitCode()
+		}
+		return string(out), 0
+	}
+	if out, code := run(pin); code != 0 || !strings.Contains(out, "RESULT: VALID") {
+		t.Errorf("right pin: exit %d\n%s", code, out)
+	}
+	if out, code := run(strings.Repeat("a", 64)); code != 4 || !strings.Contains(out, "RESULT: BROKEN") {
+		t.Errorf("wrong pin: exit %d, want 4 BROKEN\n%s", code, out)
+	}
 }

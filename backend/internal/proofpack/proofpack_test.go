@@ -100,10 +100,13 @@ func TestUnsignedTailIsNeverPresentedAsVerified(t *testing.T) {
 		if !strings.Contains(l.LastPageText(), "UNSIGNED TAIL") {
 			t.Errorf("%s: last page lacks the UNSIGNED TAIL notice", lang)
 		}
-		// The page that states the result never says valid or verified without a "not".
-		for _, bad := range []string{"VALID", "VERIFIED", "TERVERIFIKASI", "PASSED", "LOLOS"} {
-			if strings.Contains(first, bad) {
-				t.Errorf("%s: unsigned first page says %q", lang, bad)
+		// Every sentence of the first page that says verified/valid/passed carries a negation.
+		for _, sent := range strings.FieldsFunc(strings.ToLower(first), func(r rune) bool { return r == '.' || r == '\n' }) {
+			claims := strings.Contains(sent, "verified") || strings.Contains(sent, "valid") || strings.Contains(sent, "passed") ||
+				strings.Contains(sent, "terverifikasi") || strings.Contains(sent, "lolos")
+			negated := strings.Contains(sent, " not ") || strings.Contains(sent, "jangan") || strings.Contains(sent, "belum")
+			if claims && !negated {
+				t.Errorf("%s: unsigned first page claims without a negation: %q", lang, sent)
 			}
 		}
 	}
@@ -149,5 +152,49 @@ func TestRenderProducesAPDF(t *testing.T) {
 				t.Errorf("%s: PDF text lacks %q", lang, want)
 			}
 		}
+	}
+}
+
+func TestFiguresAreNotSignedAndSaySo(t *testing.T) {
+	for _, st := range []Status{StatusSigned, StatusUnsignedTail, StatusFailed, StatusNoActivity} {
+		for lang, want := range map[string]string{
+			"en": "Summary\nThese figures come from the database as of 2026-11-01 08:00 UTC; they are not signed.",
+			"id": "Ringkasan\nAngka-angka ini berasal dari basis data per 2026-11-01 08:00 UTC; tidak ditandatangani.",
+		} {
+			l := Compose(sample(st), lang)
+			if !strings.Contains(l.FirstPageText(), want) {
+				t.Errorf("%s/%s: no 'figures are not signed' line directly under the summary heading:\n%s", st, lang, l.FirstPageText())
+			}
+			last := l.LastPageText()
+			if lang == "en" && !strings.Contains(last, "That the attendance, patrol, incident and flag figures") ||
+				lang == "id" && !strings.Contains(last, "Bahwa angka kehadiran, patroli, insiden, dan tanda peringatan") {
+				t.Errorf("%s/%s: the limits lack the figures bullet", st, lang)
+			}
+		}
+	}
+	if !strings.Contains(Compose(sample(StatusSigned), "en").FirstPageText(), "record chain only") {
+		t.Error("the signed banner must say it covers the chain only")
+	}
+}
+
+func TestUnverifiedRecordsAreShownAsWhatTheyAre(t *testing.T) {
+	d := sample(StatusNotProven)
+	d.Chain.VerifyStatus, d.Chain.RecordsNotChecked = "unverified_records", 3
+	for lang, want := range map[string]string{"en": "UNVERIFIED RECORDS", "id": "CATATAN BELUM TERVERIFIKASI"} {
+		l := Compose(d, lang)
+		first := l.FirstPageText()
+		if !strings.Contains(first, want) || strings.Contains(first, "NOT FULLY VERIFIED") || strings.Contains(first, "BELUM TERVERIFIKASI PENUH") {
+			t.Errorf("%s: banner:\n%s", lang, first)
+		}
+		if !strings.Contains(first, "3") {
+			t.Errorf("%s: count of amended records missing", lang)
+		}
+	}
+	line := "Records changed again after this month: 3"
+	if !strings.Contains(Compose(d, "en").Text(), line) {
+		t.Errorf("chain section lacks %q", line)
+	}
+	if !strings.Contains(Compose(sample(StatusSigned), "en").Text(), "Records changed again after this month: 0") {
+		t.Error("the line is always shown")
 	}
 }

@@ -37,6 +37,8 @@ type words struct {
 	limitsTitle                string
 	limits                     []string
 	unsignedAgain              string
+	figuresNote, chainChanged  string
+	unverified                 string
 	reasonNoHead, reasonTail   string
 	reasonOld, reasonOther     string
 }
@@ -45,7 +47,7 @@ var en = words{
 	title: "Monthly proof pack", site: "Site", period: "Period", zone: "Time zone", generated: "Generated", language: "Language",
 	monthOpen: "This month is not over yet. The pack covers the days up to %s only.",
 
-	signed:       "CHAIN CHECK PASSED when this pack was made. GARDA's own server found no break in the record chain of this month, and a signature made after the month ended covers the last record. This is the server checking itself, so check it yourself with the steps on the last page.",
+	signed:       "CHAIN CHECK PASSED when this pack was made. GARDA's own server found no break in the record chain of this month, and a signature made after the month ended covers the last record. This covers the record chain only, not the figures below. It is the server checking itself, so check it yourself with the steps on the last page.",
 	unsignedTail: "UNSIGNED TAIL. No signature made after the end of this month covers the last records of the month (%s). Do NOT treat this pack as fully verified. Make it again after the next signature (the signer signs every hour).",
 	failed:       "CHAIN CHECK FAILED. %s. Do not rely on this pack. Show it to your GARDA administrator.",
 	notProven:    "NOT FULLY VERIFIED. %s",
@@ -101,7 +103,10 @@ var en = words{
 		"That a site with no records had no activity. An empty file is exit code 9, not valid.",
 		"That nobody saw the data. Exports are not logged yet and the file holds personal data.",
 		"That the file hashes inside the file protect it. They only show damage or a careless edit. The chain and the signatures protect it.",
+		"That the attendance, patrol, incident and flag figures in this PDF are right. They are read from the database when the pack is made; garda-verify does not check them and no signature covers them. Only the records in the chain are checked.",
 	},
+	figuresNote: "These figures come from the database as of %s; they are not signed.", chainChanged: "Records changed again after this month",
+	unverified:   "UNVERIFIED RECORDS. %d records changed again after this month, so their text cannot be checked against the signatures. Do NOT treat this pack as fully verified. Export again to include the later change.",
 	reasonNoHead: "no signature at all yet", reasonTail: "records after the newest signature", reasonOld: "the newest signature is older than the end of the month", reasonOther: "the signatures do not cover the whole month",
 	unsignedAgain: "This pack has an UNSIGNED TAIL: run the check again on a file exported after the next signature. Exit code 7 is expected until then.",
 }
@@ -110,7 +115,7 @@ var id = words{
 	title: "Paket bukti bulanan", site: "Lokasi", period: "Periode", zone: "Zona waktu", generated: "Dibuat", language: "Bahasa",
 	monthOpen: "Bulan ini belum selesai. Paket ini hanya mencakup hari sampai %s.",
 
-	signed:       "PEMERIKSAAN RANTAI LOLOS saat paket ini dibuat. Server GARDA sendiri tidak menemukan rantai catatan bulan ini yang putus, dan tanda tangan yang dibuat setelah bulan berakhir mencakup catatan terakhir. Ini server yang memeriksa dirinya sendiri, jadi periksa sendiri dengan langkah di halaman terakhir.",
+	signed:       "PEMERIKSAAN RANTAI LOLOS saat paket ini dibuat. Server GARDA sendiri tidak menemukan rantai catatan bulan ini yang putus, dan tanda tangan yang dibuat setelah bulan berakhir mencakup catatan terakhir. Ini hanya mencakup rantai catatan, bukan angka di bawah. Ini server yang memeriksa dirinya sendiri, jadi periksa sendiri dengan langkah di halaman terakhir.",
 	unsignedTail: "UNSIGNED TAIL (EKOR BELUM DITANDATANGANI). Belum ada tanda tangan setelah akhir bulan ini yang mencakup catatan terakhir bulan ini (%s). JANGAN anggap paket ini sudah terverifikasi penuh. Buat ulang setelah tanda tangan berikutnya (penanda tangan menandatangani setiap jam).",
 	failed:       "PEMERIKSAAN RANTAI GAGAL. %s. Jangan andalkan paket ini. Tunjukkan kepada administrator GARDA Anda.",
 	notProven:    "BELUM TERVERIFIKASI PENUH. %s",
@@ -164,7 +169,10 @@ var id = words{
 		"Bahwa lokasi tanpa catatan memang tanpa aktivitas. Berkas kosong berkode keluar 9, bukan valid.",
 		"Bahwa tidak ada yang melihat datanya. Ekspor belum dicatat dan berkas berisi data pribadi.",
 		"Bahwa hash berkas di dalam berkas melindunginya. Itu hanya menunjukkan kerusakan atau suntingan ceroboh. Rantai dan tanda tangan yang melindunginya.",
+		"Bahwa angka kehadiran, patroli, insiden, dan tanda peringatan di PDF ini benar. Angka itu dibaca dari basis data saat paket dibuat; garda-verify tidak memeriksanya dan tidak ada tanda tangan yang mencakupnya. Hanya catatan di dalam rantai yang diperiksa.",
 	},
+	figuresNote: "Angka-angka ini berasal dari basis data per %s; tidak ditandatangani.", chainChanged: "Catatan yang berubah lagi setelah bulan ini",
+	unverified:   "CATATAN BELUM TERVERIFIKASI. %d catatan berubah lagi setelah bulan ini, sehingga isinya tidak bisa diperiksa terhadap tanda tangan. JANGAN anggap paket ini sudah terverifikasi penuh. Ekspor lagi agar perubahan itu ikut.",
 	reasonNoHead: "belum ada tanda tangan sama sekali", reasonTail: "ada catatan setelah tanda tangan terbaru", reasonOld: "tanda tangan terbaru lebih tua dari akhir bulan", reasonOther: "tanda tangan tidak mencakup seluruh bulan",
 	unsignedAgain: "Paket ini punya UNSIGNED TAIL: jalankan pemeriksaan lagi dengan berkas yang diekspor setelah tanda tangan berikutnya. Kode keluar 7 wajar sampai saat itu.",
 }

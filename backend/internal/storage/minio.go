@@ -132,6 +132,55 @@ func (c *Client) PutNew(ctx context.Context, bucket, key string, data []byte, co
 	return nil
 }
 
+// metaStatus is the user-metadata key holding a kept proof pack's status.
+const metaStatus = "Proofpack-Status"
+
+// PutPack stores a proof pack PDF with its status as object metadata.
+// replace=false is write-once (ErrExists when the key is taken); replace=true overwrites.
+func (c *Client) PutPack(ctx context.Context, bucket, key string, data []byte, status string, replace bool) error {
+	opts := minio.PutObjectOptions{ContentType: "application/pdf", UserMetadata: map[string]string{metaStatus: status}}
+	if !replace {
+		opts.SetMatchETagExcept("*")
+	}
+	_, err := c.mc.PutObject(ctx, bucket, key, bytes.NewReader(data), int64(len(data)), opts)
+	if err != nil {
+		if r := minio.ToErrorResponse(err); !replace && (r.StatusCode == http.StatusPreconditionFailed || r.Code == "PreconditionFailed") {
+			return ErrExists
+		}
+		return fmt.Errorf("PutObject(%s/%s): %w", bucket, key, err)
+	}
+	return nil
+}
+
+// GetPack reads a proof pack of at most max bytes and the status stored with it.
+func (c *Client) GetPack(ctx context.Context, bucket, key string, max int64) (data []byte, status string, ok bool, err error) {
+	obj, err := c.mc.GetObject(ctx, bucket, key, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, "", false, fmt.Errorf("GetObject(%s/%s): %w", bucket, key, err)
+	}
+	defer obj.Close()
+	info, err := obj.Stat()
+	if err != nil {
+		if minio.ToErrorResponse(err).Code == "NoSuchKey" {
+			return nil, "", false, nil
+		}
+		return nil, "", false, fmt.Errorf("GetObject(%s/%s): %w", bucket, key, err)
+	}
+	if info.Size > max {
+		return nil, "", true, ErrTooLarge
+	}
+	data, err = io.ReadAll(io.LimitReader(obj, max+1))
+	if err != nil {
+		return nil, "", false, fmt.Errorf("GetObject(%s/%s): %w", bucket, key, err)
+	}
+	for k, v := range info.UserMetadata {
+		if strings.EqualFold(k, metaStatus) {
+			status = v
+		}
+	}
+	return data, status, true, nil
+}
+
 // Exists reports whether an object exists.
 func (c *Client) Exists(ctx context.Context, bucket, key string) (bool, error) {
 	_, err := c.mc.StatObject(ctx, bucket, key, minio.StatObjectOptions{})

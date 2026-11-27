@@ -6,6 +6,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
+	"github.com/securepatrol/backend/internal/chainproof"
 	"github.com/securepatrol/backend/internal/proofpack"
 	"github.com/securepatrol/backend/internal/service"
 )
@@ -55,30 +56,28 @@ func (h *Handler) proofPack(c *fiber.Ctx) error {
 	name := fmt.Sprintf(`attachment; filename="proof-pack-%s-%s-%s.pdf"`, site.ID[:8], month, lang)
 
 	if c.Query("stored") == "true" {
-		for _, signed := range []bool{true, false} {
-			data, ok, err := h.Storage.Get(c.Context(), h.Cfg.MinioBucketBackups, proofpack.Key(site.ID, month, signed), 32<<20)
-			if err != nil {
-				return h.fail(c, err)
-			}
-			if ok {
-				status := "unsigned_tail"
-				if signed {
-					status = "signed"
-				}
-				return sendPack(c, data, status, name)
-			}
-		}
-		return h.fail(c, &service.Error{Status: fiber.StatusNotFound, Code: "proof_pack_not_kept", Msg: "no proof pack was kept for that month"})
+		return h.storedPack(c, site.ID, month, name)
 	}
 
-	b, err := h.exportChain(c, "export", exportSlots, site, from, to, ChainLimits.ExportMaxEntries, ChainLimits.ExportTimeout)
+	// The chain and the figures are read inside one slot and one snapshot, under the export's limits.
+	release, err := h.chainGate(c, "export", exportSlots)
 	if err != nil {
 		return h.fail(c, err)
 	}
-	now := time.Now()
-	data, err := proofpack.Collect(c.Context(), h.DB, site, month, b, now)
+	defer release()
+	tx, err := h.chainSnapshot(c, ChainLimits.ExportTimeout)
 	if err != nil {
 		return h.fail(c, err)
+	}
+	defer func() { _ = tx.Rollback(c.Context()) }()
+	now := time.Now()
+	b, err := chainproof.Export(c.Context(), tx, site.ID, site.Timezone, from, to, now, ChainLimits.ExportMaxEntries)
+	if err != nil {
+		return h.fail(c, exportErr(err))
+	}
+	data, err := proofpack.Collect(c.Context(), tx, site, month, b, now)
+	if err != nil {
+		return h.fail(c, exportErr(err))
 	}
 	pdf, err := proofpack.Compose(data, lang).Render(now.In(site.Location()))
 	if err != nil {
@@ -86,6 +85,33 @@ func (h *Handler) proofPack(c *fiber.Ctx) error {
 	}
 	return sendPack(c, pdf, string(data.Chain.Status), name)
 }
+
+// storedPack returns the copy the scheduler kept, with the status it was kept with: the final
+// (signed) copy, else the open one. Reads take the user's turn and a slot like the other chain reads.
+func (h *Handler) storedPack(c *fiber.Ctx, siteID, month, name string) error {
+	release, err := h.chainGate(c, "stored", storedSlots)
+	if err != nil {
+		return h.fail(c, err)
+	}
+	defer release()
+	for _, key := range []string{proofpack.KeyFinal(siteID, month), proofpack.KeyOpen(siteID, month)} {
+		data, status, ok, err := h.Storage.GetPack(c.Context(), h.Cfg.MinioBucketBackups, key, 32<<20)
+		if err != nil {
+			return h.fail(c, err)
+		}
+		if !ok {
+			continue
+		}
+		if status == "" || (status == "signed" && key != proofpack.KeyFinal(siteID, month)) {
+			status = "not_proven" // never claim more than was recorded
+		}
+		return sendPack(c, data, status, name)
+	}
+	return h.fail(c, &service.Error{Status: fiber.StatusNotFound, Code: "proof_pack_not_kept", Msg: "no proof pack was kept for that month"})
+}
+
+// storedSlots bounds the stored-pack reads (up to 32 MB each) at the same time.
+var storedSlots = make(chan struct{}, 2)
 
 func sendPack(c *fiber.Ctx, pdf []byte, status, disposition string) error {
 	c.Set(fiber.HeaderContentType, "application/pdf")

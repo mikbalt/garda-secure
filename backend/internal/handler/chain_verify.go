@@ -114,40 +114,66 @@ func chainRange(c *fiber.Ctx, site *model.Site) (from, to time.Time, err error) 
 	return f, t, nil
 }
 
-// exportChain reads the bundle in one read-only snapshot, with its own timeout.
-func (h *Handler) exportChain(c *fiber.Ctx, kind string, slots chan struct{}, site *model.Site, from, to time.Time, limit int64, timeout time.Duration) (*chainproof.Bundle, error) {
-	ctx := c.Context()
+// chainGate takes the caller's per-user turn and one of the slots of a kind of
+// chain read; release must be called when the read is done. 429 verify_busy otherwise.
+func (h *Handler) chainGate(c *fiber.Ctx, kind string, slots chan struct{}) (release func(), err error) {
 	user, _ := c.Locals("userID").(string)
-	release, ok := chainUsers.enter(user, kind, ChainLimits.PerUserPerMinute)
+	releaseUser, ok := chainUsers.enter(user, kind, ChainLimits.PerUserPerMinute)
 	if !ok {
 		return nil, &service.Error{Status: fiber.StatusTooManyRequests, Code: "verify_busy", Msg: "you have one running or started too many in the last minute, try again in a minute"}
 	}
-	defer release()
 	select {
 	case slots <- struct{}{}:
-		defer func() { <-slots }()
+		return func() { <-slots; releaseUser() }, nil
 	default:
+		releaseUser()
 		return nil, &service.Error{Status: fiber.StatusTooManyRequests, Code: "verify_busy", Msg: "another verification is running, try again in a minute"}
 	}
+}
+
+// chainSnapshot begins one read-only repeatable-read transaction with a statement timeout.
+func (h *Handler) chainSnapshot(c *fiber.Ctx, timeout time.Duration) (pgx.Tx, error) {
+	ctx := c.Context()
 	tx, err := h.DB.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
 	if _, err := tx.Exec(ctx, fmt.Sprintf(`SET LOCAL statement_timeout = %d`, timeout.Milliseconds())); err != nil {
+		_ = tx.Rollback(ctx)
 		return nil, err
 	}
-	b, err := chainproof.Export(ctx, tx, site.ID, site.Timezone, from, to, time.Now(), limit)
+	return tx, nil
+}
+
+// exportErr turns an export failure into the API's answer.
+func exportErr(err error) error {
 	var big *chainproof.TooLargeError
 	switch {
-	case err == nil:
-		return b, nil
 	case errors.As(err, &big):
-		return nil, service.BadRequest("verify_too_large", "the range needs %d chain entries (limit %d): use a shorter range, or export the bundle and check it offline with garda-verify", big.Entries, big.Limit)
+		return service.BadRequest("verify_too_large", "the range needs %d chain entries (limit %d): use a shorter range, or export the bundle and check it offline with garda-verify", big.Entries, big.Limit)
 	case chainproof.IsTimeout(err):
-		return nil, service.BadRequest("verify_too_large", "the check took too long: use a shorter range, or export the bundle and check it offline with garda-verify")
+		return service.BadRequest("verify_too_large", "the check took too long: use a shorter range, or export the bundle and check it offline with garda-verify")
 	}
-	return nil, err
+	return err
+}
+
+// exportChain reads the bundle in one read-only snapshot, with its own timeout.
+func (h *Handler) exportChain(c *fiber.Ctx, kind string, slots chan struct{}, site *model.Site, from, to time.Time, limit int64, timeout time.Duration) (*chainproof.Bundle, error) {
+	release, err := h.chainGate(c, kind, slots)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	tx, err := h.chainSnapshot(c, timeout)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback(c.Context()) }()
+	b, err := chainproof.Export(c.Context(), tx, site.ID, site.Timezone, from, to, time.Now(), limit)
+	if err != nil {
+		return nil, exportErr(err)
+	}
+	return b, nil
 }
 
 // GET /sites/:id/chain/verify?from=&to=&pin=

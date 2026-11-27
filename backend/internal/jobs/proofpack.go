@@ -2,8 +2,6 @@ package jobs
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -18,11 +16,29 @@ import (
 	"github.com/securepatrol/backend/internal/storage"
 )
 
-// PackStore is the object store the scheduled proof packs are kept in.
+// PackStore is the object store the scheduled proof packs are kept in. The
+// status of the pack is stored with the object.
 type PackStore interface {
 	Exists(ctx context.Context, bucket, key string) (bool, error)
-	PutNew(ctx context.Context, bucket, key string, data []byte, contentType, sha256 string) error
+	// PutNew writes once (storage.ErrExists when the key is taken).
+	PutNew(ctx context.Context, bucket, key string, data []byte, status string) error
+	// Put replaces.
+	Put(ctx context.Context, bucket, key string, data []byte, status string) error
 }
+
+// objectStore adapts the MinIO client.
+type objectStore struct{ *storage.Client }
+
+func (o objectStore) PutNew(ctx context.Context, bucket, key string, data []byte, status string) error {
+	return o.PutPack(ctx, bucket, key, data, status, false)
+}
+
+func (o objectStore) Put(ctx context.Context, bucket, key string, data []byte, status string) error {
+	return o.PutPack(ctx, bucket, key, data, status, true)
+}
+
+// PackMaxEntries bounds the chain read of one month, as the export endpoint does; tests lower it.
+var PackMaxEntries int64 = 250_000
 
 const (
 	// packMaxEntries bounds the chain read of one month, as the export endpoint does.
@@ -37,17 +53,18 @@ func (s *Scheduler) ProofPacks(ctx context.Context) error {
 	if s.stg == nil {
 		return nil
 	}
-	return s.RunProofPacks(ctx, s.stg, service.Now())
+	return s.RunProofPacks(ctx, objectStore{s.stg}, service.Now())
 }
 
 // RunProofPacks is one run of the job at time now.
 //
-// Idempotent: the final copy "<month>.pdf" is written once, only when a
-// signature made after the month ended covers it, and the job does nothing
-// for a month that has one. Until then the latest pack is kept as
-// "<month>.unsigned.pdf" (written once; a pack with the UNSIGNED TAIL notice
-// is never kept under the final name) and the month is tried again once an
-// hour, as the signer signs hourly.
+// Rules: the final copy "<month>.pdf" is written once, only when the pack's
+// status is signed (a signature made after the month ended covers it), and a
+// month that has one is skipped. Until then the latest pack is kept as
+// "<month>.open.pdf" with its real status (unsigned_tail, failed, not_proven,
+// no_activity) stored with it. The open copy is written at the first run and
+// then replaced by the latest pack in the first ten minutes of each hour (the
+// signer signs hourly); at other times it is left alone.
 func (s *Scheduler) RunProofPacks(ctx context.Context, store PackStore, now time.Time) error {
 	sites, err := repository.ListAllSites(ctx, s.pool)
 	if err != nil {
@@ -64,55 +81,65 @@ func (s *Scheduler) packSite(ctx context.Context, store PackStore, site *model.S
 		return nil
 	}
 	bucket := s.cfg.MinioBucketBackups
-	if ok, err := store.Exists(ctx, bucket, proofpack.Key(site.ID, month, true)); err != nil || ok {
+	if ok, err := store.Exists(ctx, bucket, proofpack.KeyFinal(site.ID, month)); err != nil || ok {
 		return err
 	}
-	unsignedKey := proofpack.Key(site.ID, month, false)
-	kept, err := store.Exists(ctx, bucket, unsignedKey)
+	openKey := proofpack.KeyOpen(site.ID, month)
+	kept, err := store.Exists(ctx, bucket, openKey)
 	if err != nil {
 		return err
 	}
-	if kept && now.Minute() >= 10 { // retry once an hour
+	if kept && now.Minute() >= 10 {
 		return nil
 	}
 	from, to, err := service.MonthRange(month, site.Location())
 	if err != nil {
 		return err
 	}
-	b, err := s.readChain(ctx, site, from, to, now)
+	// The chain and the figures are read in one snapshot, inside the statement timeout.
+	var data *proofpack.Data
+	collect := func(tx pgx.Tx, withChain bool) (err error) {
+		var b *chainproof.Bundle
+		if withChain {
+			if b, err = chainproof.Export(ctx, tx, site.ID, site.Timezone, from, to, now, PackMaxEntries); err != nil {
+				return err
+			}
+		}
+		data, err = proofpack.Collect(ctx, tx, site, month, b, now)
+		return err
+	}
+	err = s.snapshot(ctx, func(tx pgx.Tx) error { return collect(tx, true) })
+	var big *chainproof.TooLargeError
+	if errors.As(err, &big) || chainproof.IsTimeout(err) {
+		// Too much to check here: still make the pack, saying the chain was not checked (status not_proven).
+		err = s.snapshot(ctx, func(tx pgx.Tx) error { return collect(tx, false) })
+	}
 	if err != nil {
 		return fmt.Errorf("proof pack %s %s: %w", site.ID, month, err)
-	}
-	data, err := proofpack.Collect(ctx, s.pool, site, month, b, now)
-	if err != nil {
-		return err
 	}
 	pdf, err := proofpack.Compose(data, site.Config().Language).Render(now.In(site.Location()))
 	if err != nil {
 		return err
 	}
-	key := unsignedKey
+	status := string(data.Chain.Status)
 	if data.Chain.Status == proofpack.StatusSigned {
-		key = proofpack.Key(site.ID, month, true)
-	} else if kept {
+		if err := store.PutNew(ctx, bucket, proofpack.KeyFinal(site.ID, month), pdf, status); err != nil && !errors.Is(err, storage.ErrExists) {
+			return err
+		}
 		return nil
 	}
-	sum := sha256.Sum256(pdf)
-	if err := store.PutNew(ctx, bucket, key, pdf, "application/pdf", hex.EncodeToString(sum[:])); err != nil && !errors.Is(err, storage.ErrExists) {
-		return err
-	}
-	return nil
+	return store.Put(ctx, bucket, openKey, pdf, status)
 }
 
-// readChain reads the month's bundle in one read-only snapshot, as the export endpoint does.
-func (s *Scheduler) readChain(ctx context.Context, site *model.Site, from, to, now time.Time) (*chainproof.Bundle, error) {
+// snapshot runs fn in one read-only repeatable-read transaction with a statement timeout.
+func (s *Scheduler) snapshot(ctx context.Context, fn func(pgx.Tx) error) error {
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	if _, err := tx.Exec(ctx, fmt.Sprintf(`SET LOCAL statement_timeout = %d`, packReadTimeout.Milliseconds())); err != nil {
-		return nil, err
+		return err
 	}
-	return chainproof.Export(ctx, tx, site.ID, site.Timezone, from, to, now, packMaxEntries)
+	return fn(tx)
 }

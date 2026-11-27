@@ -164,7 +164,11 @@ func Compose(d *Data, lang string) *Layout {
 	case StatusNoActivity:
 		l.banner(w.noActivity, "info")
 	default:
-		l.banner(fmt.Sprintf(w.notProven, orDash(c.Detail, c.VerifyStatus)), "warn")
+		if c.VerifyStatus == "unverified_records" {
+			l.banner(fmt.Sprintf(w.unverified, c.RecordsNotChecked), "warn")
+		} else {
+			l.banner(fmt.Sprintf(w.notProven, orDash(c.Detail, c.VerifyStatus)), "warn")
+		}
 	}
 	if d.MonthOpen {
 		l.banner(fmt.Sprintf(w.monthOpen, d.Generated.Format("2006-01-02")), "info")
@@ -172,6 +176,7 @@ func Compose(d *Data, lang string) *Layout {
 
 	t := d.Totals
 	l.h(w.summary, 12)
+	l.p(fmt.Sprintf(w.figuresNote, d.Generated.Format("2006-01-02 15:04 MST")))
 	l.h(w.attendance, 10)
 	l.p(fmt.Sprintf(w.attLine, t.ScheduledDays, t.DaysPresent, t.DaysLate, t.DaysAbsent, dec1(t.TotalHours, lang)))
 	l.p(fmt.Sprintf(w.attShifts, t.ScheduledShifts, t.Present, t.Late, t.Absent, t.Pending))
@@ -227,6 +232,7 @@ func Compose(d *Data, lang string) *Layout {
 		{w.chainEntries, itoa(c.Entries)},
 		{w.chainTip, fmt.Sprintf("seq %d  %s", c.TipSeq, orDash(c.TipHash, "-"))},
 		{w.chainChecked, c.VerifyStatus},
+		{w.chainChanged, itoa(c.RecordsNotChecked)},
 	}
 	if c.Head != nil {
 		kv = append(kv, [2]string{w.chainSeq, strconv.FormatInt(c.Head.Seq, 10)}, [2]string{w.chainHeadHash, c.Head.EntryHash},

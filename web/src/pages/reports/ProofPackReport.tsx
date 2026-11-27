@@ -35,7 +35,7 @@ export function ProofPackReport({ site }: { site: Site }) {
     setBusy(kind)
     try {
       if (kind === 'bundle') {
-        await downloadFile(`/sites/${site.id}/chain/export`, { from: `${month}-01`, to: monthEnd(month) }, `garda-chain-${month}.zip`)
+        await downloadFile(`/sites/${site.id}/chain/export`, { from: `${month}-01`, to: monthEnd(month) }, `garda-chain-${site.id.split('-')[0]}-${month}-01_${monthEnd(month)}.zip`)
       } else {
         await downloadFile(`/sites/${site.id}/proof-pack`, { month, lang: lang || undefined, stored: kind === 'kept' ? 'true' : undefined }, `proof-pack-${month}.pdf`)
       }

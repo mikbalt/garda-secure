@@ -44,6 +44,8 @@ describe('ProofPackReport', () => {
     await waitFor(() => expect(downloadFile).toHaveBeenCalledTimes(2))
     expect(downloadFile.mock.calls[1][0]).toBe('/sites/s1/chain/export')
     expect(downloadFile.mock.calls[1][1]).toEqual({ from: '2026-10-01', to: '2026-10-31' })
+    // The saved name is the one the PDF's command uses: garda-chain-<first 8 of the site id>-<from>_<to>.zip
+    expect(downloadFile.mock.calls[1][2]).toBe('garda-chain-s1-2026-10-01_2026-10-31.zip')
   })
 
   it('shows a failed download as an error toast', async () => {

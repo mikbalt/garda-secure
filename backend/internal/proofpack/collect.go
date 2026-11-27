@@ -76,17 +76,18 @@ type Head struct {
 
 // Chain is the proof section of the pack.
 type Chain struct {
-	Status       Status
-	VerifyStatus string // chainproof status of the server's own check
-	Detail       string // plain-words reason when not signed
-	Entries      int    // chain entries made in the month
-	TipSeq       int64
-	TipHash      string // the chain's head when the pack was made
-	Head         *Head  // newest signed head in the checked range
-	Fingerprint  string // key id (sha256 of the public key) of that head
-	BundleName   string // file name the export gets
-	ExpectFrom   string // first and last day of the month, site time
-	ExpectTo     string
+	Status            Status
+	VerifyStatus      string // chainproof status of the server's own check
+	Detail            string // plain-words reason when not signed
+	RecordsNotChecked int    // records changed again after the month: not checked against their text
+	Entries           int    // chain entries made in the month
+	TipSeq            int64
+	TipHash           string // the chain's head when the pack was made
+	Head              *Head  // newest signed head in the checked range
+	Fingerprint       string // key id (sha256 of the public key) of that head
+	BundleName        string // file name the export gets
+	ExpectFrom        string // first and last day of the month, site time
+	ExpectTo          string
 }
 
 // Data is everything the pack says.
@@ -201,6 +202,24 @@ func Collect(ctx context.Context, db repository.DBTX, site *model.Site, month st
 			PatrolPct: r.PatrolCompletePct, Incidents: perGuard[r.GuardID]})
 	}
 
+	// A guard whose only record is an incident is not in the recap: add the row so the table sums to the total.
+	var extra []string
+	for g := range perGuard {
+		if !seen[g] {
+			extra = append(extra, g)
+		}
+	}
+	if len(extra) > 0 {
+		names, err := repository.GuardNames(ctx, db, extra)
+		if err != nil {
+			return nil, err
+		}
+		for _, g := range extra {
+			d.Guards = append(d.Guards, GuardRow{Name: names[g], Incidents: perGuard[g]})
+		}
+		sort.SliceStable(d.Guards, func(i, j int) bool { return d.Guards[i].Name < d.Guards[j].Name })
+	}
+
 	flags, err := repository.ListFlags(ctx, db, repository.FlagFilter{SiteIDs: []string{site.ID}, SiteID: &site.ID, From: &from, To: &to, Limit: maxFlags + 1})
 	if err != nil {
 		return nil, err
@@ -241,7 +260,7 @@ func round1(v float64) float64 { return float64(int(v*10+0.5)) / 10 }
 func chainSection(b *chainproof.Bundle, site *model.Site, from, to time.Time, first, last string, now time.Time) Chain {
 	c := Chain{ExpectFrom: first, ExpectTo: last, BundleName: BundleName(site.ID, first, last)}
 	if b == nil {
-		c.Status, c.VerifyStatus, c.Detail = StatusNotProven, "not_checked", "the chain could not be read when this pack was made"
+		c.Status, c.VerifyStatus, c.Detail = StatusNotProven, "not_checked", "the chain was not checked when this pack was made (too large to read here, or unreadable): check the export offline with garda-verify"
 		return c
 	}
 	c.TipSeq, c.TipHash = b.Manifest.ChainTipSeq, b.Manifest.ChainTipHash
@@ -252,6 +271,7 @@ func chainSection(b *chainproof.Bundle, site *model.Site, from, to time.Time, fi
 	}
 	res := chainproof.Verify(b, chainproof.Options{MaxAge: 26 * time.Hour, Now: now, ExpectFrom: first, ExpectTo: last})
 	c.VerifyStatus = res.Status
+	c.RecordsNotChecked = res.RecordsNotChecked
 	if res.Break != nil {
 		c.Detail = res.Break.Reason
 	}
