@@ -783,3 +783,55 @@ The review queue (`/attendance?tab=review`, `reviewAttendance`) is admin/supervi
   a database that has applied 013 would skip a later-arriving 012: merge order is #63, #65, #66.
 - The signer binary ships in the api image (`/app/signer`) and runs as its own service; a minimal separate image is a
   later hardening. The key is created at install time (`make signer-key`), never in an image, `.env` or log.
+
+### D-073 - Chain verification: one verifier, a bundle, an endpoint and an offline CLI (TAQ-18)
+- **One engine.** `internal/chainproof` verifies a *bundle* (pure Go, no database). The online endpoint builds the bundle
+  from the database and runs the same `Verify`; the offline `garda-verify` reads the bundle from a file. Same data, same
+  answer. It reuses the signer's key rules (`signer.NewTrust`: pins, rotation, forks, retirement) and recomputes the
+  hash_version 1 entry hash of migration 011. It does not touch chain writing or signing.
+- **Bundle** (zip, `garda-chain-bundle/v1`): `manifest.json` (site, range, `anchor_seq`, seq range, the chain's own head, sha256 of
+  the other files), `entries.jsonl`, `heads.json` + `keyring.json` (the `signer export` shapes; public keys and signatures only),
+  `README.txt`. The sha256 of `manifest.json` is the bundle's integrity hash (header `X-Bundle-SHA256`, printed by the CLI): it
+  catches damage and a casual edit; an edit made together with the manifest is caught by the chain and the signed heads.
+- **Record data.** Each entry carries the exact text that `record_hash` hashes (`record`) for the newest entry of a record
+  (new function `chain_record_canonical`, migration 014; a test fails if it drifts from `chain_record_hash`). Older states are
+  not kept anywhere, so superseded entries are checked as chain links only (`record_state`, `next_seq`); `records_not_checked`
+  counts entries whose next state lies beyond the range. A record deleted or edited in the database shows as such.
+  The text holds personal data (guard ids, GPS, descriptions, photo keys), so the export is `admin`/`supervisor` only; the
+  verify result (no content) is also open to `client-readonly`.
+- **Range by checkpoint.** A date range maps to a seq range; the bundle starts at the newest signed head before it (the anchor:
+  its signature vouches for the prev_hash of the first entry) and ends at the first signed head at or after it (or the chain's end).
+  A month therefore costs the distance between heads, not the site's history. With no earlier head it starts at the genesis value.
+  Tests show the range gives the same first break as the full check for any edit inside it; an edit before the anchor is outside what
+  that range proves (the full check finds it). Not covered by the bundle: records with no chain entry at all (`chain_unchained_records`
+  scans the whole site) and the age of a *range* that nobody asked about; an empty range is reported as "no entries".
+- **Bounded cost.** Online: read-only repeatable-read transaction, `SET LOCAL statement_timeout` 15 s, ≤ 20 000 entries,
+  two at a time per process; over the limit or timed out -> 400 `verify_too_large` ("use the offline bundle"). Export: 60 s, 250 000
+  entries. Index `(site_id, created_at)` finds the range without a scan. No background job: a result is returned or refused.
+- **Trust.** The CLI refuses to run without `--pin` (or the explicit `--trust-first-use`, which says so in its output). Wrong fingerprint
+  = exit 4. Exit codes: 0 valid, 1 chain/record broken, 2 usage, 3 bundle unreadable/changed, 4 head/key/signature, 5 UNSIGNED, 6 STALE
+  (`--max-age`, default 26 h), 7 UNSIGNED TAIL, 8 UNVERIFIED RECORDS, 9 NO ENTRIES, 10 RANGE MISMATCH, 11 RANGE NOT AUTHENTICATED, 12 UNVERIFIED RECORDS ACCEPTED. A broken chain or head outranks
+  the rest; the first break by seq wins.
+- **Review hardening (PR #67): the bundle builder is not trusted.** Whoever builds the bundle must not be able to get a plain VALID:
+  (1) a bundle with no entries is NO ENTRIES (9), never valid: a signature cannot show that a site had none. (2) Entries after the
+  newest signed head are UNSIGNED TAIL (7) (STALE if that head is old); the CLI prints the newest head's `signed_at` and `exported_at`,
+  and warns when the bundle is older than `--max-age`. (3) A record said to be superseded by an entry beyond the bundle is UNVERIFIED
+  RECORDS (8), not skipped; `--allow-unverified-records` accepts it and the output still says `VALID WITH UNVERIFIED RECORDS`.
+  (4) The manifest range is only a claim: `--expect-from/--expect-to` (dates, site zone) require the anchor head to be signed before the
+  range starts and the newest head after it ends (else RANGE MISMATCH, 10); without them the output says `NOT AUTHENTICATED`. To make that
+  possible the exporter now picks the anchor as the newest head signed at or before `from` and the end as the first head signed at or
+  after `to`. Entries must also fit the manifest range. Cost: a bundle may start up to an hour earlier and end later than the range.
+  (5) Online: no pin -> `valid: null`, `trust: "unverified_trust"` (the server vouches for itself); `valid_pinned` when a pin is given.
+  (6) Second review: no silent exit 0. Without `--expect-from/--expect-to` the result is RANGE NOT AUTHENTICATED (11) (a cut at an older head, a
+  late anchor and a replayed old bundle are otherwise indistinguishable from a good one); `--no-range-check` restores exit 0 and prints
+  `VALID (range not checked)`. `--allow-unverified-records` no longer gives exit 0: 12, with the count and share of entries not checked.
+  An expected range ending today or later cannot pass (a head cannot be signed after the end of today). The online endpoint passes the
+  requested range itself (`NoRangeCheck`); read `status`, not `valid`. Follow-up issue (not in this PR): an on-demand "sign head now" at
+  export time, and extending the bundle end to cover `next_seq` heads / shipping superseding entries.
+  Verify and export have separate slots (2 each), one running and 6 per minute per user, and the zip held in memory is capped (256 MB).
+- **Does not do:** prove the date range is complete without `--expect-*` (the heads before and after it prove nothing is missing *between*
+  them); defend against a host root plus the signer's key volume (no key custody boundary is left to cut); replace the signer's own record
+  (`signer export` heads can be cross-checked by hand; an `--anchor` option is a follow-up with TAQ-22).
+- **Known gaps (review notes).** Exports are not audit-logged yet (they hold personal data; admin/supervisor only): add with the audit work.
+  The manifest file hashes only catch damage and careless edits, not a forger; the chain and the signed heads do the protecting.
+
