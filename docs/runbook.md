@@ -1159,7 +1159,7 @@ appending a false change: that appears as a new chain entry with its origin. The
   image; build: `CGO_ENABLED=0 GOOS=linux|darwin|windows GOARCH=amd64|arm64 go build -trimpath -o garda-verify ./cmd/garda-verify`).
   Hand the client the fingerprint printed by `make signer-key` in person or on paper, not in the same mail as the bundle.
   Guide and bundle format: [chain-verification.md](chain-verification.md) / [chain-verification.id.md](chain-verification.id.md).
-  An UNSIGNED, UNSIGNED TAIL or STALE result is an operations problem (the signer is not running or cannot sign: see "Check" above), not tampering.
+  An UNSIGNED, UNSIGNED TAIL or STALE result is an operations problem (since D-075 an export asks the signer first: the bundle's `manifest.json` names why it did not sign, and `SIGNER_URL` must reach the signer from the API and worker) (the signer is not running or cannot sign: see "Check" above), not tampering.
 * **Monitoring.** `docker compose ps signer` (healthy), `docker compose logs signer` (`sign
   due heads` errors = a site's chain does not verify: treat as an incident).
 * **Upgrade path.** A TPM/HSM-sealed key can replace the file behind `LoadKeyFile` without

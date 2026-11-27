@@ -77,6 +77,8 @@ x-backend-env: &backend-env
   GUARD_SESSION_TTL: ${GUARD_SESSION_TTL:-12h}
   GUARD_TOKEN_GRACE: ${GUARD_TOKEN_GRACE:-168h}
   QR_WINDOW: ${QR_WINDOW:-720h}
+  # Exports ask the signer (inside this network only) for a fresh signed head first (TAQ-58, D-075).
+  SIGNER_URL: ${SIGNER_URL:-http://signer:9092}
   SMTP_HOST: ${SMTP_HOST:-}
   SMTP_PORT: ${SMTP_PORT:-587}
   SMTP_USER: ${SMTP_USER:-}

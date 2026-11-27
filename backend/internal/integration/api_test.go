@@ -46,6 +46,7 @@ import (
 	"github.com/securepatrol/backend/internal/push"
 	"github.com/securepatrol/backend/internal/service"
 	"github.com/securepatrol/backend/internal/settings"
+	"github.com/securepatrol/backend/internal/signer"
 	"github.com/securepatrol/backend/internal/storage"
 )
 
@@ -197,6 +198,9 @@ func newEnv(t *testing.T, opts ...func(*config.Config)) *env {
 	}, []string{"securepatrol-web", "securepatrol-tablet"}, log)
 
 	h := &handler.Handler{DB: pool, Redis: rdb, Storage: stg, Notifier: notifier, Settings: st, Cfg: cfg, Log: log}
+	if cfg.SignerURL != "" {
+		h.Signer = signer.NewClient(cfg.SignerURL, 5*time.Second)
+	}
 	app := fiber.New(handler.AppConfig(cfg, log))
 	app.Use(requestid.New())
 	h.Mount(app, validator)

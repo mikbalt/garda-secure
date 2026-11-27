@@ -7,7 +7,9 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/securepatrol/backend/internal/chainproof"
+	"github.com/securepatrol/backend/internal/model"
 	"github.com/securepatrol/backend/internal/proofpack"
+	"github.com/securepatrol/backend/internal/repository"
 	"github.com/securepatrol/backend/internal/service"
 )
 
@@ -56,7 +58,7 @@ func (h *Handler) proofPack(c *fiber.Ctx) error {
 	name := fmt.Sprintf(`attachment; filename="proof-pack-%s-%s-%s.pdf"`, site.ID[:8], month, lang)
 
 	if c.Query("stored") == "true" {
-		return h.storedPack(c, site.ID, month, name)
+		return h.storedPack(c, site, from, to, month, name)
 	}
 
 	// The chain and the figures are read inside one slot and one snapshot, under the export's limits.
@@ -65,22 +67,33 @@ func (h *Handler) proofPack(c *fiber.Ctx) error {
 		return h.fail(c, err)
 	}
 	defer release()
+	// A fresh signed head first, outside the snapshot (as the bundle export does).
+	signed := h.signNow(c.Context(), site.ID)
 	tx, err := h.chainSnapshot(c, ChainLimits.ExportTimeout)
 	if err != nil {
 		return h.fail(c, err)
 	}
 	defer func() { _ = tx.Rollback(c.Context()) }()
 	now := time.Now()
+	fail := func(err error) error {
+		err = exportErr(err)
+		h.auditFailure(c, site, repository.ExportProofPack, from, to, err)
+		return h.fail(c, err)
+	}
 	b, err := chainproof.Export(c.Context(), tx, site.ID, site.Timezone, from, to, now, ChainLimits.ExportMaxEntries)
 	if err != nil {
-		return h.fail(c, exportErr(err))
+		return fail(err)
 	}
+	b.NoteSigning(signed)
 	data, err := proofpack.Collect(c.Context(), tx, site, month, b, now)
 	if err != nil {
-		return h.fail(c, exportErr(err))
+		return fail(err)
 	}
 	pdf, err := proofpack.Compose(data, lang).Render(now.In(site.Location()))
 	if err != nil {
+		return fail(err)
+	}
+	if err := h.auditExport(c, site, repository.ExportProofPack, from, to, int64(len(pdf)), repository.ExportOK, signed.Status, "status "+string(data.Chain.Status)); err != nil {
 		return h.fail(c, err)
 	}
 	return sendPack(c, pdf, string(data.Chain.Status), name)
@@ -88,7 +101,8 @@ func (h *Handler) proofPack(c *fiber.Ctx) error {
 
 // storedPack returns the copy the scheduler kept, with the status it was kept with: the final
 // (signed) copy, else the open one. Reads take the user's turn and a slot like the other chain reads.
-func (h *Handler) storedPack(c *fiber.Ctx, siteID, month, name string) error {
+func (h *Handler) storedPack(c *fiber.Ctx, site *model.Site, from, to time.Time, month, name string) error {
+	siteID := site.ID
 	release, err := h.chainGate(c, "stored", storedSlots)
 	if err != nil {
 		return h.fail(c, err)
@@ -104,6 +118,9 @@ func (h *Handler) storedPack(c *fiber.Ctx, siteID, month, name string) error {
 		}
 		if status == "" || (status == "signed" && key != proofpack.KeyFinal(siteID, month)) {
 			status = "not_proven" // never claim more than was recorded
+		}
+		if err := h.auditExport(c, site, repository.ExportProofPack, from, to, int64(len(data)), repository.ExportOK, "stored", "status "+status); err != nil {
+			return h.fail(c, err)
 		}
 		return sendPack(c, data, status, name)
 	}

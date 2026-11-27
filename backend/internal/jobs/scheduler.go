@@ -22,6 +22,7 @@ import (
 	"github.com/securepatrol/backend/internal/notification"
 	"github.com/securepatrol/backend/internal/repository"
 	"github.com/securepatrol/backend/internal/service"
+	"github.com/securepatrol/backend/internal/signer"
 	"github.com/securepatrol/backend/internal/sla"
 	"github.com/securepatrol/backend/internal/storage"
 )
@@ -49,6 +50,7 @@ type Scheduler struct {
 	notifier *notification.Notifier
 	sla      *sla.Checker
 	stg      *storage.Client
+	signer   signer.HeadSigner // asked for a fresh head before a proof pack; nil = none
 	cfg      *config.Config
 	log      zerolog.Logger
 
@@ -64,6 +66,10 @@ func NewScheduler(pool *pgxpool.Pool, rdb *redis.Client, n *notification.Notifie
 	return &Scheduler{pool: pool, rdb: rdb, notifier: n, sla: sla.NewChecker(pool, n, log), stg: stg, cfg: cfg,
 		log: l, failures: map[string]int{}}
 }
+
+// UseSigner makes the scheduled proof packs ask the signer for a fresh head
+// first (TAQ-58); without one they use the heads that exist.
+func (s *Scheduler) UseSigner(sg signer.HeadSigner) { s.signer = sg }
 
 // Heartbeat reports when a job loop last ticked.
 func (s *Scheduler) Heartbeat() time.Time { return s.heartbeat.Last() }

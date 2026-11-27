@@ -59,9 +59,14 @@ type Manifest struct {
 	Entries   int   `json:"entries"`
 	Heads     int   `json:"heads"`
 	// The chain's own head when exported (record_chain_heads).
-	ChainTipSeq  int64             `json:"chain_tip_seq"`
-	ChainTipHash string            `json:"chain_tip_hash"`
-	Files        map[string]string `json:"files"` // name -> hex sha256
+	ChainTipSeq  int64  `json:"chain_tip_seq"`
+	ChainTipHash string `json:"chain_tip_hash"`
+	// What came of asking the signer for a fresh head when the bundle was
+	// exported (signer.Outcome status, and the reason when it did not sign).
+	// Only an explanation for a reader: the verdict comes from the signed heads.
+	Signing       string            `json:"signing,omitempty"`
+	SigningReason string            `json:"signing_reason,omitempty"`
+	Files         map[string]string `json:"files"` // name -> hex sha256
 }
 
 // Entry is one row of record_chain plus what a third party needs to recompute
@@ -114,6 +119,11 @@ type Bundle struct {
 	Keyring  []Key
 	// ManifestSHA256 is set by Write and Read: the integrity hash of the bundle.
 	ManifestSHA256 string
+}
+
+// NoteSigning records the outcome of the sign-on-export request in the manifest.
+func (b *Bundle) NoteSigning(o signer.Outcome) {
+	b.Manifest.Signing, b.Manifest.SigningReason = o.Status, o.Reason
 }
 
 // ErrBundle marks a bundle that cannot be read or fails its integrity check.

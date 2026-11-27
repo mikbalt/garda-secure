@@ -44,8 +44,8 @@ Result and exit code:
 | `BROKEN` (signed head) | 4 | A signature does not hold, the signing key is not the one you pinned (**wrong fingerprint**), or the chain no longer matches what the signer signed (the past was rewritten). |
 | `UNSIGNED` | 5 | The chain has entries but no signed head at all. Nothing anchors it. |
 | `STALE` | 6 | There are entries after the newest signed head and that head is older than `--max-age` (default 26 hours). Usually the signer stopped. This is not proof of tampering; ask the vendor why. |
-| `UNSIGNED TAIL` | 7 | The last entries of the bundle come after the newest signed head, so no signature vouches for them. A bundle that was cut short looks exactly like this. Export again after the next signed head (they are made about hourly). **Not valid.** |
-| `UNVERIFIED RECORDS` | 8 | Some records are said to have changed again after the bundle, and the later entry is not in it, so their text cannot be checked. Export a range that includes the change. `--allow-unverified-records` changes the answer to exit 12 (`UNVERIFIED RECORDS ACCEPTED`), which is **still not valid**: the output says how many entries, and what share, were not checked. |
+| `UNSIGNED TAIL` | 7 | The last entries of the bundle come after the newest signed head, so no signature vouches for them. A bundle that was cut short looks exactly like this. Since D-075 an export asks the signer for a fresh head first, so an honest bundle ends on a signed head and this is **rare**: it now means the signer did not answer or refused (the output and `manifest.json` say why: `signing`, `signing_reason`), or entries were made in the last seconds. Export again once the signer is healthy. **Not valid.** |
+| `UNVERIFIED RECORDS` | 8 | A record in the bundle is said to have changed again, and the entry that changed it is not in the bundle, so its text cannot be checked. Since D-075 an export runs on to the first signed head (or the chain's end) that covers every amending entry, so for an honest export this no longer happens; it is left for a bundle that was cut back, or whose label "superseded" nothing in the bundle proves. `--allow-unverified-records` changes the answer to exit 12 (`UNVERIFIED RECORDS ACCEPTED`), which is **still not valid**: the output says how many entries, and what share, were not checked. |
 | `NO ENTRIES` | 9 | The bundle has no entry. It proves nothing about the range: a signature cannot show that a site had no entries. **Not valid.** |
 | `RANGE MISMATCH` | 10 | The bundle does not cover the range you gave with `--expect-from` / `--expect-to`: it was made for other dates, it starts from a head signed after your range began, or its newest signed head is older than the end of your range. **Not valid.** |
 | `RANGE NOT AUTHENTICATED` | 11 | The chain and the signatures hold, but you gave no `--expect-from` / `--expect-to`, so the range is only what the exporter says (a bundle cut at an older signed head, started late, or an old genuine one looks the same). Give the range, or accept it knowingly with `--no-range-check` (exit 0, printed as `VALID (range not checked)`). **Not valid.** |
@@ -56,6 +56,10 @@ Besides the result the tool prints when the newest signed head was signed and wh
 "valid" for what it holds, but it says nothing about what happened after it was made. Other options: `--json` (machine-readable result), `--max-age 48h` (or `0` to switch the check off),
 `--trust-first-use` (accept the first key in the bundle when you hold no fingerprint; weaker,
 because then the bundle vouches for itself).
+
+**Today's records.** An export is signed at the moment it is made, so it vouches for entries up to that moment. A range that has not ended yet
+(`--expect-to` today) cannot be authenticated, because no signature can vouch for entries made after it: the tool says `RANGE MISMATCH` (exit 10).
+Check a day once it is over (export again after midnight: the new head is signed after the day ended), or use `--no-range-check` knowingly.
 
 Write down the **bundle sha256** that the tool prints. If you later get the same range again,
 the same hash means the same bundle.
@@ -83,27 +87,47 @@ happened. In particular it does **not** prove:
   `UNSIGNED TAIL`, never as valid.
 * **That the dates are the ones you asked for.** The range written in the bundle is the claim of whoever made it.
   Only `--expect-from` and `--expect-to` check it against signing times.
-* **Records that changed again outside the bundle.** For those the text is not checked (exit 8 unless you opt out).
+* **Records that changed again outside the bundle.** A bundle runs on to cover the entries that amend its records, so
+  this is only left for a bundle that was cut back; for those the text is not checked (exit 8 unless you opt out).
 * **That the bundle is current.** An old, genuine bundle stays valid forever. Look at "Exported" and "newest signed head".
 * **That nobody with full access to the server and to the signer's machine acted.** Someone who controls the host as
   root *and* the signer's key volume can sign a rewritten history. Pinning the fingerprint, keeping your own earlier
   bundles and signing key handovers in the presence of the client are what limit this.
 * **That a site that has no entries had none.** An empty bundle is exit 9, not valid.
-* **That no one saw the data.** Exports are not logged yet; the bundle holds personal data.
+* **That no one saw the data.** Every export (bundle or proof pack) writes a row to the export audit (who, site, range, time,
+  size, how it was signed), but the log lives in the same database as the records, and it says nothing about what was done with the file afterwards.
 * **That the file hashes in the manifest protect the bundle.** They only show damage or a careless edit. The chain and
   the signed heads are what protect it.
 
 ## Online check (no tool needed)
 
 `GET /api/v1/sites/<site>/chain/verify?from=2026-11-01&to=2026-11-30&pin=<fingerprint>` answers
-`{"valid": true, "valid_pinned": true, ...}` or the first broken record, for admin, supervisor and client-readonly users. It
+`{"valid": true, "valid_pinned": true, "summary": {...}, ...}` or the first broken record, for admin, supervisor and client-readonly users. It
 starts from the last signed head before your range, so a month is quick. If the range is too big or the check
 takes too long it answers `verify_too_large`: use the bundle and `garda-verify` instead. The online check trusts the
-server you ask; the offline check does not, which is why you should use it for anything serious. Without `pin` the
-answer is `"valid": null` with `"trust": "unverified_trust"` (the server vouches for itself), never `true`.
-A user can have one check running and a few per minute. **Read `status`, not `valid`**: `valid` is `false` for every result that is not
-a clean pass, which includes `unsigned_tail`, `unverified_records` and `no_entries` (not broken, but not proven), and `null` without a pin.
-Show `status` and `first_break` to people. The online check takes the requested dates as given, so it does not run the expected-range check.
+server you ask; the offline check does not, which is why you should use it for anything serious. It never asks the signer to sign.
+
+**Read `summary.state`** (with `summary.tone`: `ok`, `notice` or `broken`). Only `broken` is a failure:
+
+| `summary.state` | `valid` | tone | Meaning |
+|---|---|---|---|
+| `valid_pinned` | `true` | ok | Holds, and the key you pinned vouches for it. |
+| `unverified_trust` | `null` | notice | Holds, but no `pin` was given: the server vouches for itself. |
+| `unsigned_tail` | `null` | notice | Nothing is wrong so far; the newest entries are not covered by a signed head yet (also: no signed head yet, or the newest one is old). Check again later. |
+| `unverified_records` | `null` | notice | Holds; some records changed again after the range and could not be checked against their text. |
+| `no_entries` | `null` | notice | Nothing in the range. |
+| `broken` | `false` | broken | An entry, a record or a signed head does not hold. `first_break` names the first. |
+
+`status` is still the raw verifier status. A UI shows `summary.state` and never paints anything but `broken` as a failure.
+A user can have one check running and a few per minute. The online check takes the requested dates as given, so it does not run the expected-range check.
+
+## Export audit
+
+Every bundle and proof pack (made on request, read from the kept copies, or kept by the schedule) appends one row to `export_audit`
+(migration 015, append-only like the audit log): who, site, range, when, size in bytes, the result (`ok`, `too_large`, `failed`),
+`signing` (how the fresh head was got: `signed`, `reused`, `unreachable`, `refused`, `not_configured`, or `stored`) and a short detail. It holds no record
+content. `GET /api/v1/sites/<site>/chain/exports` lists the rows (admin, supervisor of the site's realm; another realm's site is 404). A bundle is not
+sent unless its row was written.
 
 ## Bundle format (`garda-chain-bundle/v1`)
 
@@ -111,7 +135,7 @@ A zip with these files:
 
 | File | Content |
 |---|---|
-| `manifest.json` | `format`, `site_id`, `site_timezone`, `from`/`to` (requested range, UTC, end not included), `exported_at`, `anchor_seq` (0 = starts at the first entry of the site; otherwise the seq of a signed head in `heads.json` that the first entry continues from), `first_seq`, `last_seq`, `entries`, `heads`, `chain_tip_seq`/`chain_tip_hash` (the chain's head when exported), `files` (sha256 of the three files below). The sha256 of `manifest.json` itself is the bundle's integrity hash. |
+| `manifest.json` | `format`, `site_id`, `site_timezone`, `from`/`to` (requested range, UTC, end not included), `exported_at`, `anchor_seq` (0 = starts at the first entry of the site; otherwise the seq of a signed head in `heads.json` that the first entry continues from), `first_seq`, `last_seq`, `entries`, `heads`, `chain_tip_seq`/`chain_tip_hash` (the chain's head when exported), `signing` and `signing_reason` (what came of asking the signer for a fresh head when the bundle was made; only an explanation, the verdict comes from the signed heads), `files` (sha256 of the three files below). The sha256 of `manifest.json` itself is the bundle's integrity hash. |
 | `entries.jsonl` | one entry per line: `seq`, `kind`, `record_id`, `record_hash`, `prev_hash`, `entry_hash` (hex), `hash_version` (1), `origin`, `created_at` (UTC, microseconds), `record_state` (`latest`, `superseded` with `next_seq`, or `deleted`), and for `latest` the exact `record` text. |
 | `heads.json` | signed heads from `anchor_seq` to `last_seq`, the same fields as `signer export`: `site_id`, `seq`, `entry_hash`, `signed_at`, `reason`, `key_id`, `signature`. |
 | `keyring.json` | the signer's public keys with their handover signatures, as in `signer export`. **No private key is ever in a bundle.** |
@@ -129,7 +153,11 @@ How to recompute (any language):
 
 A range starts at the newest signed head that was signed before the range began and ends at the first signed head
 that was signed after the range ended (or at the chain's end), so that both ends are anchored by a signature and
-nothing can be missing in between. See "What VALID does NOT prove" for what that still leaves open.
+nothing can be missing in between. When a record of the range was changed again by an entry after that head, the bundle runs on to the first signed
+head (or the chain's end) that covers the amending entry, so the old entry can be checked against it. Before it is made, the export asks the signer
+(inside the server's network, `SIGNER_URL`) to sign the current head, so the end is a signature made now; the signer's refusal rules are not
+bypassed, and if it does not answer or refuses the bundle is still made, ends on an unsigned tail and says why. A head signed in the last 10 seconds
+is reused for the next export of the same site. See "What VALID does NOT prove" for what that still leaves open.
 
 ## Monthly proof pack (PDF)
 

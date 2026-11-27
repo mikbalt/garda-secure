@@ -878,3 +878,33 @@ The review queue (`/attendance?tab=review`, `reviewAttendance`) is admin/supervi
 - **Limits kept.** The pack is made from the database as it is now; garda-verify on a fresh export is still the check that
   does not trust the server. Pinning needs the fingerprint from installation: the one printed in the pack is the server's
   claim, and the instructions say to compare it with the one the client holds.
+
+### D-075 - Verification usability: sign on export, amended records, online states, export audit (TAQ-58)
+- **Status.** Accepted 2026-11-27. Follows D-071 (signer), D-073 (verification), D-074 (proof pack). Migration 015. Does not change the
+  verifier's rules, the exit codes or the signer's refusal rules.
+- **Why.** Four things made the honest case look like the bad one: a bundle ending today was `UNSIGNED TAIL` (exit 7) until the next hourly
+  head; a record amended after the bundle's end head gave exit 8, so `--allow-unverified-records` became habit; the online check showed
+  `unsigned_tail`, `unverified_records` and `no_entries` as `valid:false`, like a broken chain; and exports, which hold personal data, left no trace.
+- **Sign on export.** Before the snapshot (so the snapshot sees the new row), the bundle export, the proof-pack endpoint, the stored-pack
+  job and the scheduled job call the signer's existing on-demand `POST /sign` (`signer.Client`, `SIGNER_URL`, internal network only, 8 s). The
+  signer decides: its refusal rules (lower seq, other hash at a signed seq, broken links, lost heads) are untouched and a refusal is passed on, never
+  retried or worked around. An unreachable, refusing or unconfigured signer never fails the export: the bundle is made, ends on whatever signed
+  head exists, and says why in `manifest.json` (`signing`, `signing_reason`) and `X-Bundle-Signing`. The manifest is unsigned and only explains: the
+  verifier still decides from the signatures (a manifest claiming "signed" cannot turn an unsigned tail into valid; tested). The online check never signs.
+  *Rate limit:* a head obtained for a site is reused for 10 s (`signer.ReuseWindow`, per API process), so a burst of exports signs once; entries made in
+  those seconds can still be an unsigned tail. An unchanged head is idempotent in the signer anyway.
+- **Range ending today.** Unchanged and on purpose: `--expect-to` for a day that is not over cannot be authenticated, because no signature can vouch for entries made after it
+  (exit 10). The honest flow is to export a day after it ended; the fresh head is then signed after the range ended. Accepting an open range would let an exporter cut a bundle at an old head
+  and hide the hours after it, which is what the check exists to catch.
+- **Amended records.** `chainproof.Export` finds the newest entry that supersedes an entry of the bundle; if it lies beyond the end, the end moves on to the first signed head at or
+  after it (else the chain's end), repeating until nothing points past the end, bounded by the entry limit. The verifier is unchanged: `superseded` with a `next_seq` beyond the bundle is still
+  exit 8 (a bundle cut back, or a label nothing proves; the attacker tests of D-073 stand, plus `TestForgedSupersededLabelStillExits8`). Cost: a record amended much later pulls the bundle
+  to a later head; past the entry limit it stops extending and the records stay unverified instead of failing the export.
+- **Online states.** The response gains `summary: {state, tone, message}`: `valid_pinned`, `unverified_trust`, `unsigned_tail` (also `unsigned` and `stale`), `unverified_records`, `no_entries`, `broken`
+  (also `bundle_invalid`). `valid` is `true` only for a pinned pass, `false` only for `broken`, `null` for everything else (D-073 kept `null` for "not shown to the caller"; it now also
+  means "not proven yet"). `status` stays the raw verifier status. No web page shows the check today; the contract is in `docs/api.md`.
+- **Export audit.** Table `export_audit` (append-only by trigger like `audit_log`): realm, site, actor (user name, or `system:scheduler`), kind (`bundle`, `proof_pack`), range, bytes, result
+  (`ok`, `too_large`, `failed`), signing outcome, short detail; no record content. Written for every bundle and proof pack, including the stored copy read and the scheduled keep, and for
+  refused or failed ones. Fail closed: if the row cannot be written the file is not sent. `GET /sites/:id/chain/exports` (admin, supervisor, the site's realm; other realm 404, hr and
+  client-readonly 403). Not tamper-proof against the database owner, and it does not follow the file after download.
+- **Known, later.** A site-limited admin (`sites` claim) reads the audit of the sites they may see only (via `siteFor`); a web page for the audit; Prometheus alert on `signing != signed` rates; the reuse window is per process, not shared between API replicas; the scheduler writes a row for each hourly refresh of an open copy.

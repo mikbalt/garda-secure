@@ -35,6 +35,7 @@ import (
 	"github.com/securepatrol/backend/internal/notification"
 	"github.com/securepatrol/backend/internal/push"
 	"github.com/securepatrol/backend/internal/settings"
+	"github.com/securepatrol/backend/internal/signer"
 	"github.com/securepatrol/backend/internal/storage"
 )
 
@@ -195,6 +196,9 @@ func main() {
 	h := &handler.Handler{
 		DB: pool, Redis: rdb, Storage: stg, Notifier: notifier, Settings: settingsStore, Cfg: cfg, Log: logger,
 	}
+	if cfg.SignerURL != "" {
+		h.Signer = signer.NewClient(cfg.SignerURL, signTimeout)
+	}
 	h.Mount(app, validator)
 
 	// ── Graceful shutdown ────────────────────────────────────────────────────
@@ -226,6 +230,9 @@ func runWorker(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, rdb 
 	dispatcher := notification.NewWorker(pool, rdb, st, notifier, cfg.NotifyWorkers, logger)
 	dispatcher.UsePush(notifier.Push())
 	scheduler := jobs.NewScheduler(pool, rdb, notifier, stg, cfg, logger)
+	if cfg.SignerURL != "" {
+		scheduler.UseSigner(signer.NewClient(cfg.SignerURL, signTimeout))
+	}
 	abortCtx, abort := context.WithCancel(context.Background())
 	defer abort()
 
@@ -301,3 +308,6 @@ func runWorker(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, rdb 
 // workerStaleAfter is how long the dispatcher or the scheduler may go
 // without a tick before the worker reports itself unhealthy.
 const workerStaleAfter = 60 * time.Second
+
+// signTimeout bounds the request for a fresh signed head before an export.
+const signTimeout = 8 * time.Second

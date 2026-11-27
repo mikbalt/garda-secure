@@ -180,25 +180,9 @@ func run(keyFile string) error {
 		_ = json.NewEncoder(w).Encode(map[string]string{"key_id": keyID, "public_key": hex.EncodeToString(key.Public().(ed25519.PublicKey))})
 	})
 	// On demand (proof-pack export): signs the current head of one site. Internal network only.
-	mux.HandleFunc("POST /sign", func(w http.ResponseWriter, r *http.Request) {
-		site := r.URL.Query().Get("site_id")
-		if _, err := uuid.Parse(site); err != nil {
-			http.Error(w, "site_id must be a uuid", http.StatusBadRequest)
-			return
-		}
-		h, err := s.SignSite(r.Context(), site, signer.ReasonOnDemand)
-		switch {
-		case errors.Is(err, signer.ErrNoChain):
-			http.Error(w, err.Error(), http.StatusNotFound)
-		case err != nil:
-			log.Error("on-demand sign refused", "site_id", site, "err", err)
-			http.Error(w, err.Error(), http.StatusConflict)
-		default:
-			_ = json.NewEncoder(w).Encode(map[string]any{"site_id": h.SiteID, "seq": h.Seq,
-				"entry_hash": hex.EncodeToString(h.EntryHash), "signed_at": h.SignedAt, "key_id": h.KeyID,
-				"signature": hex.EncodeToString(h.Signature)})
-		}
-	})
+	mux.HandleFunc("POST /sign", signer.SignHandler(s, func(msg, site string, err error) {
+		log.Error(msg, "site_id", site, "err", err)
+	}))
 	srv := &http.Server{Addr: env("SIGNER_ADDR", ":9092"), Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

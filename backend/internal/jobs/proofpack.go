@@ -13,6 +13,7 @@ import (
 	"github.com/securepatrol/backend/internal/proofpack"
 	"github.com/securepatrol/backend/internal/repository"
 	"github.com/securepatrol/backend/internal/service"
+	"github.com/securepatrol/backend/internal/signer"
 	"github.com/securepatrol/backend/internal/storage"
 )
 
@@ -96,6 +97,14 @@ func (s *Scheduler) packSite(ctx context.Context, store PackStore, site *model.S
 	if err != nil {
 		return err
 	}
+	// A fresh signed head first, outside the snapshot, so the pack can end on a signature.
+	signed := signer.Outcome{Status: signer.OutcomeNotSetup, Reason: "this install has no signer address (SIGNER_URL)"}
+	if s.signer != nil {
+		signed = s.signer.SignNow(ctx, site.ID)
+		if !signed.Signed() {
+			s.log.Warn().Str("site_id", site.ID).Str("outcome", signed.Status).Str("reason", signed.Reason).Msg("proof pack: no fresh signed head")
+		}
+	}
 	// The chain and the figures are read in one snapshot, inside the statement timeout.
 	var data *proofpack.Data
 	collect := func(tx pgx.Tx, withChain bool) (err error) {
@@ -104,6 +113,7 @@ func (s *Scheduler) packSite(ctx context.Context, store PackStore, site *model.S
 			if b, err = chainproof.Export(ctx, tx, site.ID, site.Timezone, from, to, now, PackMaxEntries); err != nil {
 				return err
 			}
+			b.NoteSigning(signed)
 		}
 		data, err = proofpack.Collect(ctx, tx, site, month, b, now)
 		return err
@@ -114,21 +124,36 @@ func (s *Scheduler) packSite(ctx context.Context, store PackStore, site *model.S
 		// Too much to check here: still make the pack, saying the chain was not checked (status not_proven).
 		err = s.snapshot(ctx, func(tx pgx.Tx) error { return collect(tx, false) })
 	}
+	audit := func(result string, size int, detail string) error {
+		realm := ""
+		if site.KeycloakRealm != nil {
+			realm = *site.KeycloakRealm
+		}
+		return repository.InsertExportAudit(ctx, s.pool, repository.ExportAuditNew{Realm: realm, SiteID: site.ID, Actor: "system:scheduler",
+			Kind: repository.ExportProofPack, From: from, To: to, Bytes: int64(size), Result: result, Signing: signed.Status, Detail: detail})
+	}
 	if err != nil {
+		_ = audit(repository.ExportFailed, 0, "error")
 		return fmt.Errorf("proof pack %s %s: %w", site.ID, month, err)
 	}
 	pdf, err := proofpack.Compose(data, site.Config().Language).Render(now.In(site.Location()))
 	if err != nil {
+		_ = audit(repository.ExportFailed, 0, "render")
 		return err
 	}
 	status := string(data.Chain.Status)
 	if data.Chain.Status == proofpack.StatusSigned {
 		if err := store.PutNew(ctx, bucket, proofpack.KeyFinal(site.ID, month), pdf, status); err != nil && !errors.Is(err, storage.ErrExists) {
+			_ = audit(repository.ExportFailed, 0, "store")
 			return err
 		}
-		return nil
+		return audit(repository.ExportOK, len(pdf), "status "+status+" (kept)")
 	}
-	return store.Put(ctx, bucket, openKey, pdf, status)
+	if err := store.Put(ctx, bucket, openKey, pdf, status); err != nil {
+		_ = audit(repository.ExportFailed, 0, "store")
+		return err
+	}
+	return audit(repository.ExportOK, len(pdf), "status "+status+" (kept, open)")
 }
 
 // snapshot runs fn in one read-only repeatable-read transaction with a statement timeout.
