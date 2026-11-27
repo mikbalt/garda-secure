@@ -131,9 +131,9 @@ func TestValidBundle(t *testing.T) {
 	}
 }
 
-func TestEmptyRangeIsValid(t *testing.T) {
+func TestEmptyBundleProvesNothing(t *testing.T) {
 	f := newFixture(t, 0)
-	wantStatus(t, f.verify(Options{}), StatusValid, 0, 0, "")
+	wantStatus(t, f.verify(Options{}), StatusNoEntries, 9, 0, "proves nothing")
 }
 
 func TestEditedEntryIsFirstBreak(t *testing.T) {
@@ -226,7 +226,7 @@ func TestUnsigned(t *testing.T) {
 func TestStale(t *testing.T) {
 	f := newFixture(t, 8, 3)
 	limit := 26 * time.Hour
-	wantStatus(t, f.verify(Options{MaxAge: limit}), StatusValid, 0, 0, "") // head is young: it will be signed soon
+	wantStatus(t, f.verify(Options{MaxAge: limit}), StatusUnsignedTail, 7, 4, "UNSIGNED TAIL") // head is young: signed soon, but not signed yet
 	r := f.verify(Options{MaxAge: limit, Now: t0.Add(5 * 24 * time.Hour)})
 	wantStatus(t, r, StatusStale, 6, 4, "newest signed head")
 	// a quiet site is never stale: the head covers the whole chain
@@ -306,8 +306,9 @@ func TestSupersededEntries(t *testing.T) {
 	wantStatus(t, r, StatusValid, 0, 0, "")
 	// a later entry beyond the range cannot be checked: said so, not hidden
 	f.b.Entries[1].RecordState, f.b.Entries[1].Record, f.b.Entries[1].NextSeq = StateSuperseded, "", 50
-	if r := f.verify(Options{}); r.Status != StatusValid || r.RecordsNotChecked != 1 {
-		t.Fatalf("%s, %d records not checked", r.Status, r.RecordsNotChecked)
+	wantStatus(t, f.verify(Options{}), StatusUnverified, 8, 2, "UNVERIFIED RECORDS")
+	if r := f.verify(Options{AllowUnverified: true}); r.Status != StatusValid || r.RecordsNotChecked != 1 || !hasWarning(r, "NOT checked") {
+		t.Fatalf("%s, %d records not checked, %v", r.Status, r.RecordsNotChecked, r.Warnings)
 	}
 }
 

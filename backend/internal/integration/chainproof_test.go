@@ -287,14 +287,14 @@ func TestChainBundleRangeByCheckpoint(t *testing.T) {
 			t.Fatal(err)
 		}
 		got, _ := offline(t, b)
-		if got.Manifest.AnchorSeq != 3 || got.Manifest.FirstSeq != 4 || got.Manifest.LastSeq != 6 {
-			t.Fatalf("range 4..6 exported as anchor %d, seq %d..%d", got.Manifest.AnchorSeq, got.Manifest.FirstSeq, got.Manifest.LastSeq)
+		if got.Manifest.AnchorSeq != 3 || got.Manifest.FirstSeq != 4 || got.Manifest.LastSeq != 8 {
+			t.Fatalf("range 4..6 ends at the first head signed after it (8), exported as anchor %d, seq %d..%d", got.Manifest.AnchorSeq, got.Manifest.FirstSeq, got.Manifest.LastSeq)
 		}
 		return chainproof.Verify(got, chainproof.Options{Pins: []string{pin}})
 	}
 	full := func() chainproof.Result { return verifyExport(t, rt, site.site, pin) }
 
-	if p, f := part(), full(); p.Status != chainproof.StatusValid || f.Status != chainproof.StatusValid || p.Entries != 3 || f.Entries != 8 {
+	if p, f := part(), full(); p.Status != chainproof.StatusValid || f.Status != chainproof.StatusValid || p.Entries != 5 || f.Entries != 8 {
 		t.Fatalf("valid data: range %s (%d entries), full %s (%d)", p.Status, p.Entries, f.Status, f.Entries)
 	}
 	// An entry inside the range: both find it, at the same seq.
@@ -343,16 +343,20 @@ func TestChainEndpoints(t *testing.T) {
 	q := "?from=" + day + "&to=" + day
 	base := "/api/v1/sites/" + site.site + "/chain/"
 	admin := e.web(realm1, "chain-admin", "admin")
+	old := handler.ChainLimits
+	t.Cleanup(func() { handler.ChainLimits = old })
+	handler.ChainLimits.PerUserPerMinute = 1000
 
 	r := e.expect(e.do("GET", base+"verify"+q+"&pin="+pubID(key), admin, "", nil), 200, "verify")
-	if r.obj()["valid"] != true || r.str("status") != "valid" || r.str("trust") != "pinned" {
+	if r.obj()["valid"] != true || r.obj()["valid_pinned"] != true || r.str("status") != "valid" || r.str("trust") != "pinned" {
 		t.Fatalf("verify = %s", r.raw)
 	}
 	if strings.Contains(string(r.raw), "description") || strings.Contains(string(r.raw), "gps_") {
 		t.Fatalf("the verify result carries record content: %s", r.raw)
 	}
-	if r := e.expect(e.do("GET", base+"verify"+q, admin, "", nil), 200, "verify first use"); r.str("trust") != "first_use" {
-		t.Fatalf("no pin: %s", r.raw)
+	if r := e.expect(e.do("GET", base+"verify"+q, admin, "", nil), 200, "verify no pin"); r.str("trust") != "unverified_trust" ||
+		r.obj()["valid"] != nil || r.obj()["valid_pinned"] != false || r.str("status") != "valid" {
+		t.Fatalf("no pin must not say valid:true: %s", r.raw)
 	}
 	if r := e.expect(e.do("GET", base+"verify"+q+"&pin="+strings.Repeat("0", 64), admin, "", nil), 200, "wrong pin"); r.obj()["valid"] != false ||
 		r.obj()["first_break"].(map[string]any)["class"] != "head" {
@@ -391,9 +395,26 @@ func TestChainEndpoints(t *testing.T) {
 		t.Fatalf("verify after edit = %s", r.raw)
 	}
 
+	// A client-readonly user who runs verifications over and over is slowed
+	// down on their own account, and the admin's export still runs.
+	handler.ChainLimits.PerUserPerMinute = 2
+	client := e.web(realm1, "chain-greedy", "client-readonly")
+	e.expect(e.do("GET", base+"verify"+q, client, "", nil), 200, "client 1")
+	e.expect(e.do("GET", base+"verify"+q, client, "", nil), 200, "client 2")
+	if r := e.expect(e.do("GET", base+"verify"+q, client, "", nil), 429, "client 3"); r.str("code") != "verify_busy" {
+		t.Fatalf("rate limit = %s", r.raw)
+	}
+	e.expect(e.do("GET", base+"export"+q, admin, "", nil), 200, "admin export while the client is limited")
+	handler.ChainLimits.PerUserPerMinute = 1000
+
+	// The bundle held in memory is capped.
+	handler.ChainLimits.ExportMaxBytes = 200
+	if r := e.expect(e.do("GET", base+"export"+q, admin, "", nil), 400, "export too big"); r.str("code") != "verify_too_large" {
+		t.Fatalf("export cap = %s", r.raw)
+	}
+	handler.ChainLimits.ExportMaxBytes = old.ExportMaxBytes
+
 	// Too large: a clear answer that points to the offline bundle.
-	old := handler.ChainLimits
-	t.Cleanup(func() { handler.ChainLimits = old })
 	handler.ChainLimits.VerifyMaxEntries = 2
 	r = e.expect(e.do("GET", base+"verify"+q, admin, "", nil), 400, "too large")
 	if r.str("code") != "verify_too_large" || !strings.Contains(r.str("error"), "garda-verify") {

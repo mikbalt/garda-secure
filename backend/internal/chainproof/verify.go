@@ -20,6 +20,11 @@ const (
 	StatusBundle   = "bundle_invalid" // the bundle itself is unusable
 	StatusUnsigned = "unsigned"       // entries, but no signed head at all
 	StatusStale    = "stale"          // entries after the newest signed head, which is older than the limit
+	// Not broken, but not proven either: never to be shown as plain VALID.
+	StatusNoEntries    = "no_entries"         // the bundle holds no entry: it proves nothing about the range
+	StatusUnsignedTail = "unsigned_tail"      // entries after the newest signed head
+	StatusUnverified   = "unverified_records" // records whose later change is not in the bundle
+	StatusRange        = "range_mismatch"     // the bundle does not cover the range the caller expects
 )
 
 // Where a break is (Break.Class). The CLI exit code follows the class.
@@ -58,17 +63,26 @@ type Result struct {
 	// RecordsNotChecked counts entries whose record changed again after the
 	// range: they are checked as links of the chain, not against record text.
 	RecordsNotChecked int `json:"records_not_checked"`
+	// Things a valid result does not tell, and the freshness of the signature.
+	Warnings           []string `json:"warnings"`
+	NewestHeadSignedAt string   `json:"newest_head_signed_at,omitempty"`
+	ExportedAt         string   `json:"exported_at,omitempty"`
+	RangeAuthenticated bool     `json:"range_authenticated"`
 }
 
 // Exit codes of garda-verify, one per failure class.
 const (
-	CodeValid    = 0
-	CodeChain    = 1 // an entry or a record was changed, deleted or reordered
-	CodeUsage    = 2 // not a verification result: bad arguments
-	CodeBundle   = 3 // the bundle is unreadable or fails its integrity check
-	CodeHead     = 4 // a signed head, a key or a signature does not hold (also: wrong fingerprint)
-	CodeUnsigned = 5
-	CodeStale    = 6
+	CodeValid        = 0
+	CodeChain        = 1 // an entry or a record was changed, deleted or reordered
+	CodeUsage        = 2 // not a verification result: bad arguments
+	CodeBundle       = 3 // the bundle is unreadable or fails its integrity check
+	CodeHead         = 4 // a signed head, a key or a signature does not hold (also: wrong fingerprint)
+	CodeUnsigned     = 5
+	CodeStale        = 6
+	CodeUnsignedTail = 7
+	CodeUnverified   = 8
+	CodeNoEntries    = 9
+	CodeRange        = 10
 )
 
 // Code is the process exit code for the result.
@@ -80,6 +94,14 @@ func (r Result) Code() int {
 		return CodeUnsigned
 	case StatusStale:
 		return CodeStale
+	case StatusUnsignedTail:
+		return CodeUnsignedTail
+	case StatusUnverified:
+		return CodeUnverified
+	case StatusNoEntries:
+		return CodeNoEntries
+	case StatusRange:
+		return CodeRange
 	}
 	if r.Break == nil {
 		return CodeChain
@@ -101,6 +123,12 @@ type Options struct {
 	// MaxAge > 0: entries after the newest signed head fail as stale when that head is older.
 	MaxAge time.Duration
 	Now    time.Time // zero = time.Now()
+	// ExpectFrom and ExpectTo (YYYY-MM-DD, site time zone, to inclusive): the
+	// range the caller asked for. The manifest's range is only the exporter's claim.
+	ExpectFrom, ExpectTo string
+	// AllowUnverified accepts records whose later change is outside the bundle
+	// (still reported as a warning, never as a plain valid).
+	AllowUnverified bool
 }
 
 // Genesis is the value the first entry of a site links to.
@@ -203,6 +231,7 @@ func Verify(b *Bundle, o Options) Result {
 
 	// The anchor: genesis, or a signed head the entries continue from.
 	prev := Genesis(m.SiteID)
+	var anchorSigned time.Time
 	if m.AnchorSeq > 0 {
 		var anchor *head
 		for i := range heads {
@@ -214,10 +243,11 @@ func Verify(b *Bundle, o Options) Result {
 		if anchor == nil {
 			return bundleBad("the signed head at the start of the range (seq %d) is not in the bundle", m.AnchorSeq)
 		}
-		prev = anchor.EntryHash
+		prev, anchorSigned = anchor.EntryHash, anchor.SignedAt
 	}
 
 	var chain *Break
+	var firstUnverified *Entry
 	bySeq := map[int64]Entry{}
 	expect := m.AnchorSeq + 1
 	for _, e := range b.Entries {
@@ -252,6 +282,10 @@ func Verify(b *Bundle, o Options) Result {
 					chain = chainBreak(e, ClassChain, "entry says it was superseded by seq %d, which is not later", e.NextSeq)
 				} else if e.NextSeq > m.LastSeq {
 					res.RecordsNotChecked++
+					if firstUnverified == nil {
+						e := e
+						firstUnverified = &e
+					}
 				} else if n, ok := entryAt(b.Entries, e.NextSeq); !ok || n.Kind != e.Kind || !strings.EqualFold(n.RecordID, e.RecordID) {
 					chain = chainBreak(e, ClassChain, "entry says it was superseded by seq %d, which is not an entry of the same record", e.NextSeq)
 				}
@@ -306,10 +340,43 @@ func Verify(b *Bundle, o Options) Result {
 		return res
 	}
 
-	if len(b.Entries) == 0 {
-		res.Status = StatusValid
+	if newest != nil {
+		res.NewestHeadSignedAt = newest.SignedAt.UTC().Format(time.RFC3339)
+	}
+	res.ExportedAt = m.ExportedAt
+	notProven := func(status string, e *Entry, class, format string, a ...any) Result {
+		res.Status = status
+		res.Break = &Break{Class: class, Reason: fmt.Sprintf(format, a...)}
+		if e != nil {
+			res.Break.Seq, res.Break.Kind, res.Break.ID = e.Seq, e.Kind, e.RecordID
+		}
 		return res
 	}
+
+	// Nothing to prove: a bundle without entries says nothing about the
+	// range, whoever built it (the manifest and the heads are not signed
+	// for "this site had no entries").
+	if len(b.Entries) == 0 {
+		return notProven(StatusNoEntries, nil, ClassBundle, "the bundle holds no entry, so it proves nothing about this range (the signed heads cannot show that a site had no entries)")
+	}
+
+	// The range in the manifest must at least fit the entries.
+	mFrom, err1 := time.Parse(time.RFC3339, m.From)
+	mTo, err2 := time.Parse(time.RFC3339, m.To)
+	if err1 != nil || err2 != nil || !mTo.After(mFrom) {
+		return bundleBad("the range in the manifest (from, to) is not valid")
+	}
+	inRange := false
+	for _, e := range b.Entries {
+		if at, err := time.Parse(time.RFC3339Nano, e.CreatedAt); err == nil && !at.Before(mFrom) && at.Before(mTo) {
+			inRange = true
+			break
+		}
+	}
+	if !inRange {
+		return bundleBad("none of the entries was made in the range the manifest names (%s to %s): the range does not match the entries", m.From, m.To)
+	}
+
 	// The end of the bundle must be the chain's end, or a signed head.
 	lastEntry := b.Entries[len(b.Entries)-1]
 	switch {
@@ -334,9 +401,79 @@ func Verify(b *Bundle, o Options) Result {
 			Reason: fmt.Sprintf("newest signed head (seq %d) is %s old, limit %s, and the chain is at %d",
 				newest.Seq, now.Sub(newest.SignedAt).Round(time.Second), o.MaxAge, m.LastSeq)}
 		return res
+	case newest.Seq < m.LastSeq:
+		next, _ := entryAt(b.Entries, newest.Seq+1)
+		return notProven(StatusUnsignedTail, &next, ClassHead,
+			"UNSIGNED TAIL: %d entries after the newest signed head (seq %d, signed %s): no signature vouches for them yet, and a bundle cut short looks the same. Export again after the next signed head",
+			m.LastSeq-newest.Seq, newest.Seq, newest.SignedAt.UTC().Format(time.RFC3339))
+	}
+
+	// The range the caller expects, against what the bundle can show.
+	rangeProblem, authenticated, err := o.checkExpectedRange(m, anchorSigned, newest.SignedAt)
+	if err != nil {
+		return bundleBad("%v", err)
+	}
+	res.RangeAuthenticated = authenticated
+	if rangeProblem != "" {
+		return notProven(StatusRange, nil, ClassBundle, "%s", rangeProblem)
+	}
+	if !authenticated {
+		res.Warnings = append(res.Warnings, fmt.Sprintf("the range %s to %s is the exporter's claim: the range is not authenticated. Give --expect-from and --expect-to to check it", m.From, m.To))
+	}
+
+	if res.RecordsNotChecked > 0 {
+		if !o.AllowUnverified {
+			return notProven(StatusUnverified, firstUnverified, ClassRecord,
+				"UNVERIFIED RECORDS: %d records are said to have changed again after this bundle, and the later entry is not in it, so their text cannot be checked. Export a range that includes the change, or accept this knowingly with --allow-unverified-records",
+				res.RecordsNotChecked)
+		}
+		res.Warnings = append(res.Warnings, fmt.Sprintf("%d records were NOT checked against their text (they changed again after the bundle); only their place in the chain was checked", res.RecordsNotChecked))
+	}
+	if at, err := time.Parse(time.RFC3339Nano, m.ExportedAt); err != nil {
+		res.Warnings = append(res.Warnings, "the bundle has no valid exported_at time: its age is unknown")
+	} else if o.MaxAge > 0 && now.Sub(at) > o.MaxAge {
+		res.Warnings = append(res.Warnings, fmt.Sprintf("the bundle was exported %s ago (limit %s): anything recorded since is not in it. Export again to be sure it is current",
+			now.Sub(at).Round(time.Minute), o.MaxAge))
 	}
 	res.Status = StatusValid
 	return res
+}
+
+// checkExpectedRange compares the range the caller expects (dates in the
+// site's zone, to inclusive) with what the signatures show: the anchor head
+// must have been signed before the range starts, and the newest signed head
+// after it ends. problem is "" when it holds (or nothing was expected).
+func (o Options) checkExpectedRange(m Manifest, anchorSigned, newestSigned time.Time) (problem string, authenticated bool, err error) {
+	if o.ExpectFrom == "" && o.ExpectTo == "" {
+		return "", false, nil
+	}
+	if o.ExpectFrom == "" || o.ExpectTo == "" {
+		return "", false, errors.New("give both an expected start and an expected end of the range")
+	}
+	loc, lerr := time.LoadLocation(m.SiteTimezone)
+	if lerr != nil {
+		return "", false, fmt.Errorf("site time zone %q is unknown", m.SiteTimezone)
+	}
+	from, e1 := time.ParseInLocation("2006-01-02", o.ExpectFrom, loc)
+	toDay, e2 := time.ParseInLocation("2006-01-02", o.ExpectTo, loc)
+	if e1 != nil || e2 != nil {
+		return "", false, errors.New("the expected range must be dates, YYYY-MM-DD")
+	}
+	to := toDay.AddDate(0, 0, 1)
+	if !to.After(from) {
+		return "", false, errors.New("the expected end is before the expected start")
+	}
+	mFrom, _ := time.Parse(time.RFC3339, m.From)
+	mTo, _ := time.Parse(time.RFC3339, m.To)
+	switch {
+	case mFrom.After(from) || mTo.Before(to):
+		return fmt.Sprintf("the bundle was made for %s to %s, which does not cover the range you expect (%s to %s, site time)", m.From, m.To, o.ExpectFrom, o.ExpectTo), false, nil
+	case m.AnchorSeq > 0 && anchorSigned.After(from):
+		return fmt.Sprintf("the bundle starts from a signed head (seq %d) signed at %s, after the range you expect begins (%s): earlier entries were skipped", m.AnchorSeq, anchorSigned.UTC().Format(time.RFC3339), o.ExpectFrom), false, nil
+	case newestSigned.Before(to):
+		return fmt.Sprintf("the newest signed head is from %s, before the end of the range you expect (%s): entries between are not vouched for. Export again once a later head exists", newestSigned.UTC().Format(time.RFC3339), o.ExpectTo), false, nil
+	}
+	return "", true, nil
 }
 
 func entryAt(entries []Entry, seq int64) (Entry, bool) {

@@ -36,9 +36,11 @@ func IsTimeout(err error) bool {
 // Export reads the bundle of a site for from <= created_at < to. Run it in one
 // read-only repeatable-read transaction so entries, heads and tip agree.
 //
-// The bundle starts at the newest signed head before the range (the
-// checkpoint, anchor_seq; none = the site's first entry) and ends at the first
-// signed head at or after the range, or at the chain's end. Each end is thus
+// The bundle starts at the newest signed head before the range that was
+// signed before the range began (the checkpoint, anchor_seq; none = the site's
+// first entry) and ends at the first signed head after the range that was
+// signed after the range ended, or at the chain's end. A verifier can then
+// check the range against the signing times (--expect-from, --expect-to). Each end is thus
 // vouched for by a signature, and the cost is the distance between two heads,
 // not the history of the site. maxEntries bounds the entry count.
 func Export(ctx context.Context, db Querier, siteID, timezone string, from, to, now time.Time, maxEntries int64) (*Bundle, error) {
@@ -48,7 +50,7 @@ func Export(ctx context.Context, db Querier, siteID, timezone string, from, to, 
 	}
 	siteID = id.String()
 	b := &Bundle{Manifest: Manifest{SiteID: siteID, SiteTimezone: timezone,
-		From: from.UTC().Format(time.RFC3339), To: to.UTC().Format(time.RFC3339), ExportedAt: now.UTC().Format(time.RFC3339Nano)}}
+		From: from.UTC().Format(time.RFC3339Nano), To: to.UTC().Format(time.RFC3339Nano), ExportedAt: now.UTC().Format(time.RFC3339Nano)}}
 
 	var tipHash []byte
 	err = db.QueryRow(ctx, `SELECT last_seq, last_hash FROM record_chain_heads WHERE site_id = $1::uuid`, siteID).Scan(&b.Manifest.ChainTipSeq, &tipHash)
@@ -68,12 +70,12 @@ func Export(ctx context.Context, db Querier, siteID, timezone string, from, to, 
 	}
 
 	var anchor int64
-	if err := db.QueryRow(ctx, `SELECT COALESCE(max(seq), 0) FROM signed_heads WHERE site_id = $1::uuid AND seq < $2`, siteID, *lo).Scan(&anchor); err != nil {
+	if err := db.QueryRow(ctx, `SELECT COALESCE(max(seq), 0) FROM signed_heads WHERE site_id = $1::uuid AND seq < $2 AND signed_at <= $3`, siteID, *lo, from).Scan(&anchor); err != nil {
 		return nil, err
 	}
 	end := b.Manifest.ChainTipSeq
 	var firstSigned *int64
-	if err := db.QueryRow(ctx, `SELECT min(seq) FROM signed_heads WHERE site_id = $1::uuid AND seq >= $2`, siteID, *hi).Scan(&firstSigned); err != nil {
+	if err := db.QueryRow(ctx, `SELECT min(seq) FROM signed_heads WHERE site_id = $1::uuid AND seq >= $2 AND signed_at >= $3`, siteID, *hi, to).Scan(&firstSigned); err != nil {
 		return nil, err
 	}
 	if firstSigned != nil && *firstSigned < end {

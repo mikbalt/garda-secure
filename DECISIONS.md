@@ -810,7 +810,22 @@ The review queue (`/attendance?tab=review`, `reviewAttendance`) is admin/supervi
   entries. Index `(site_id, created_at)` finds the range without a scan. No background job: a result is returned or refused.
 - **Trust.** The CLI refuses to run without `--pin` (or the explicit `--trust-first-use`, which says so in its output). Wrong fingerprint
   = exit 4. Exit codes: 0 valid, 1 chain/record broken, 2 usage, 3 bundle unreadable/changed, 4 head/key/signature, 5 UNSIGNED, 6 STALE
-  (`--max-age`, default 26 h). A broken chain or head outranks UNSIGNED/STALE; the first break by seq wins.
-- **Does not do:** prove the date range is complete (a range is the exporter's claim; the heads before and after it prove nothing is
-  missing *between* them); replace the signer's own record (`signer export` heads can be cross-checked by hand; an `--anchor` option is a follow-up with TAQ-22).
+  (`--max-age`, default 26 h), 7 UNSIGNED TAIL, 8 UNVERIFIED RECORDS, 9 NO ENTRIES, 10 RANGE MISMATCH. A broken chain or head outranks
+  the rest; the first break by seq wins.
+- **Review hardening (PR #67): the bundle builder is not trusted.** Whoever builds the bundle must not be able to get a plain VALID:
+  (1) a bundle with no entries is NO ENTRIES (9), never valid: a signature cannot show that a site had none. (2) Entries after the
+  newest signed head are UNSIGNED TAIL (7) (STALE if that head is old); the CLI prints the newest head's `signed_at` and `exported_at`,
+  and warns when the bundle is older than `--max-age`. (3) A record said to be superseded by an entry beyond the bundle is UNVERIFIED
+  RECORDS (8), not skipped; `--allow-unverified-records` accepts it and the output still says `VALID WITH UNVERIFIED RECORDS`.
+  (4) The manifest range is only a claim: `--expect-from/--expect-to` (dates, site zone) require the anchor head to be signed before the
+  range starts and the newest head after it ends (else RANGE MISMATCH, 10); without them the output says `NOT AUTHENTICATED`. To make that
+  possible the exporter now picks the anchor as the newest head signed at or before `from` and the end as the first head signed at or
+  after `to`. Entries must also fit the manifest range. Cost: a bundle may start up to an hour earlier and end later than the range.
+  (5) Online: no pin -> `valid: null`, `trust: "unverified_trust"` (the server vouches for itself); `valid_pinned` when a pin is given.
+  Verify and export have separate slots (2 each), one running and 6 per minute per user, and the zip held in memory is capped (256 MB).
+- **Does not do:** prove the date range is complete without `--expect-*` (the heads before and after it prove nothing is missing *between*
+  them); defend against a host root plus the signer's key volume (no key custody boundary is left to cut); replace the signer's own record
+  (`signer export` heads can be cross-checked by hand; an `--anchor` option is a follow-up with TAQ-22).
+- **Known gaps (review notes).** Exports are not audit-logged yet (they hold personal data; admin/supervisor only): add with the audit work.
+  The manifest file hashes only catch damage and careless edits, not a forger; the chain and the signed heads do the protecting.
 

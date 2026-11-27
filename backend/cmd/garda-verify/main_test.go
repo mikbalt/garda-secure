@@ -71,6 +71,17 @@ func TestExitCodes(t *testing.T) {
 	good, key, pin := bundleFile(t, nil, 4, time.Hour)
 	unsigned, _, upin := bundleFile(t, nil, 0, 0)
 	stale, _, spin := bundleFile(t, nil, 2, 72*time.Hour)
+	empty, _, epin2 := bundleFile(t, func(b *chainproof.Bundle) {
+		b.Entries, b.Heads = nil, nil
+		b.Manifest.FirstSeq, b.Manifest.LastSeq, b.Manifest.ChainTipSeq, b.Manifest.ChainTipHash = 0, 0, 0, ""
+	}, 4, time.Hour)
+	truncated, _, tpin := bundleFile(t, func(b *chainproof.Bundle) {
+		b.Entries = b.Entries[:3]
+		b.Manifest.LastSeq, b.Manifest.ChainTipSeq, b.Manifest.ChainTipHash = 3, 3, b.Entries[2].EntryHash
+	}, 2, time.Hour)
+	escape, _, spin2 := bundleFile(t, func(b *chainproof.Bundle) {
+		b.Entries[1].Record, b.Entries[1].RecordState, b.Entries[1].NextSeq = "", chainproof.StateSuperseded, 5
+	}, 4, time.Hour)
 	edited, _, epin := bundleFile(t, func(b *chainproof.Bundle) { b.Entries[2].Record = `{"n": 99}` }, 4, time.Hour)
 
 	for _, c := range []struct {
@@ -89,7 +100,16 @@ func TestExitCodes(t *testing.T) {
 		{"wrong fingerprint", []string{"--pin", strings.Repeat("0", 64), good}, 4, "RESULT: BROKEN"},
 		{"unsigned", []string{"--pin", upin, unsigned}, 5, "RESULT: UNSIGNED"},
 		{"stale", []string{"--pin", spin, stale}, 6, "RESULT: STALE"},
-		{"stale check off", []string{"--pin", spin, "--max-age", "0", stale}, 0, "RESULT: VALID"},
+		{"stale check off is still an unsigned tail", []string{"--pin", spin, "--max-age", "0", stale}, 7, "UNSIGNED TAIL"},
+		{"valid says what it does not prove", []string{"--pin", pin, good}, 0, "does NOT prove"},
+		{"valid says the range is not authenticated", []string{"--pin", pin, good}, 0, "NOT AUTHENTICATED"},
+		{"valid shows freshness", []string{"--pin", pin, good}, 0, "Exported     2026-11-02T00:00:00Z"},
+		{"empty bundle", []string{"--pin", epin2, empty}, 9, "NO ENTRIES (NOT VALID, NOT PROVEN)"},
+		{"truncated tail", []string{"--pin", tpin, truncated}, 7, "UNSIGNED TAIL"},
+		{"superseded escape", []string{"--pin", spin2, escape}, 8, "UNVERIFIED RECORDS"},
+		{"superseded escape, opt-out", []string{"--pin", spin2, "--allow-unverified-records", escape}, 0, "VALID WITH UNVERIFIED RECORDS"},
+		{"range expected, head too old", []string{"--pin", pin, "--expect-from", "2026-11-01", "--expect-to", "2026-11-30", good}, 10, "RANGE MISMATCH"},
+		{"only one expected date", []string{"--pin", pin, "--expect-from", "2026-11-01", good}, 2, ""},
 		{"edited record", []string{"--pin", epin, edited}, 1, "First problem at seq 3, scan 00000000-0000-4000-8000-000000000003"},
 	} {
 		code, out, errs := runCLI(c.args...)
