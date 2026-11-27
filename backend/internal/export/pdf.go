@@ -203,6 +203,46 @@ func (d *Doc) Image(name string, jpegData []byte, wPx, hPx int, maxW, maxH float
 	p.SetY(y + h + 2)
 }
 
+// Banner writes a boxed notice across the page: kind "warn" (amber) or
+// "alert" (red) for something the reader must not miss, "info" (grey) otherwise.
+func (d *Doc) Banner(text, kind string) {
+	p := d.pdf
+	switch kind {
+	case "alert":
+		p.SetFillColor(254, 226, 226)
+		p.SetDrawColor(185, 28, 28)
+	case "warn":
+		p.SetFillColor(254, 243, 199)
+		p.SetDrawColor(180, 83, 9)
+	default:
+		p.SetFillColor(241, 245, 249)
+		p.SetDrawColor(100, 116, 139)
+	}
+	p.SetFont(family, "B", 9.5)
+	p.SetLineWidth(0.5)
+	p.MultiCell(0, lineH+0.6, clean(text), "1", "L", true)
+	p.SetLineWidth(0.2)
+	p.SetDrawColor(0, 0, 0)
+	p.Ln(2.5)
+}
+
+// NewPage starts a new page.
+func (d *Doc) NewPage() { d.pdf.AddPage() }
+
+// Bold writes a bold line of text (e.g. a label above a block).
+func (d *Doc) Bold(text string) {
+	d.pdf.SetFont(family, "B", 9)
+	d.pdf.MultiCell(0, lineH, clean(text), "", "L", false)
+}
+
+// Mono writes text in a fixed block (hashes, commands): wrapped anywhere, never cut.
+func (d *Doc) Mono(text string) {
+	d.pdf.SetFont(family, "", 8)
+	d.pdf.SetFillColor(241, 245, 249)
+	d.pdf.MultiCell(0, lineH, clean(text), "", "L", true)
+	d.pdf.Ln(1.5)
+}
+
 // Ln adds vertical space (mm).
 func (d *Doc) Ln(h float64) { d.pdf.Ln(h) }
 
@@ -274,3 +314,6 @@ func clean(s string) string {
 	}
 	return b.String()
 }
+
+// PageNo is the number of the page being written.
+func (d *Doc) PageNo() int { return d.pdf.PageNo() }

@@ -67,6 +67,8 @@ export const CAPABILITIES = {
   reportPatrol: OPS_CLIENT,
   reportIncidents: OPS_CLIENT,
   reportKpi: STAFF,
+  /** Signed monthly proof pack and the chain export bundle (GET /sites/:id/proof-pack, /chain/export): same roles. */
+  exportProofPack: OPS,
   // site creation
   manageSites: ADMIN,
   // people & access (F1): web users and tablet accounts of the realm

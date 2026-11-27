@@ -130,3 +130,12 @@ How to recompute (any language):
 A range starts at the newest signed head that was signed before the range began and ends at the first signed head
 that was signed after the range ended (or at the chain's end), so that both ends are anchored by a signature and
 nothing can be missing in between. See "What VALID does NOT prove" for what that still leaves open.
+
+## Monthly proof pack (PDF)
+
+`GET /api/v1/sites/<site>/proof-pack?month=2026-11&lang=en` (admin, supervisor; Reports → Proof pack in the web app) returns a
+PDF with the month's summaries, the chain head, the newest signed head, the key fingerprint and, on its last page, the steps
+above. The scheduler also keeps the pack of the previous month from the first day of the month. It is built from the same
+checks as `garda-verify` and says so plainly: **UNSIGNED TAIL** when no signature made after the month ended covers the last
+records, **CHAIN CHECK FAILED** when something does not hold, **NO ACTIVITY** for a month without records. A "passed" pack is
+the server checking itself: run `garda-verify` on the export bundle with the fingerprint you hold. See D-074.

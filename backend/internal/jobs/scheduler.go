@@ -87,6 +87,7 @@ func (s *Scheduler) jobs() []job {
 		{"patrol_not_started", time.Minute, 4 * time.Minute, s.CheckPatrolExpectations},
 		{"checkpoint_positions", 6 * time.Hour, 10 * time.Minute, s.LearnCheckpointPositions},
 		{"monthly_recap", 10 * time.Minute, 40 * time.Minute, s.MonthlyRecap},
+		{"proof_packs", 10 * time.Minute, 40 * time.Minute, s.ProofPacks},
 		{"backups", time.Minute, backupTimeout, s.Backups},
 		{"retention", time.Hour, 50 * time.Minute, s.Retention},
 		{"sos_escalation", 30 * time.Second, 2 * time.Minute, s.EscalateSOS},

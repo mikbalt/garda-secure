@@ -4,6 +4,7 @@ import { opsEn } from './ops.en'
 import { adminEn } from './admin.en'
 import { platformEn } from './platform.en'
 import { flagsEn } from './flags.en'
+import { proofpackEn } from './proofpack.en'
 import { usersEn } from './users.en'
 import { patrol2En } from './patrol2.en'
 import { pushEn } from './push.en'
@@ -438,6 +439,7 @@ export const en = {
   ...adminEn,
   ...platformEn,
   ...flagsEn,
+  ...proofpackEn,
   ...usersEn,
   ...patrol2En,
   ...pushEn,

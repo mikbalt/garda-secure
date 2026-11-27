@@ -835,3 +835,32 @@ The review queue (`/attendance?tab=review`, `reviewAttendance`) is admin/supervi
 - **Known gaps (review notes).** Exports are not audit-logged yet (they hold personal data; admin/supervisor only): add with the audit work.
   The manifest file hashes only catch damage and careless edits, not a forger; the chain and the signed heads do the protecting.
 
+### D-074 - Signed monthly proof pack (TAQ-20)
+- **What.** `GET /sites/:id/proof-pack?month=&lang=` returns a PDF (`internal/proofpack`, built with the existing `export.Doc`
+  on go-pdf/fpdf: no new dependency, no migration). It holds the month's attendance (guard-days and shifts), patrols,
+  incident counts by severity and warning-flag counts (TAQ-21), per day and per guard (names and counts only: no employee
+  id, photo, GPS or incident text), the chain section (entries in the month, the chain head, the newest signed head with
+  seq, signed_at, key_id, signature, and the key fingerprint to pin) and, on its own last page, the steps to check it with
+  `garda-verify` and the "What VALID does NOT prove" list. English and Indonesian ("Satpam"); default is the site language.
+- **Same engine, no second opinion.** The chain section comes from `chainproof.Export` and `chainproof.Verify` (the code
+  behind the export and `garda-verify`), run for the month with `--expect-from/--expect-to` as the instructions tell the
+  reader. The pack never signs, hashes or judges the chain itself. The command printed on the last page is the one that
+  gives the result the pack states.
+- **Honest status.** `signed` only when `Verify` says VALID, i.e. a signature made after the month ended covers the last
+  entry. No signed head, entries after the newest one, or a newest head older than the end of the month is **UNSIGNED
+  TAIL**, in a banner on the first page and again on the last; a broken chain is **CHAIN CHECK FAILED**; a month without
+  chain entries is **NO ACTIVITY** (a pack, not an error, and not a proof that nothing happened). The "passed" wording says
+  the server checked itself and points to the client's own check. The current month can be generated; it says it is not over.
+- **Who.** `admin` and `supervisor` (the export's roles; the pack names guards and counts, the bundle behind it holds
+  record text). Another realm's site is 404. It uses the chain export's slots, per-user limit and size limits.
+- **Schedule.** Job `proof_packs` (every 10 minutes, same window as the monthly recap: from 07:00 site time on day 1 to day 5)
+  keeps the previous month's pack in the backups bucket: `proof-packs/<site>/<month>.pdf` once a signature made after the
+  month covers it (written once, then the month is done), until then `<month>.unsigned.pdf` (written once; retried once an
+  hour, since the signer signs hourly). Existence checks plus a conditional write make a rerun, a second worker or a crash
+  harmless. `?stored=true` reads the kept copy. Not kept for a month that nobody generated before the window closed:
+  generate it from the web.
+- **Web.** Reports → Proof pack (admin, supervisor): month, language, download the pack, the kept copy, and the export bundle
+  its last page asks for (`GET /sites/:id/chain/export`, unchanged).
+- **Limits kept.** The pack is made from the database as it is now; garda-verify on a fresh export is still the check that
+  does not trust the server. Pinning needs the fingerprint from installation: the one printed in the pack is the server's
+  claim, and the instructions say to compare it with the one the client holds.

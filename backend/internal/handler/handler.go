@@ -96,6 +96,8 @@ func (h *Handler) Register(api fiber.Router) {
 	// Chain verification (TAQ-18): the result needs no record content; the bundle has it.
 	sites.Get("/:id/chain/verify", web(rolesOpsCli...), h.verifyChain)
 	sites.Get("/:id/chain/export", web(rolesOps...), h.exportChainBundle)
+	// Signed monthly proof pack (TAQ-20): a PDF over the same chain; same roles as the export.
+	sites.Get("/:id/proof-pack", web(rolesOps...), h.proofPack)
 	sites.Get("/:id/floorplans", web(rolesWeb...), h.listFloorplans)
 	sites.Post("/:id/floorplans", web(rolesAdmin...), h.uploadFloorplan)
 	sites.Delete("/:id/floorplans/:floorplanId", web(rolesAdmin...), h.deleteFloorplan)

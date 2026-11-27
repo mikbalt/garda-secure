@@ -487,6 +487,17 @@ on('GET', '/incidents/:id/pdf', ({ params }) => {
   ]
   return Object.assign(pdfBlob(`Incident report - ${i.type}`, lines), { __file: `incident-${i.id}.pdf` })
 })
+on('GET', '/sites/:id/proof-pack', ({ params, query }) => {
+  const site = byId(w.sites, params.id)
+  if (!/^\d{4}-\d{2}$/.test(query.month ?? '')) throw bad('invalid_month', 'month must be YYYY-MM')
+  if (query.lang && query.lang !== 'en' && query.lang !== 'id') throw bad('invalid_lang', 'lang must be en or id')
+  if (query.stored === 'true') throw bad('proof_pack_not_kept', 'no proof pack was kept for that month')
+  const lines = [`Site: ${site.name}`, `Month: ${query.month}`, 'Demo data: the real pack is made by the server (D-074).', '', 'UNSIGNED TAIL: the demo has no signer.']
+  return Object.assign(pdfBlob(`Proof pack ${query.month}`, lines), { __file: `proof-pack-${query.month}.pdf` })
+})
+on('GET', '/sites/:id/chain/export', ({ params, query }) =>
+  Object.assign(new Blob([`demo bundle ${params.id} ${query.from}..${query.to}`], { type: 'application/zip' }), { __file: `garda-chain-demo-${query.from}_${query.to}.zip` }),
+)
 on('PUT', '/incidents/:id/status', ({ params, body }) => Object.assign(byId(w.incidents, params.id), { status: body.status, updated_at: iso(now()) }))
 on('POST', '/incidents/:id/amendments', ({ params, body }) => {
   if (!String(body.reason ?? '').trim()) throw bad('reason_required', 'a reason is required')

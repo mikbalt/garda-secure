@@ -4,6 +4,7 @@ import { opsId } from './ops.id'
 import { adminId } from './admin.id'
 import { platformId } from './platform.id'
 import { flagsId } from './flags.id'
+import { proofpackId } from './proofpack.id'
 import { usersId } from './users.id'
 import { patrol2Id } from './patrol2.id'
 import { pushId } from './push.id'
@@ -424,6 +425,7 @@ export const id: Dict = {
   ...adminId,
   ...platformId,
   ...flagsId,
+  ...proofpackId,
   ...usersId,
   ...patrol2Id,
   ...pushId,
