@@ -90,6 +90,7 @@ Mobile (D-024) — open audit items, see docs/audit-2026-10.md
 
 | Task | Agent | Date | Ref |
 |---|---|---|---|
+| Tamper-evidence docs and demo: one-page explainer (EN/ID), claims table with evidence, `docs/tamper-evidence/demo/demo.sh` (seed, export, VALID, edit caught, tampered bundle) (TAQ-23) | mokhataq/taq-23 | 2026-11-27 | docs/tamper-evidence/. Stacked on #68 (merge after it). Open: which claims sales may use; strict `--expect-*` demo only from the day after seeding |
 | Signed monthly proof-pack PDF per site and month: summaries, chain head, newest signed head, key fingerprint, verification steps on the last page (EN/ID), UNSIGNED TAIL notice; web Reports -> Proof pack; scheduled `proof_packs` job; no migration (D-074, TAQ-20; stacked on #67) | `mokhataq/taq-20` | 2026-11-27 | this PR |
 | Backend: per-site hash chain over attendance, scan and incident records, migration 011, `FirstChainBreak` (D-069, TAQ-17; verification endpoint is TAQ-18) | `mikbalt/taq-17-chain` | 2026-11-26 | this PR |
 | Time-bound checkpoint QR: `SP2:` payload with a signed window (`QR_WINDOW`, default 30 d), scans judged by event time with 10 min skew, stale scans accepted but flagged `qr_stale`; mobile parses SP2; no migration (D-072, TAQ-19) | `mokhataq/taq-19` | 2026-11-26 | this PR |
