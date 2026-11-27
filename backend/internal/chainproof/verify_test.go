@@ -183,7 +183,12 @@ func TestForgedPastIsCaughtBySignedHead(t *testing.T) {
 func TestForgedHeadSignature(t *testing.T) {
 	f := newFixture(t, 8, 4, 8)
 	sig := []byte(f.b.Heads[0].Signature)
-	sig[0] ^= 1
+	// swap the first hex digit for a different valid one (a bit flip can leave the hex alphabet)
+	if sig[0] == '0' {
+		sig[0] = '1'
+	} else {
+		sig[0] = '0'
+	}
 	f.b.Heads[0].Signature = string(sig)
 	wantStatus(t, f.verify(Options{}), StatusBroken, 4, 4, "signature does not verify")
 }
