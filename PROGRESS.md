@@ -9,6 +9,7 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 
 | Task | Agent | Since | Notes |
 |---|---|---|---|
+| TAQ-43 UI revamp T1: design tokens and theme foundation (web) | mokhataq/taq-43-tokens | 2026-11-23 | tailwind.config.ts, index.css, web/DESIGN.md only |
 
 ## Migration numbers
 
