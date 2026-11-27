@@ -90,3 +90,13 @@ Zip berisi `manifest.json` (format, `site_id`, rentang, `anchor_seq`, `first_seq
 `entries.jsonl` (satu entri per baris: `seq`, `kind`, `record_id`, `record_hash`, `prev_hash`, `entry_hash`, `hash_version`, `origin`, `created_at`, `record_state`, dan teks `record`),
 `heads.json` (tanda tangan kepala rantai, format sama dengan `signer export`) dan `keyring.json` (kunci **publik** signer). Tidak ada kunci privat di bundel.
 Rumus perhitungan ulang ada di [versi Inggris](chain-verification.md#bundle-format-garda-chain-bundlev1).
+
+## Paket bukti bulanan (PDF)
+
+`GET /api/v1/sites/<lokasi>/proof-pack?month=2026-11&lang=id` (admin, supervisor; Laporan → Paket bukti di aplikasi web)
+mengembalikan PDF berisi ringkasan bulan itu, hash rantai, tanda tangan terbaru, sidik jari kunci, dan di halaman terakhir
+langkah-langkah di atas. Penjadwal juga menyimpan paket bulan sebelumnya mulai hari pertama bulan. Paket ini memakai
+pemeriksaan yang sama dengan `garda-verify` dan menyatakannya terus terang: **UNSIGNED TAIL** bila belum ada tanda tangan
+setelah akhir bulan yang mencakup catatan terakhir, **PEMERIKSAAN RANTAI GAGAL** bila ada yang tidak cocok, **TIDAK ADA
+AKTIVITAS** untuk bulan tanpa catatan. Paket yang "lolos" adalah server yang memeriksa dirinya sendiri: jalankan `garda-verify`
+pada berkas ekspor dengan sidik jari yang Anda pegang. Lihat D-074.

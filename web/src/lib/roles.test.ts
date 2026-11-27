@@ -37,6 +37,7 @@ const EXPECTED: Record<Capability, Role[]> = {
   reportPatrol: ['admin', 'supervisor', 'client-readonly'],
   reportIncidents: ['admin', 'supervisor', 'client-readonly'],
   reportKpi: ['admin', 'supervisor', 'hr'],
+  exportProofPack: ['admin', 'supervisor'],
   manageSites: ['admin'],
   manageUsers: ['admin'],
   manageDeviceAccounts: ['admin'],

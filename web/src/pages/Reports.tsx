@@ -11,6 +11,7 @@ import { PatrolReport } from './reports/PatrolReport'
 import { IncidentReport } from './reports/IncidentReport'
 import { KpiReport } from './reports/KpiReport'
 import { ComplianceReport } from './reports/ComplianceReport'
+import { ProofPackReport } from './reports/ProofPackReport'
 import type { Site } from '../types'
 
 const FORMAT_NAME = { xlsx: 'Excel', csv: 'CSV', pdf: 'PDF' } as const
@@ -95,6 +96,7 @@ function ReportView({ def, site }: { def: ReportDef; site: Site }) {
       {def.key === 'patrol' && <PatrolReport site={site} title={title} />}
       {def.key === 'incidents' && <IncidentReport site={site} title={title} />}
       {def.key === 'kpi' && <KpiReport site={site} title={title} />}
+      {def.key === 'proofpack' && <ProofPackReport site={site} />}
       {def.key === 'compliance' && <ComplianceReport site={site} title={title} />}
     </>
   )

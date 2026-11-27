@@ -1,9 +1,9 @@
-import { CalendarCheck, CalendarClock, CalendarRange, Route as RouteIcon, ShieldAlert, Trophy, type LucideIcon } from 'lucide-react'
+import { CalendarCheck, CalendarClock, CalendarRange, FileCheck2, Route as RouteIcon, ShieldAlert, Trophy, type LucideIcon } from 'lucide-react'
 import type { ExportFormat } from '../../components/exportFormat'
 import type { Key } from '../../i18n/context'
 import type { Capability } from '../../lib/roles'
 
-export type ReportKey = 'daily' | 'monthly' | 'patrol' | 'compliance' | 'incidents' | 'kpi'
+export type ReportKey = 'daily' | 'monthly' | 'patrol' | 'compliance' | 'incidents' | 'kpi' | 'proofpack'
 
 export type ReportTone = 'green' | 'blue' | 'violet' | 'orange' | 'amber' | 'teal'
 
@@ -30,6 +30,7 @@ export const REPORTS: ReportDef[] = [
   { key: 'compliance', cap: 'reportPatrol', icon: CalendarClock, tone: 'teal', title: 'p2.rep.comp.title', question: 'p2.rep.comp.q', audience: 'p2.rep.comp.who', formats: ['xlsx', 'csv'] },
   { key: 'incidents', cap: 'reportIncidents', icon: ShieldAlert, tone: 'orange', title: 'adm.rep.incidents.title', question: 'adm.rep.incidents.q', audience: 'adm.rep.incidents.who', formats: ['xlsx', 'csv', 'pdf'] },
   { key: 'kpi', cap: 'reportKpi', icon: Trophy, tone: 'amber', title: 'adm.rep.kpi.title', question: 'adm.rep.kpi.q', audience: 'adm.rep.kpi.who', formats: ['xlsx', 'csv'] },
+  { key: 'proofpack', cap: 'exportProofPack', icon: FileCheck2, tone: 'teal', title: 'pp.title', question: 'pp.q', audience: 'pp.who', formats: ['pdf'] },
 ]
 
 export const toneClass: Record<ReportTone, string> = {
