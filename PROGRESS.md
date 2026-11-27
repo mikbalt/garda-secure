@@ -10,6 +10,7 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 | Task | Agent | Since | Notes |
 |---|---|---|---|
 | TAQ-43 UI revamp T1: design tokens and theme foundation (web) | mokhataq/taq-43-tokens | 2026-11-23 | tailwind.config.ts, index.css, web/DESIGN.md only |
+| TAQ-58 verification usability: sign-head-on-export, amended records, online statuses, export audit (migration 015, D-075) | mokhataq/taq-58 | 2026-11-27 | chainproof export, signer client, handlers, docs |
 
 ## Migration numbers
 
@@ -29,7 +30,8 @@ Agent tag format: `<pc-or-user>/<short-name>` — e.g. `muhamhad-pc1/claude`.
 | 012 | flag_reviews (TAQ-21) | `mikbalt/guard-fraud` | pushed |
 | 013 | signed_heads, keyring, owner/runtime role split (TAQ-56) | `mikbalt/taq-56-signer` | in review |
 | 014 | chain_export (`chain_record_canonical`, chain time index; TAQ-18) | `mikbalt/taq-18-verify` | in review |
-| 015 | *(next free)* | | |
+| 015 | export_audit (TAQ-58) | `mokhataq/taq-58` | claimed |
+| 016 | *(next free)* | | |
 
 ## Milestones (PRD §11)
 
