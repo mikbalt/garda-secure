@@ -64,6 +64,7 @@ type Config struct {
 	GuardTokenSecret       string        // GUARD_TOKEN_SECRET (>= 32 bytes when set)
 	GuardSessionTTL        time.Duration // GUARD_SESSION_TTL, default 12h
 	GuardTokenGrace        time.Duration // GUARD_TOKEN_GRACE, default 168h (= offline sync window)
+	SignerURL              string        // SIGNER_URL: the signer service (http://signer:9092); empty = exports do not ask for a fresh head (TAQ-58)
 	QRSigningSecret        string        // QR_SIGNING_SECRET (>= 32 bytes when set)
 	QRWindow               time.Duration // QR_WINDOW, default 720h: validity of a printed checkpoint QR (TAQ-19)
 	RateLimitGuardSessions int           // RATE_LIMIT_GUARD_SESSIONS_PER_MIN, PIN checks per tablet
@@ -140,6 +141,7 @@ func Load() (*Config, error) {
 		WhatsAppAPIURLAllowlist: splitList(envOrDefault("WHATSAPP_API_URL_ALLOWLIST", "https://graph.facebook.com/")),
 		SMTPAllowedPrivateNets:  splitList(os.Getenv("SMTP_ALLOWED_PRIVATE_NETS")),
 		CORSAllowedOrigins:      os.Getenv("CORS_ALLOWED_ORIGINS"),
+		SignerURL:               strings.TrimRight(os.Getenv("SIGNER_URL"), "/"),
 		AppPublicURL:            strings.TrimRight(os.Getenv("APP_PUBLIC_URL"), "/"),
 		SettingsEncryptionKey:   os.Getenv("SETTINGS_ENCRYPTION_KEY"),
 		SMTPHost:                os.Getenv("SMTP_HOST"),

@@ -42,7 +42,8 @@ func IsTimeout(err error) bool {
 // signed after the range ended, or at the chain's end. A verifier can then
 // check the range against the signing times (--expect-from, --expect-to). Each end is thus
 // vouched for by a signature, and the cost is the distance between two heads,
-// not the history of the site. maxEntries bounds the entry count.
+// not the history of the site. When an entry of the bundle is superseded by an entry beyond its end, the end moves on to the first signed head (or the chain's end) that
+// covers it, so the changed record can be checked (D-075). maxEntries bounds the entry count.
 func Export(ctx context.Context, db Querier, siteID, timezone string, from, to, now time.Time, maxEntries int64) (*Bundle, error) {
 	id, err := uuid.Parse(siteID)
 	if err != nil {
@@ -80,6 +81,33 @@ func Export(ctx context.Context, db Querier, siteID, timezone string, from, to, 
 	}
 	if firstSigned != nil && *firstSigned < end {
 		end = *firstSigned
+	}
+	// Records changed inside the bundle by an entry beyond its end could not be
+	// checked against their text (exit 8): the bundle runs on to the first
+	// signed head (or the chain's end) that covers every superseding entry.
+	for end < b.Manifest.ChainTipSeq {
+		var beyond int64
+		if err := db.QueryRow(ctx, `SELECT COALESCE(max(n.next_seq), 0) FROM (
+				SELECT (SELECT min(x.seq) FROM record_chain x WHERE x.site_id = c.site_id AND x.kind = c.kind
+				        AND x.record_id = c.record_id AND x.seq > c.seq) AS next_seq
+				FROM record_chain c WHERE c.site_id = $1::uuid AND c.seq > $2 AND c.seq <= $3) n`, siteID, anchor, end).Scan(&beyond); err != nil {
+			return nil, err
+		}
+		if beyond <= end {
+			break
+		}
+		next := b.Manifest.ChainTipSeq
+		var signedAfter *int64
+		if err := db.QueryRow(ctx, `SELECT min(seq) FROM signed_heads WHERE site_id = $1::uuid AND seq >= $2`, siteID, beyond).Scan(&signedAfter); err != nil {
+			return nil, err
+		}
+		if signedAfter != nil && *signedAfter < next {
+			next = *signedAfter
+		}
+		if next-anchor > maxEntries {
+			break // too far: the check below says so, or the records stay unverified
+		}
+		end = next
 	}
 	if n := end - anchor; n > maxEntries {
 		return nil, &TooLargeError{Entries: n, Limit: maxEntries}

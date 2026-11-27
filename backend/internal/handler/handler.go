@@ -23,6 +23,7 @@ import (
 	"github.com/securepatrol/backend/internal/repository"
 	"github.com/securepatrol/backend/internal/service"
 	"github.com/securepatrol/backend/internal/settings"
+	"github.com/securepatrol/backend/internal/signer"
 	"github.com/securepatrol/backend/internal/storage"
 )
 
@@ -35,6 +36,9 @@ type Handler struct {
 	Settings *settings.Store
 	Cfg      *config.Config
 	Log      zerolog.Logger
+	// Signer is asked for a fresh signed head before every chain export
+	// (TAQ-58, D-075); nil = not configured, exports then say so.
+	Signer signer.HeadSigner
 	// Live fans patrol changes out to WebSocket subscribers; Mount creates it
 	// when nil. Single-instance (see internal/livehub).
 	Live *livehub.Hub
@@ -96,6 +100,7 @@ func (h *Handler) Register(api fiber.Router) {
 	// Chain verification (TAQ-18): the result needs no record content; the bundle has it.
 	sites.Get("/:id/chain/verify", web(rolesOpsCli...), h.verifyChain)
 	sites.Get("/:id/chain/export", web(rolesOps...), h.exportChainBundle)
+	sites.Get("/:id/chain/exports", web(rolesOps...), h.listExports)
 	// Signed monthly proof pack (TAQ-20): a PDF over the same chain; same roles as the export.
 	sites.Get("/:id/proof-pack", web(rolesOps...), h.proofPack)
 	sites.Get("/:id/floorplans", web(rolesWeb...), h.listFloorplans)

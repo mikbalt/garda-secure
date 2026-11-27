@@ -40,7 +40,7 @@ pemeriksaan klien sendiri **[P1]**.
 | | |
 |---|---|
 | **Akses administrator (root) ke server.** | Siapa pun yang punya akses root ke server tempat Garda berjalan juga bisa membaca file kunci signer dan menandatangani riwayat yang ditulis ulang. Sidik jari milik klien sendiri, ekspor lama yang disimpan klien, dan pergantian kunci yang dilakukan di depan klien membatasi hal ini **[L1]**. |
-| **Catatan sesudah tanda tangan terakhir.** | Catatan terbaru, sampai tanda tangan berikutnya (kira-kira satu jam), belum tercakup tanda tangan. Alat menampilkan `UNSIGNED TAIL` dan tidak menyebutnya valid; file yang terpotong juga tampak sama **[L2]**. |
+| **Catatan sesudah tanda tangan terakhir.** | Ekspor meminta tanda tangan baru dari signer saat dibuat, jadi catatan terbaru tercakup. Bila signer tidak menjawab atau menolak, file tetap dibuat, alat menampilkan `UNSIGNED TAIL` beserta alasannya dan tidak menyebutnya valid; file yang terpotong juga tampak sama **[L2]**. |
 | **Ekspor lama yang dipakai seolah baru.** | File lama yang asli tetap valid selamanya untuk isinya. Lihat tanggal ekspor dan tanggal tanda tangannya **[L3]**. |
 | **Angka di PDF bukti bulanan.** | Total absensi, patroli, insiden, dan tanda diambil dari basis data saat PDF dibuat. Angka itu tidak ditandatangani, dan PDF menyatakannya **[L4]**. |
 | **Foto kode QR yang dicetak.** | Stiker tidak bisa berubah. Salinannya bisa dipakai ulang sampai batas waktu kode habis (30 hari secara bawaan) ditambah sekitar 24 jam **[L5]**. |
@@ -48,8 +48,7 @@ pemeriksaan klien sendiri **[P1]**.
 | **Apakah isi yang dimasukkan itu benar.** | Rantai menunjukkan catatan tidak berubah sesudah disimpan, bukan bahwa catatan itu benar saat dimasukkan. Orang yang memakai aplikasinya sendiri masih bisa menambah baris baru yang salah; baris itu tampak sebagai baris baru dengan waktunya **[L7]**. |
 | **Sidik jari yang Anda pegang.** | Hanya sidik jari yang diterima klien lewat jalur lain yang berlaku. Sidik jari yang tercetak di PDF adalah klaim server sendiri **[L8]**. |
 
-Juga: catatan yang sudah ada saat rantai dinyalakan hanya terbukti sebagaimana keadaannya pada hari itu **[L9]**, dan pengunduhan file
-ekspor belum dicatat (belum ada catatan siapa yang mengunduh) **[L10]**.
+Juga: catatan yang sudah ada saat rantai dinyalakan hanya terbukti sebagaimana keadaannya pada hari itu **[L9]**, dan setiap ekspor dicatat (siapa, lokasi dan rentang mana, kapan, seberapa besar), tetapi apa yang dilakukan dengan file itu sesudahnya tidak dicatat **[L10]**.
 
 ## Kata yang dipakai dan yang dihindari
 

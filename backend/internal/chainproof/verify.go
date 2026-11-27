@@ -404,7 +404,7 @@ func Verify(b *Bundle, o Options) Result {
 	case newest == nil:
 		res.Status = StatusUnsigned
 		res.Break = &Break{Seq: b.Entries[0].Seq, Kind: b.Entries[0].Kind, ID: b.Entries[0].RecordID, Class: ClassHead,
-			Reason: fmt.Sprintf("the bundle has %d entries and no signed head", len(b.Entries))}
+			Reason: fmt.Sprintf("the bundle has %d entries and no signed head%s", len(b.Entries), signingNote(m))}
 		return res
 	case newest.Seq < m.LastSeq && o.MaxAge > 0 && now.Sub(newest.SignedAt) > o.MaxAge:
 		next, _ := entryAt(b.Entries, newest.Seq+1)
@@ -416,8 +416,8 @@ func Verify(b *Bundle, o Options) Result {
 	case newest.Seq < m.LastSeq:
 		next, _ := entryAt(b.Entries, newest.Seq+1)
 		return notProven(StatusUnsignedTail, &next, ClassHead,
-			"UNSIGNED TAIL: %d entries after the newest signed head (seq %d, signed %s): no signature vouches for them yet, and a bundle cut short looks the same. Export again after the next signed head",
-			m.LastSeq-newest.Seq, newest.Seq, newest.SignedAt.UTC().Format(time.RFC3339))
+			"UNSIGNED TAIL: %d entries after the newest signed head (seq %d, signed %s): no signature vouches for them yet, and a bundle cut short looks the same. Export again after the next signed head.%s",
+			m.LastSeq-newest.Seq, newest.Seq, newest.SignedAt.UTC().Format(time.RFC3339), signingNote(m))
 	}
 
 	// The range the caller expects, against what the bundle can show.
@@ -463,6 +463,62 @@ func Verify(b *Bundle, o Options) Result {
 	}
 	res.Status = StatusValid
 	return res
+}
+
+// signingNote says why the export did not end on a signed head, when the
+// exporting server asked the signer and it did not sign. It explains; it never
+// changes a verdict.
+func signingNote(m Manifest) string {
+	switch m.Signing {
+	case signer.OutcomeUnreachable, signer.OutcomeRefused, signer.OutcomeNotSetup:
+		r := m.SigningReason
+		if r == "" {
+			r = m.Signing
+		}
+		return fmt.Sprintf(" (when exporting, the server asked for a fresh signed head: %s: %s)", m.Signing, r)
+	case signer.OutcomeReused:
+		return " (when exporting, a head signed in the last few seconds was reused: entries made since are not signed yet)"
+	}
+	return ""
+}
+
+// Online states of a check (Summarize): what a dashboard shows. Only
+// StateBroken is a failure; the others say what is proven and what is not.
+const (
+	StateValidPinned     = "valid_pinned"       // holds, and the caller's pinned key vouches for it
+	StateUnverifiedTrust = "unverified_trust"   // holds, but the key came from the same server: proves nothing to the caller
+	StateUnsignedTail    = "unsigned_tail"      // holds so far; the newest entries are not signed yet
+	StateUnverifiedRecs  = "unverified_records" // holds; some records could not be checked against their text
+	StateNoEntries       = "no_entries"         // nothing in the range to check
+	StateBroken          = "broken"             // something does not hold
+)
+
+// Summary is the state of an online check and how to show it.
+type Summary struct {
+	State string `json:"state"`
+	// Tone: "ok", "notice" (not proven yet, nothing is wrong) or "broken".
+	Tone string `json:"tone"`
+	// Message is plain English for logs and API users; a UI translates State.
+	Message string `json:"message"`
+}
+
+// Summarize maps a verification of the server's own export to the state a
+// client shows. Nothing but StateBroken has the "broken" tone.
+func Summarize(r Result, pinned bool) Summary {
+	switch r.Status {
+	case StatusValid:
+		if pinned {
+			return Summary{StateValidPinned, "ok", "The chain and its signed heads hold, and the signer key you pinned vouches for them."}
+		}
+		return Summary{StateUnverifiedTrust, "notice", "The chain and its signed heads hold, but the signer key came from this server: give the key fingerprint you were handed (pin) for a real answer."}
+	case StatusUnsignedTail, StatusUnsigned, StatusStale:
+		return Summary{StateUnsignedTail, "notice", "Nothing is wrong so far, but the newest entries are not covered by a signed head yet. Check again after the next signed head."}
+	case StatusUnverified, StatusUnverifiedOK:
+		return Summary{StateUnverifiedRecs, "notice", "The chain holds, but some records changed again after the range and could not be checked against their text."}
+	case StatusNoEntries:
+		return Summary{StateNoEntries, "notice", "There are no chain entries in this range, so there is nothing to check."}
+	}
+	return Summary{StateBroken, "broken", "Something does not hold: see first_break."}
 }
 
 // checkExpectedRange compares the range the caller expects (dates in the
