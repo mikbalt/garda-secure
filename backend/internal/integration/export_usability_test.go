@@ -4,6 +4,7 @@ package integration
 
 import (
 	"context"
+	"crypto/ed25519"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -93,11 +94,11 @@ func TestExportWithoutAnswerFromTheSignerIsAnHonestUnsignedTail(t *testing.T) {
 	e.scanMore(t, site)              // ...and this one is not
 
 	b, hdr := exportHTTP(t, e, site.site)
-	if hdr.Get("X-Bundle-Signing") != signer.OutcomeUnreachable || b.Manifest.SigningReason == "" {
+	if hdr.Get("X-Bundle-Signing") != signer.OutcomeUnreachable || b.Manifest.SigningReason != signer.ReasonUnreachable {
 		t.Fatalf("signing %q reason %q", hdr.Get("X-Bundle-Signing"), b.Manifest.SigningReason)
 	}
 	r := verifyLater(b, pubID(key))
-	if r.Status != chainproof.StatusUnsignedTail || r.Code() != chainproof.CodeUnsignedTail || !strings.Contains(r.Break.Reason, "unreachable") {
+	if r.Status != chainproof.StatusUnsignedTail || r.Code() != chainproof.CodeUnsignedTail || !strings.Contains(r.Break.Reason, signer.ReasonUnreachable) {
 		t.Fatalf("a signer outage must be an honest unsigned tail with the reason: %s %+v", r.Status, r.Break)
 	}
 }
@@ -115,11 +116,19 @@ func TestExportWhenTheSignerRefusesNeverFakesASignature(t *testing.T) {
 	e.scanMore(t, site)
 
 	b, hdr := exportHTTP(t, e, site.site)
-	if hdr.Get("X-Bundle-Signing") != signer.OutcomeRefused || !strings.Contains(b.Manifest.SigningReason, "different hash") {
+	if hdr.Get("X-Bundle-Signing") != signer.OutcomeRefused || b.Manifest.SigningReason != signer.ReasonRefused {
 		t.Fatalf("signing %q reason %q", hdr.Get("X-Bundle-Signing"), b.Manifest.SigningReason)
 	}
-	if r := verifyLater(b, pubID(key)); r.Status != chainproof.StatusUnsignedTail || !strings.Contains(r.Break.Reason, "refused") {
+	r := verifyLater(b, pubID(key))
+	if r.Status != chainproof.StatusUnsignedTail || !strings.Contains(r.Break.Reason, "refused") {
 		t.Fatalf("%s %+v", r.Status, r.Break)
+	}
+	// the signer's own words (internal state) stay out of the bundle, the verifier output and the audit
+	list := e.do("GET", "/api/v1/sites/"+site.site+"/chain/exports", e.web(realm4, "exporter", "admin"), "", nil)
+	for what, text := range map[string]string{"manifest": b.Manifest.SigningReason, "verifier": r.Break.Reason, "audit": string(list.raw)} {
+		if strings.Contains(text, "different hash") || strings.Contains(text, "already signed") {
+			t.Errorf("%s leaks the signer's refusal text: %s", what, text)
+		}
 	}
 }
 
@@ -177,6 +186,77 @@ func TestAmendedRecordIsVerifiedEndToEnd(t *testing.T) {
 	if r := chainproof.Verify(b, opts); r.Status != chainproof.StatusValid || r.RecordsNotChecked != 0 || r.Code() != 0 {
 		t.Fatalf("an amended record in range must verify end to end: %s %+v", r.Status, r.Break)
 	}
+	// and with the range the caller expects, checked against the signing times
+	if r := chainproof.Verify(asDay(b), expecting(key)); r.Status != chainproof.StatusValid || !r.RangeAuthenticated || r.Code() != 0 {
+		t.Fatalf("with --expect-from/--expect-to: %s %+v", r.Status, r.Break)
+	}
+}
+
+// asDay re-labels the bundle's range as today's date range. The entries were
+// picked with a time range that ends between two entries of the same second
+// (a test has no other way to put an amendment after "the end of the day"); the
+// manifest is only the exporter's claim and the verifier checks it against the signatures.
+func asDay(b *chainproof.Bundle) *chainproof.Bundle {
+	day, _ := time.Parse("2006-01-02", today())
+	b.Manifest.From, b.Manifest.To = day.Format(time.RFC3339), day.AddDate(0, 0, 1).Format(time.RFC3339)
+	return b
+}
+
+func expecting(key ed25519.PrivateKey) chainproof.Options {
+	return chainproof.Options{Pins: []string{pubID(key)}, MaxAge: 26 * time.Hour, Now: later().Add(time.Minute), ExpectFrom: today(), ExpectTo: today()}
+}
+
+// With an anchor (the bundle starts at a head signed before the range) and the
+// expected range: the amended record still verifies end to end.
+func TestAmendedRecordWithAnchorAndExpectedRange(t *testing.T) {
+	s, key := newSigner(t)
+	e := newEnv(t)
+	a := chainSeed(t, e.pool, "amended anchor")
+	ownerExec(t, e.pool, `UPDATE sites SET timezone = 'UTC' WHERE id = '`+a.site+`'`)
+	a.scan(t, e.pool)                                   // seq 1: before the range
+	signAt(t, s, a.site, time.Now().Add(-48*time.Hour)) // anchor head, signed before the range
+	time.Sleep(20 * time.Millisecond)
+	from := time.Now()
+	time.Sleep(20 * time.Millisecond)
+	a.attendance(t, e.pool)
+	inc := a.incident(t, e.pool) // seq 2, 3
+	time.Sleep(20 * time.Millisecond)
+	to := time.Now()
+	time.Sleep(20 * time.Millisecond)
+	signAt(t, s, a.site, later()) // seq 3, after the range
+	amend(t, e, inc)              // seq 4, beyond the head and the range
+	s.Now = later
+	if _, err := s.SignSite(context.Background(), a.site, signer.ReasonOnDemand); err != nil {
+		t.Fatal(err)
+	}
+	b, err := exportOf(t, rolePool(t, "sp_runtime"), a.site, from, to, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := offline(t, b)
+	if got.Manifest.AnchorSeq != 1 || got.Manifest.LastSeq != 4 {
+		t.Fatalf("anchor %d last %d, want 1 and 4", got.Manifest.AnchorSeq, got.Manifest.LastSeq)
+	}
+	if r := chainproof.Verify(asDay(got), expecting(key)); r.Status != chainproof.StatusValid || !r.RangeAuthenticated || r.RecordsNotChecked != 0 {
+		t.Fatalf("%s %+v", r.Status, r.Break)
+	}
+}
+
+// The extension is bounded by the entry limit: past it the bundle is not
+// stretched and the amended record stays unverified (exit 8), not a failed export.
+func TestAmendmentExtensionStopsAtTheEntryLimit(t *testing.T) {
+	s, key := newSigner(t)
+	e := newEnv(t)
+	site, mid := amendedSite(t, e, s, "amend limit")
+	b, err := exportOf(t, rolePool(t, "sp_runtime"), site.site, mid.Add(-time.Hour), mid, 3) // 3 entries fit, 4 do not
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := offline(t, b)
+	r := chainproof.Verify(got, chainproof.Options{Pins: []string{pubID(key)}, MaxAge: 26 * time.Hour, Now: later(), NoRangeCheck: true})
+	if got.Manifest.LastSeq != 3 || r.Status != chainproof.StatusUnverified || r.Code() != chainproof.CodeUnverified {
+		t.Fatalf("last_seq %d, %s code %d", got.Manifest.LastSeq, r.Status, r.Code())
+	}
 }
 
 // The amending entry is only believed when it is in the bundle: a bundle cut
@@ -196,6 +276,9 @@ func TestForgedSupersededLabelStillExits8(t *testing.T) {
 	r := chainproof.Verify(b, chainproof.Options{Pins: []string{pubID(key)}, MaxAge: 26 * time.Hour, Now: later(), NoRangeCheck: true})
 	if r.Status != chainproof.StatusUnverified || r.Code() != chainproof.CodeUnverified {
 		t.Fatalf("%s code %d: %+v", r.Status, r.Code(), r.Break)
+	}
+	if r := chainproof.Verify(asDay(b), expecting(key)); r.Status != chainproof.StatusUnverified || r.Code() != chainproof.CodeUnverified {
+		t.Fatalf("with the expected range: %s code %d: %+v", r.Status, r.Code(), r.Break)
 	}
 }
 
@@ -373,12 +456,104 @@ func TestUsabilityWalkthroughWithTheRealVerifier(t *testing.T) {
 	time.Sleep(signer.ReuseWindow + 100*time.Millisecond)
 	e.scanMore(t, site)
 	down = true
-	if out, exit := check("signer down"); exit != chainproof.CodeUnsignedTail || !strings.Contains(out, "signer") {
+	if out, exit := check("signer down"); exit != chainproof.CodeUnsignedTail || !strings.Contains(out, "signer_error") {
 		t.Fatalf("signer down: exit %d\n%s", exit, out)
 	}
 	r := e.do("GET", "/api/v1/sites/"+site.site+"/chain/exports", admin, "", nil)
 	t.Logf("export audit: %s", r.raw)
 	if rows := r.obj()["rows"].([]any); len(rows) != 3 {
 		t.Fatalf("audit rows: %d", len(rows))
+	}
+}
+
+// Requests turned away at the gate are not exports: a loop of them must not
+// write audit rows (the table is append-only).
+func TestRejectedExportAttemptsAreNotAudited(t *testing.T) {
+	e := newEnv(t)
+	site := packSite(t, e, "gate audit")
+	admin := e.web(realm4, "looper", "admin")
+	ok, busy := 0, 0
+	for i := 0; i < 14; i++ {
+		code, _, _ := e.raw("GET", "/api/v1/sites/"+site.site+"/chain/export?from="+today()+"&to="+today(), admin, nil)
+		switch code {
+		case 200:
+			ok++
+		case 429:
+			busy++
+		}
+	}
+	for i := 0; i < 4; i++ { // the proof pack shares the user's gate
+		if r := e.do("GET", packURL(site.site, thisMonth(), ""), admin, "", nil); r.status != 429 {
+			t.Fatalf("proof pack through a full gate: %d", r.status)
+		}
+	}
+	var n int
+	if err := e.pool.QueryRow(context.Background(), `SELECT count(*) FROM export_audit WHERE site_id = $1`, site.site).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if busy == 0 || n != ok {
+		t.Fatalf("%d exports, %d turned away, %d audit rows: only real exports are recorded", ok, busy, n)
+	}
+}
+
+// The monthly job records the final kept copy once, and its failures at most once a day:
+// not the hourly refresh of the open copy. The default list leaves system rows out.
+func TestScheduledProofPackAuditIsSparseAndFiltered(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	s, _ := newSigner(t)
+	site := packSite(t, e, "sched audit")
+	store := newMemStore()
+	now := nextMonthStart().Add(8 * time.Hour)
+	count := func(where string) int {
+		var n int
+		if err := e.pool.QueryRow(ctx, `SELECT count(*) FROM export_audit WHERE site_id = $1 AND `+where, site.site).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	for i := 0; i < 5; i++ { // the open copy is refreshed in the first minutes of every hour
+		if err := e.sched.RunProofPacks(ctx, store, now.Add(time.Duration(i)*time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := count("true"); n != 0 {
+		t.Fatalf("%d audit rows for open-copy refreshes, want 0", n)
+	}
+	signAt(t, s, site.site, now.Add(-30*time.Minute))
+	for i := 0; i < 3; i++ {
+		if err := e.sched.RunProofPacks(ctx, store, now.Add(5*time.Hour+time.Duration(i)*10*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := count("kind = 'scheduled' AND actor = 'system' AND result = 'ok'"); n != 1 {
+		t.Fatalf("%d rows for the final copy, want 1", n)
+	}
+	admin := e.web(realm4, "lister", "admin")
+	exportHTTP(t, e, site.site)
+	rows := func(q string) []any {
+		r := e.do("GET", "/api/v1/sites/"+site.site+"/chain/exports"+q, admin, "", nil)
+		if r.status != 200 {
+			t.Fatalf("list %s: %d %s", q, r.status, r.raw)
+		}
+		return r.obj()["rows"].([]any)
+	}
+	if n := len(rows("")); n != 1 {
+		t.Fatalf("default list: %d rows, want the one human export", n)
+	}
+	if n := len(rows("?include_system=true")); n != 2 {
+		t.Fatalf("include_system: %d rows, want 2", n)
+	}
+	if n := len(rows("?kind=scheduled")); n != 1 {
+		t.Fatalf("kind=scheduled: %d rows", n)
+	}
+	if n := len(rows("?actor=exporter")); n != 1 {
+		t.Fatalf("actor filter: %d rows", n)
+	}
+	if n := len(rows("?actor=nobody")); n != 0 {
+		t.Fatalf("actor filter (none): %d rows", n)
+	}
+	if r := e.do("GET", "/api/v1/sites/"+site.site+"/chain/exports?kind=other", admin, "", nil); r.status != 400 {
+		t.Fatalf("bad kind: %d", r.status)
 	}
 }

@@ -197,11 +197,11 @@ func (h *Handler) exportChain(c *fiber.Ctx, kind string, slots chan struct{}, si
 // is an outcome too, never an error.
 func (h *Handler) signNow(ctx context.Context, siteID string) signer.Outcome {
 	if h.Signer == nil {
-		return signer.Outcome{Status: signer.OutcomeNotSetup, Reason: "this install has no signer address (SIGNER_URL)"}
+		return signer.Outcome{Status: signer.OutcomeNotSetup, Reason: signer.ReasonUnconfigured, Detail: "no SIGNER_URL"}
 	}
 	o := h.Signer.SignNow(ctx, siteID)
 	if !o.Signed() {
-		h.Log.Warn().Str("site_id", siteID).Str("outcome", o.Status).Str("reason", o.Reason).Msg("export: no fresh signed head")
+		h.Log.Warn().Str("site_id", siteID).Str("outcome", o.Status).Str("reason", o.Reason).Str("detail", o.Detail).Msg("export: no fresh signed head")
 	}
 	return o
 }
@@ -315,11 +315,17 @@ func (h *Handler) auditExport(c *fiber.Ctx, site *model.Site, kind string, from,
 		Bytes: bytes, Result: result, Signing: signing, Detail: detail})
 }
 
-// auditFailure records an export that did not produce a file; a failure of the
-// audit itself is logged (the caller already answers with an error).
+// auditFailure records an export that was tried and did not produce a file. A
+// request turned away at the gate (verify_busy: slot or rate limit) is not an
+// export attempt and is not recorded: the rows are append-only, and a loop of
+// rejected requests must not be able to fill them. A failure of the audit
+// itself is logged (the caller already answers with an error).
 func (h *Handler) auditFailure(c *fiber.Ctx, site *model.Site, kind string, from, to time.Time, cause error) {
 	result := repository.ExportFailed
 	var se *service.Error
+	if errors.As(cause, &se) && se.Code == "verify_busy" {
+		return
+	}
 	if errors.As(cause, &se) && se.Code == "verify_too_large" {
 		result = repository.ExportTooLarge
 	}
@@ -332,10 +338,12 @@ func (h *Handler) auditFailure(c *fiber.Ctx, site *model.Site, kind string, from
 	}
 }
 
-// GET /sites/:id/chain/exports?limit=&offset=
+// GET /sites/:id/chain/exports?actor=&kind=&include_system=&limit=&offset=
 // The export audit of the site: who exported a bundle or proof pack, for
 // which range, when, how big, and how the head was signed. Admin and
-// supervisor of the site's realm; no content of the exports.
+// supervisor of the site's realm; no content of the exports. Rows of the
+// monthly job (kind scheduled, actor system) are left out unless kind=scheduled
+// or include_system=true.
 func (h *Handler) listExports(c *fiber.Ctx) error {
 	site, err := h.siteFor(c, c.Params("id"))
 	if err != nil {
@@ -349,7 +357,15 @@ func (h *Handler) listExports(c *fiber.Ctx) error {
 	if offset < 0 || offset > 100_000 {
 		return h.fail(c, service.BadRequest("invalid_offset", "offset must be between 0 and 100000"))
 	}
-	rows, err := repository.ListExportAudit(c.Context(), h.DB, middleware.GetPrincipal(c).Realm, site.ID, limit+1, offset)
+	kind := c.Query("kind")
+	switch kind {
+	case "", repository.ExportBundle, repository.ExportProofPack, repository.ExportScheduled:
+	default:
+		return h.fail(c, service.BadRequest("invalid_kind", "kind must be bundle, proof_pack or scheduled"))
+	}
+	rows, err := repository.ListExportAudit(c.Context(), h.DB, repository.ExportAuditFilter{
+		Realm: middleware.GetPrincipal(c).Realm, SiteID: site.ID, Actor: c.Query("actor"), Kind: kind,
+		IncludeSystem: c.Query("include_system") == "true", Limit: limit + 1, Offset: offset})
 	if err != nil {
 		return h.fail(c, err)
 	}

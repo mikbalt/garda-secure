@@ -2,16 +2,18 @@
 -- that leaves the system (an export holds personal data). The row says who,
 -- which site and range, when, how big and how it ended, never the content.
 -- Append-only like audit_log: the application can insert and read, not change.
--- ASCII only.
+-- 'scheduled' rows are the final proof pack kept by the monthly job (one per site and
+-- month) and its failures (at most one a day per site); the hourly refresh of an open
+-- copy is not recorded. ASCII only.
 
 CREATE TABLE export_audit (
     id         BIGSERIAL PRIMARY KEY,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     realm      TEXT        NOT NULL,                 -- the realm that owns the site
     site_id    UUID        NOT NULL,                 -- no FK: audit rows outlive sites
-    actor      TEXT        NOT NULL,                 -- user name, or 'system:scheduler'
+    actor      TEXT        NOT NULL,                 -- user name, or 'system' (kind 'scheduled')
     actor_sub  TEXT        NOT NULL DEFAULT '',      -- Keycloak subject
-    kind       TEXT        NOT NULL CHECK (kind IN ('bundle', 'proof_pack')),
+    kind       TEXT        NOT NULL CHECK (kind IN ('bundle', 'proof_pack', 'scheduled')),
     range_from TIMESTAMPTZ NOT NULL,
     range_to   TIMESTAMPTZ NOT NULL,                 -- exclusive
     bytes      BIGINT      NOT NULL DEFAULT 0,

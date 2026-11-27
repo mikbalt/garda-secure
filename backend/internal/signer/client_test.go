@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -33,13 +34,25 @@ func TestClientOutcomes(t *testing.T) {
 	ctx := context.Background()
 
 	status.Store(409)
-	if o := c.SignNow(ctx, site); o.Status != OutcomeRefused || o.Signed() || o.Reason == "" {
-		t.Fatalf("refused: %+v", o)
+	if o := c.SignNow(ctx, site); o.Status != OutcomeRefused || o.Signed() || o.Reason != ReasonRefused || !strings.Contains(o.Detail, "lower") || strings.Contains(o.Reason, "lower") {
+		t.Fatalf("refused: %+v (fixed reason, raw text only in Detail)", o)
 	}
+	// a refusal is remembered for FailWindow: no new request
+	n0 := calls.Load()
+	if o := c.SignNow(ctx, site); o.Status != OutcomeRefused || calls.Load() != n0 {
+		t.Fatalf("remembered refusal: %+v, %d new calls", o, calls.Load()-n0)
+	}
+	now = now.Add(FailWindow + time.Second)
 	status.Store(500)
-	if o := c.SignNow(ctx, site); o.Status != OutcomeUnreachable || o.Signed() {
+	if o := c.SignNow(ctx, site); o.Status != OutcomeUnreachable || o.Reason != ReasonError || o.Signed() {
 		t.Fatalf("server error: %+v", o)
 	}
+	// a failing signer is remembered for every site: the next export does not wait for it again
+	n1 := calls.Load()
+	if o := c.SignNow(ctx, "99999999-2222-4333-8444-555555555555"); o.Status != OutcomeUnreachable || calls.Load() != n1 {
+		t.Fatalf("remembered outage: %+v, %d new calls", o, calls.Load()-n1)
+	}
+	now = now.Add(FailWindow + time.Second)
 	status.Store(200)
 	if o := c.SignNow(ctx, site); o.Status != OutcomeSigned || o.Seq != 7 || !o.Signed() {
 		t.Fatalf("signed: %+v", o)
@@ -54,13 +67,13 @@ func TestClientOutcomes(t *testing.T) {
 	if c.SignNow(ctx, site); calls.Load() != n+1 {
 		t.Fatalf("after the window the signer is asked again")
 	}
-	if o := c.SignNow(ctx, "not-a-uuid"); o.Status != OutcomeRefused {
+	if o := c.SignNow(ctx, "not-a-uuid"); o.Status != OutcomeRefused || o.Reason != ReasonError {
 		t.Fatalf("bad site: %+v", o)
 	}
 
 	srv.Close()
 	now = now.Add(time.Hour)
-	if o := c.SignNow(ctx, site); o.Status != OutcomeUnreachable {
+	if o := c.SignNow(ctx, site); o.Status != OutcomeUnreachable || o.Reason != ReasonUnreachable {
 		t.Fatalf("down: %+v", o)
 	}
 }

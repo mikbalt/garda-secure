@@ -476,6 +476,8 @@ func signingNote(m Manifest) string {
 			r = m.Signing
 		}
 		return fmt.Sprintf(" (when exporting, the server asked for a fresh signed head: %s: %s)", m.Signing, r)
+	case signer.OutcomeReused:
+		return " (when exporting, a head signed in the last few seconds was reused: entries made since are not signed yet)"
 	}
 	return ""
 }

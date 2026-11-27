@@ -47,3 +47,13 @@ func TestUnsignedTailSaysWhySigningFailed(t *testing.T) {
 	f.b.Manifest.Signing, f.b.Manifest.SigningReason = signer.OutcomeSigned, ""
 	mustNotBeValid(t, f.verify(Options{}), StatusUnsignedTail, CodeUnsignedTail)
 }
+
+func TestUnsignedTailSaysWhenAHeadWasReused(t *testing.T) {
+	f := newFixture(t, 8, 4)
+	f.b.Manifest.Signing = signer.OutcomeReused
+	r := f.verify(Options{})
+	mustNotBeValid(t, r, StatusUnsignedTail, CodeUnsignedTail)
+	if !strings.Contains(r.Break.Reason, "reused") {
+		t.Fatalf("reason %q", r.Break.Reason)
+	}
+}
