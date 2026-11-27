@@ -810,7 +810,7 @@ The review queue (`/attendance?tab=review`, `reviewAttendance`) is admin/supervi
   entries. Index `(site_id, created_at)` finds the range without a scan. No background job: a result is returned or refused.
 - **Trust.** The CLI refuses to run without `--pin` (or the explicit `--trust-first-use`, which says so in its output). Wrong fingerprint
   = exit 4. Exit codes: 0 valid, 1 chain/record broken, 2 usage, 3 bundle unreadable/changed, 4 head/key/signature, 5 UNSIGNED, 6 STALE
-  (`--max-age`, default 26 h), 7 UNSIGNED TAIL, 8 UNVERIFIED RECORDS, 9 NO ENTRIES, 10 RANGE MISMATCH. A broken chain or head outranks
+  (`--max-age`, default 26 h), 7 UNSIGNED TAIL, 8 UNVERIFIED RECORDS, 9 NO ENTRIES, 10 RANGE MISMATCH, 11 RANGE NOT AUTHENTICATED, 12 UNVERIFIED RECORDS ACCEPTED. A broken chain or head outranks
   the rest; the first break by seq wins.
 - **Review hardening (PR #67): the bundle builder is not trusted.** Whoever builds the bundle must not be able to get a plain VALID:
   (1) a bundle with no entries is NO ENTRIES (9), never valid: a signature cannot show that a site had none. (2) Entries after the
@@ -822,6 +822,12 @@ The review queue (`/attendance?tab=review`, `reviewAttendance`) is admin/supervi
   possible the exporter now picks the anchor as the newest head signed at or before `from` and the end as the first head signed at or
   after `to`. Entries must also fit the manifest range. Cost: a bundle may start up to an hour earlier and end later than the range.
   (5) Online: no pin -> `valid: null`, `trust: "unverified_trust"` (the server vouches for itself); `valid_pinned` when a pin is given.
+  (6) Second review: no silent exit 0. Without `--expect-from/--expect-to` the result is RANGE NOT AUTHENTICATED (11) (a cut at an older head, a
+  late anchor and a replayed old bundle are otherwise indistinguishable from a good one); `--no-range-check` restores exit 0 and prints
+  `VALID (range not checked)`. `--allow-unverified-records` no longer gives exit 0: 12, with the count and share of entries not checked.
+  An expected range ending today or later cannot pass (a head cannot be signed after the end of today). The online endpoint passes the
+  requested range itself (`NoRangeCheck`); read `status`, not `valid`. Follow-up issue (not in this PR): an on-demand "sign head now" at
+  export time, and extending the bundle end to cover `next_seq` heads / shipping superseding entries.
   Verify and export have separate slots (2 each), one running and 6 per minute per user, and the zip held in memory is capped (256 MB).
 - **Does not do:** prove the date range is complete without `--expect-*` (the heads before and after it prove nothing is missing *between*
   them); defend against a host root plus the signer's key volume (no key custody boundary is left to cut); replace the signer's own record

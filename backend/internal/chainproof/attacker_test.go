@@ -52,12 +52,12 @@ func TestAttackerCutAtAnOlderHead(t *testing.T) {
 	f.b.Entries, f.b.Heads = f.b.Entries[:4], f.b.Heads[:1]
 	f.b.Manifest.LastSeq, f.b.Manifest.ChainTipSeq = 4, 4
 	f.b.Manifest.ChainTipHash = f.b.Entries[3].EntryHash
-	r := f.verify(Options{})
-	if r.Status != StatusValid || r.RangeAuthenticated {
-		t.Fatalf("%s: a cut at a signed head looks fine without an expected range, and says the range is not authenticated", r.Status)
-	}
-	if !hasWarning(r, "range is not authenticated") {
-		t.Fatalf("no warning: %v", r.Warnings)
+	// no flags: never a silent exit 0
+	mustNotBeValid(t, f.verifyStrict(Options{}), StatusRangeNotAuth, CodeRangeNotAuth)
+	// the explicit opt-out: valid, but marked as "range not checked"
+	r := f.verify(Options{NoRangeCheck: true})
+	if r.Status != StatusValid || r.RangeAuthenticated || !r.RangeNotChecked || !hasWarning(r, "range is not authenticated") {
+		t.Fatalf("%s: opt-out must say the range was not checked: %v", r.Status, r.Warnings)
 	}
 	r = f.verify(Options{ExpectFrom: "2026-11-01", ExpectTo: "2026-11-30"})
 	mustNotBeValid(t, r, StatusRange, CodeRange)
@@ -77,10 +77,11 @@ func TestAttackerSupersededEscape(t *testing.T) {
 	if r.RecordsNotChecked != 1 {
 		t.Fatalf("records not checked %d", r.RecordsNotChecked)
 	}
-	// an explicit opt-out still says so
+	// the flag does not make it exit 0 (a client adding it out of habit)
 	r = f.verify(Options{AllowUnverified: true})
-	if r.Status != StatusValid || !hasWarning(r, "NOT checked") {
-		t.Fatalf("opt-out: %s %v", r.Status, r.Warnings)
+	mustNotBeValid(t, r, StatusUnverifiedOK, CodeUnverifiedOK)
+	if r.RecordsNotChecked != 1 || !hasWarning(r, "1 of 6") {
+		t.Fatalf("count and share: %d %v", r.RecordsNotChecked, r.Warnings)
 	}
 }
 
@@ -113,7 +114,8 @@ func TestAttackerManifestRangeLies(t *testing.T) {
 func TestAttackerReplay(t *testing.T) {
 	f := newFixture(t, 8, 8)
 	f.b.Manifest.ExportedAt = t0.Add(2 * time.Hour).Format(time.RFC3339Nano)
-	r := f.verify(Options{MaxAge: 26 * time.Hour, Now: t0.Add(40 * 24 * time.Hour)})
+	r := f.verifyStrict(Options{MaxAge: 26 * time.Hour, Now: t0.Add(40 * 24 * time.Hour)})
+	mustNotBeValid(t, r, StatusRangeNotAuth, CodeRangeNotAuth) // an old bundle is not "valid" without a range to hold it to
 	if !hasWarning(r, "exported") || r.ExportedAt == "" || r.NewestHeadSignedAt == "" {
 		t.Fatalf("replay not shown: %v", r.Warnings)
 	}
@@ -126,4 +128,52 @@ func hasWarning(r Result, part string) bool {
 		}
 	}
 	return false
+}
+
+// The contract: no combination of opt-in flags alone gives plain VALID, exit 0,
+// for a bundle that has something unproven.
+func TestFlagsAloneNeverGivePlainValid(t *testing.T) {
+	cases := map[string]func() *fixture{
+		"superseded escape": func() *fixture {
+			f := newFixture(t, 6, 6)
+			f.b.Entries[2].Record, f.b.Entries[2].RecordState, f.b.Entries[2].NextSeq = "", StateSuperseded, 7
+			return f
+		},
+		"cut at an older head": func() *fixture {
+			f := newFixture(t, 8, 4, 8)
+			f.b.Entries, f.b.Heads = f.b.Entries[:4], f.b.Heads[:1]
+			f.b.Manifest.LastSeq, f.b.Manifest.ChainTipSeq, f.b.Manifest.ChainTipHash = 4, 4, f.b.Entries[3].EntryHash
+			return f
+		},
+		"honest bundle, no range given": func() *fixture { return newFixture(t, 8, 8) },
+	}
+	for name, mk := range cases {
+		for _, o := range []Options{{}, {AllowUnverified: true}} {
+			if r := mk().verifyStrict(o); r.Code() == CodeValid {
+				t.Errorf("%s with %+v: exit 0, %s", name, o, r.Status)
+			}
+		}
+	}
+	// only the pair of explicit opt-outs reaches exit 0 for the range, and
+	// the superseded records still keep it non-zero
+	f := cases["superseded escape"]()
+	if r := f.verify(Options{AllowUnverified: true, NoRangeCheck: true}); r.Code() == CodeValid {
+		t.Errorf("both flags give exit 0 with an unchecked record")
+	}
+}
+
+// Two heads for the same seq: a forged one cannot hide behind a genuine one.
+func TestTwoHeadsAtTheSameSeq(t *testing.T) {
+	f := newFixture(t, 8, 8)
+	dup := f.b.Heads[0]
+	f.b.Heads = append(f.b.Heads, dup) // the same head twice is harmless
+	wantStatus(t, f.verify(Options{}), StatusValid, 0, 0, "")
+
+	g := newFixture(t, 8, 8)
+	forged := g.signHead(t, g.b, 8, strings.Repeat("cd", 32), time.Time{}) // validly signed, other hash
+	g.b.Heads = append(g.b.Heads, forged)
+	wantStatus(t, g.verify(Options{}), StatusBroken, 4, 8, "differs from the signed head")
+	// and in the other order
+	g.b.Heads[0], g.b.Heads[1] = g.b.Heads[1], g.b.Heads[0]
+	wantStatus(t, g.verify(Options{}), StatusBroken, 4, 8, "differs from the signed head")
 }

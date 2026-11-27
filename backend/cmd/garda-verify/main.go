@@ -12,7 +12,11 @@
 // signed head, which is older than --max-age); 7 UNSIGNED TAIL (entries after
 // the newest signed head); 8 UNVERIFIED RECORDS (records changed again outside
 // the bundle); 9 NO ENTRIES (nothing to check); 10 RANGE (the bundle does not
-// cover the range you expect).
+// cover the range you expect); 11 RANGE NOT AUTHENTICATED (everything holds, but
+// you gave no --expect-from/--expect-to, so the range is only the exporter's
+// claim: --no-range-check accepts that knowingly and exits 0 as "VALID (range
+// not checked)"); 12 records NOT checked (--allow-unverified-records accepted
+// them: still not plain valid).
 //
 // VALID does not prove that nothing is missing, see docs/chain-verification.md.
 package main
@@ -56,10 +60,11 @@ func run(args []string, stdout, stderr io.Writer, now time.Time) int {
 	maxAge := fs.Duration("max-age", 26*time.Hour, "report STALE when entries follow the newest signed head and it is older than this (0 = off)")
 	expFrom := fs.String("expect-from", "", "the first day you expect the bundle to cover (YYYY-MM-DD, site time). Without it the range is only the exporter's claim")
 	expTo := fs.String("expect-to", "", "the last day you expect the bundle to cover (YYYY-MM-DD, site time, included)")
-	allowUnv := fs.Bool("allow-unverified-records", false, "accept records that changed again outside the bundle (they stay unchecked and are reported)")
+	allowUnv := fs.Bool("allow-unverified-records", false, "accept records that changed again outside the bundle: they stay unchecked and the exit code stays non-zero (12)")
+	noRange := fs.Bool("no-range-check", false, "no --expect-from/--expect-to: accept the range as the exporter states it (exit 0, printed as \"VALID (range not checked)\")")
 	asJSON := fs.Bool("json", false, "print the result as JSON")
 	fs.Usage = func() {
-		fmt.Fprintln(stderr, "usage: garda-verify --pin <fingerprint> [--max-age 26h] [--json] bundle.zip")
+		fmt.Fprintln(stderr, "usage: garda-verify --pin <fingerprint> --expect-from YYYY-MM-DD --expect-to YYYY-MM-DD [--max-age 26h] [--json] bundle.zip\n       (without --expect-*: --no-range-check, exit 11 otherwise)")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -88,6 +93,10 @@ func run(args []string, stdout, stderr io.Writer, now time.Time) int {
 		fmt.Fprintln(stderr, "garda-verify:", err)
 		return chainproof.CodeBundle
 	}
+	if *noRange && *expFrom != "" {
+		fmt.Fprintln(stderr, "garda-verify: --no-range-check and --expect-from/--expect-to exclude each other")
+		return chainproof.CodeUsage
+	}
 	if (*expFrom == "") != (*expTo == "") {
 		fmt.Fprintln(stderr, "garda-verify: give --expect-from and --expect-to together")
 		return chainproof.CodeUsage
@@ -98,7 +107,7 @@ func run(args []string, stdout, stderr io.Writer, now time.Time) int {
 			return chainproof.CodeUsage
 		}
 	}
-	res := chainproof.Verify(b, chainproof.Options{Pins: pin, MaxAge: *maxAge, Now: now, ExpectFrom: *expFrom, ExpectTo: *expTo, AllowUnverified: *allowUnv})
+	res := chainproof.Verify(b, chainproof.Options{Pins: pin, MaxAge: *maxAge, Now: now, ExpectFrom: *expFrom, ExpectTo: *expTo, AllowUnverified: *allowUnv, NoRangeCheck: *noRange})
 
 	if *asJSON {
 		enc := json.NewEncoder(stdout)
@@ -146,8 +155,8 @@ func report(w io.Writer, b *chainproof.Bundle, res chainproof.Result, p pins) {
 	fmt.Fprintf(w, "Bundle       sha256 %s\n\n", b.ManifestSHA256)
 	switch res.Status {
 	case chainproof.StatusValid:
-		if res.RecordsNotChecked > 0 {
-			fmt.Fprintln(w, "RESULT: VALID WITH UNVERIFIED RECORDS")
+		if res.RangeNotChecked {
+			fmt.Fprintln(w, "RESULT: VALID (range not checked)")
 		} else {
 			fmt.Fprintln(w, "RESULT: VALID")
 		}
@@ -156,7 +165,7 @@ func report(w io.Writer, b *chainproof.Bundle, res chainproof.Result, p pins) {
 		for _, wn := range res.Warnings {
 			fmt.Fprintf(w, "WARNING: %s\n", wn)
 		}
-	case chainproof.StatusUnsignedTail, chainproof.StatusUnverified, chainproof.StatusNoEntries, chainproof.StatusRange:
+	case chainproof.StatusUnsignedTail, chainproof.StatusUnverified, chainproof.StatusUnverifiedOK, chainproof.StatusNoEntries, chainproof.StatusRange, chainproof.StatusRangeNotAuth:
 		fmt.Fprintf(w, "RESULT: %s (NOT VALID, NOT PROVEN)\n", strings.ToUpper(strings.ReplaceAll(res.Status, "_", " ")))
 		if br := res.Break; br != nil {
 			if br.Seq > 0 {

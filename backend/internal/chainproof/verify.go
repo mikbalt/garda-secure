@@ -21,10 +21,12 @@ const (
 	StatusUnsigned = "unsigned"       // entries, but no signed head at all
 	StatusStale    = "stale"          // entries after the newest signed head, which is older than the limit
 	// Not broken, but not proven either: never to be shown as plain VALID.
-	StatusNoEntries    = "no_entries"         // the bundle holds no entry: it proves nothing about the range
-	StatusUnsignedTail = "unsigned_tail"      // entries after the newest signed head
-	StatusUnverified   = "unverified_records" // records whose later change is not in the bundle
-	StatusRange        = "range_mismatch"     // the bundle does not cover the range the caller expects
+	StatusNoEntries    = "no_entries"                  // the bundle holds no entry: it proves nothing about the range
+	StatusUnsignedTail = "unsigned_tail"               // entries after the newest signed head
+	StatusUnverified   = "unverified_records"          // records whose later change is not in the bundle
+	StatusRangeNotAuth = "range_not_authenticated"     // everything holds, but the range is only the exporter's claim
+	StatusUnverifiedOK = "unverified_records_accepted" // as StatusUnverified, accepted with a flag: still not plain valid
+	StatusRange        = "range_mismatch"              // the bundle does not cover the range the caller expects
 )
 
 // Where a break is (Break.Class). The CLI exit code follows the class.
@@ -68,6 +70,7 @@ type Result struct {
 	NewestHeadSignedAt string   `json:"newest_head_signed_at,omitempty"`
 	ExportedAt         string   `json:"exported_at,omitempty"`
 	RangeAuthenticated bool     `json:"range_authenticated"`
+	RangeNotChecked    bool     `json:"range_not_checked,omitempty"` // valid, but only because the caller opted out of checking the range
 }
 
 // Exit codes of garda-verify, one per failure class.
@@ -83,6 +86,8 @@ const (
 	CodeUnverified   = 8
 	CodeNoEntries    = 9
 	CodeRange        = 10
+	CodeRangeNotAuth = 11
+	CodeUnverifiedOK = 12
 )
 
 // Code is the process exit code for the result.
@@ -102,6 +107,10 @@ func (r Result) Code() int {
 		return CodeNoEntries
 	case StatusRange:
 		return CodeRange
+	case StatusRangeNotAuth:
+		return CodeRangeNotAuth
+	case StatusUnverifiedOK:
+		return CodeUnverifiedOK
 	}
 	if r.Break == nil {
 		return CodeChain
@@ -129,6 +138,9 @@ type Options struct {
 	// AllowUnverified accepts records whose later change is outside the bundle
 	// (still reported as a warning, never as a plain valid).
 	AllowUnverified bool
+	// NoRangeCheck accepts the range as the exporter states it (no expected
+	// range given): the result is a valid with RangeNotChecked set.
+	NoRangeCheck bool
 }
 
 // Genesis is the value the first entry of a site links to.
@@ -420,20 +432,34 @@ func Verify(b *Bundle, o Options) Result {
 	if !authenticated {
 		res.Warnings = append(res.Warnings, fmt.Sprintf("the range %s to %s is the exporter's claim: the range is not authenticated. Give --expect-from and --expect-to to check it", m.From, m.To))
 	}
-
-	if res.RecordsNotChecked > 0 {
-		if !o.AllowUnverified {
-			return notProven(StatusUnverified, firstUnverified, ClassRecord,
-				"UNVERIFIED RECORDS: %d records are said to have changed again after this bundle, and the later entry is not in it, so their text cannot be checked. Export a range that includes the change, or accept this knowingly with --allow-unverified-records",
-				res.RecordsNotChecked)
-		}
-		res.Warnings = append(res.Warnings, fmt.Sprintf("%d records were NOT checked against their text (they changed again after the bundle); only their place in the chain was checked", res.RecordsNotChecked))
+	if res.RecordsNotChecked > 0 && !o.AllowUnverified {
+		return notProven(StatusUnverified, firstUnverified, ClassRecord,
+			"UNVERIFIED RECORDS: %d records are said to have changed again after this bundle, and the later entry is not in it, so their text cannot be checked. Export a range that includes the change, or accept this knowingly with --allow-unverified-records (the exit code stays non-zero)",
+			res.RecordsNotChecked)
 	}
 	if at, err := time.Parse(time.RFC3339Nano, m.ExportedAt); err != nil {
 		res.Warnings = append(res.Warnings, "the bundle has no valid exported_at time: its age is unknown")
 	} else if o.MaxAge > 0 && now.Sub(at) > o.MaxAge {
 		res.Warnings = append(res.Warnings, fmt.Sprintf("the bundle was exported %s ago (limit %s): anything recorded since is not in it. Export again to be sure it is current",
 			now.Sub(at).Round(time.Minute), o.MaxAge))
+	}
+
+	// Never a silent exit 0: records that were not checked, or a range that
+	// is only the exporter's claim, each have their own code. The only way
+	// to exit 0 without --expect-* is the explicit --no-range-check.
+	if res.RecordsNotChecked > 0 {
+		res.Warnings = append(res.Warnings, fmt.Sprintf("%d of %d entries (%d%%) were NOT checked against their record text: the record changed again after the bundle; only their place in the chain was checked",
+			res.RecordsNotChecked, len(b.Entries), res.RecordsNotChecked*100/len(b.Entries)))
+		return notProven(StatusUnverifiedOK, firstUnverified, ClassRecord,
+			"%d of %d entries (%d%%) were NOT checked against their record text (accepted with --allow-unverified-records)",
+			res.RecordsNotChecked, len(b.Entries), res.RecordsNotChecked*100/len(b.Entries))
+	}
+	if !authenticated {
+		if !o.NoRangeCheck {
+			return notProven(StatusRangeNotAuth, nil, ClassBundle,
+				"RANGE NOT AUTHENTICATED: everything in the bundle holds, but the range %s to %s is only what the exporter says: a bundle cut at an older signed head, started late, or an old genuine one looks the same. Give --expect-from and --expect-to, or accept this knowingly with --no-range-check", m.From, m.To)
+		}
+		res.RangeNotChecked = true
 	}
 	res.Status = StatusValid
 	return res

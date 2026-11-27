@@ -59,7 +59,7 @@ func verifyExport(t *testing.T, pool *pgxpool.Pool, site, pin string) chainproof
 		t.Fatal(err)
 	}
 	got, _ := offline(t, b)
-	return chainproof.Verify(got, chainproof.Options{Pins: []string{pin}, MaxAge: 26 * time.Hour})
+	return chainproof.Verify(got, chainproof.Options{Pins: []string{pin}, MaxAge: 26 * time.Hour, NoRangeCheck: true})
 }
 
 func ownerExec(t *testing.T, pool *pgxpool.Pool, steps ...string) {
@@ -130,7 +130,7 @@ func TestChainBundleVerifiesOffline(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, raw := offline(t, b)
-	r := chainproof.Verify(got, chainproof.Options{Pins: []string{pubID(key)}, MaxAge: 26 * time.Hour})
+	r := chainproof.Verify(got, chainproof.Options{Pins: []string{pubID(key)}, MaxAge: 26 * time.Hour, NoRangeCheck: true})
 	if r.Status != chainproof.StatusValid || r.Entries != 5 || r.Heads != 1 {
 		t.Fatalf("valid bundle: %s %+v entries %d heads %d", r.Status, r.Break, r.Entries, r.Heads)
 	}
@@ -290,7 +290,7 @@ func TestChainBundleRangeByCheckpoint(t *testing.T) {
 		if got.Manifest.AnchorSeq != 3 || got.Manifest.FirstSeq != 4 || got.Manifest.LastSeq != 8 {
 			t.Fatalf("range 4..6 ends at the first head signed after it (8), exported as anchor %d, seq %d..%d", got.Manifest.AnchorSeq, got.Manifest.FirstSeq, got.Manifest.LastSeq)
 		}
-		return chainproof.Verify(got, chainproof.Options{Pins: []string{pin}})
+		return chainproof.Verify(got, chainproof.Options{Pins: []string{pin}, NoRangeCheck: true})
 	}
 	full := func() chainproof.Result { return verifyExport(t, rt, site.site, pin) }
 
@@ -383,7 +383,7 @@ func TestChainEndpoints(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res := chainproof.Verify(got, chainproof.Options{Pins: []string{pubID(key)}}); res.Status != chainproof.StatusValid {
+	if res := chainproof.Verify(got, chainproof.Options{Pins: []string{pubID(key)}, NoRangeCheck: true}); res.Status != chainproof.StatusValid {
 		t.Fatalf("exported bundle: %s %+v", res.Status, res.Break)
 	}
 

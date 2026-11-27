@@ -24,8 +24,10 @@ garda-verify --pin <fingerprint> --expect-from 2026-11-01 --expect-to 2026-11-30
 ```
 
 Selalu isi `--expect-from` dan `--expect-to` (hari pertama dan hari terakhir yang Anda minta, menurut zona waktu lokasi).
-Tanpa keduanya, alat hanya tahu rentang yang **dikatakan** oleh pembuat bundel, dan menulis `NOT AUTHENTICATED` di sebelahnya.
-Pakai tanggal akhir yang sudah lewat minimal sehari: bundel harus berakhir di tanda tangan yang dibuat setelah rentang Anda.
+Tanpa keduanya, alat hanya tahu rentang yang **dikatakan** oleh pembuat bundel, lalu alat berakhir dengan `RANGE NOT AUTHENTICATED` (kode 11), tidak pernah `VALID`.
+Pakai tanggal akhir yang sudah lewat minimal sehari: bundel harus berakhir di tanda tangan yang dibuat setelah rentang Anda, jadi rentang yang diharapkan
+berakhir hari ini atau lebih lambat tidak akan pernah lolos (tanda tangan tidak bisa dibuat setelah hari ini berakhir). Hanya bila Anda benar-benar tidak bisa menyebut rentang,
+tambahkan `--no-range-check`: hasilnya ditulis `VALID (range not checked)`.
 
 | Hasil | Kode keluar | Artinya |
 |---|---|---|
@@ -37,9 +39,11 @@ Pakai tanggal akhir yang sudah lewat minimal sehari: bundel harus berakhir di ta
 | `UNSIGNED` | 5 | Rantai punya entri tetapi belum ada tanda tangan sama sekali. Tidak ada yang menjangkarkannya. |
 | `STALE` | 6 | Ada entri setelah tanda tangan terbaru, dan tanda tangan itu lebih tua dari `--max-age` (bawaan 26 jam). Biasanya signer berhenti. Ini bukan bukti manipulasi; tanyakan ke vendor. |
 | `UNSIGNED TAIL` | 7 | Entri terakhir di bundel datang setelah tanda tangan terbaru, jadi belum ada tanda tangan yang menjamin. Bundel yang dipotong pendek tampak persis seperti ini. Ekspor lagi setelah tanda tangan berikutnya (dibuat sekitar tiap jam). **Tidak valid.** |
-| `UNVERIFIED RECORDS` | 8 | Ada catatan yang dikatakan berubah lagi setelah bundel, dan entri barunya tidak ada di bundel, jadi isinya tidak bisa diperiksa. Ekspor rentang yang memuat perubahannya. Dengan `--allow-unverified-records` Anda menerimanya dengan sadar; hasilnya berbunyi `VALID WITH UNVERIFIED RECORDS`. **Tidak valid.** |
+| `UNVERIFIED RECORDS` | 8 | Ada catatan yang dikatakan berubah lagi setelah bundel, dan entri barunya tidak ada di bundel, jadi isinya tidak bisa diperiksa. Ekspor rentang yang memuat perubahannya. `--allow-unverified-records` mengubah jawabannya menjadi kode 12 (`UNVERIFIED RECORDS ACCEPTED`), yang **tetap tidak valid**: keluaran menyebut berapa entri, dan berapa persen, yang tidak diperiksa. |
 | `NO ENTRIES` | 9 | Bundel tidak punya entri. Ini tidak membuktikan apa pun tentang rentangnya: tanda tangan tidak bisa menunjukkan bahwa sebuah lokasi tidak punya entri. **Tidak valid.** |
 | `RANGE MISMATCH` | 10 | Bundel tidak mencakup rentang yang Anda isi di `--expect-from` / `--expect-to`: dibuat untuk tanggal lain, mulai dari tanda tangan yang dibuat setelah rentang Anda dimulai, atau tanda tangan terbarunya lebih tua dari akhir rentang Anda. **Tidak valid.** |
+| `RANGE NOT AUTHENTICATED` | 11 | Rantai dan tanda tangan benar, tetapi Anda tidak mengisi `--expect-from` / `--expect-to`, jadi rentangnya hanya kata pembuat bundel (bundel yang dipotong di tanda tangan lama, dimulai terlambat, atau bundel lama yang asli tampak sama). Isi rentangnya, atau terima dengan sadar lewat `--no-range-check` (kode 0, ditulis `VALID (range not checked)`). **Tidak valid.** |
+| `UNVERIFIED RECORDS ACCEPTED` | 12 | Seperti 8, tetapi Anda memakai `--allow-unverified-records`. Sengaja bukan kode 0: opsi yang ditambahkan karena kebiasaan tidak boleh mengubahnya jadi lolos. |
 
 Selain hasil, alat menampilkan kapan tanda tangan terbaru dibuat dan kapan bundel diekspor (menurut jam pembuat bundel), dan memberi peringatan bila bundel lebih tua dari `--max-age`: bundel lama tetap "valid" untuk isinya, tetapi tidak berkata apa-apa tentang kejadian sesudahnya. Opsi lain: `--json` (hasil untuk mesin), `--max-age 48h` (atau `0` untuk mematikan pemeriksaan ini), `--trust-first-use`
 (menerima kunci pertama di bundel bila Anda tidak punya fingerprint; lebih lemah karena bundel menjamin dirinya sendiri).
@@ -76,7 +80,9 @@ Catat **sha256 bundel** yang ditampilkan alat. Jika nanti Anda menerima rentang 
 untuk admin, supervisor, dan client-readonly. Pemeriksaan mulai dari tanda tangan terakhir sebelum rentang Anda, jadi sebulan cepat. Jika rentang terlalu besar atau
 terlalu lama, jawabannya `verify_too_large`: pakai bundel dan `garda-verify`. Pemeriksaan online mempercayai server yang Anda tanyai; pemeriksaan offline tidak,
 karena itu gunakan yang offline untuk hal penting. Tanpa `pin`, jawabannya `"valid": null` dengan `"trust": "unverified_trust"` (server menjamin dirinya sendiri), tidak pernah `true`.
-Satu pengguna hanya boleh menjalankan satu pemeriksaan sekaligus dan beberapa per menit.
+Satu pengguna hanya boleh menjalankan satu pemeriksaan sekaligus dan beberapa per menit. **Baca `status`, bukan `valid`**: `valid` bernilai `false` untuk setiap hasil yang bukan lolos bersih,
+termasuk `unsigned_tail`, `unverified_records`, dan `no_entries` (tidak rusak, tetapi belum terbukti), dan `null` tanpa `pin`. Tampilkan `status` dan `first_break` kepada pengguna.
+Pemeriksaan online memakai tanggal yang diminta apa adanya, jadi tidak menjalankan pemeriksaan rentang yang diharapkan.
 
 ## Format bundel (`garda-chain-bundle/v1`)
 

@@ -28,8 +28,10 @@ garda-verify --pin <fingerprint> --expect-from 2026-11-01 --expect-to 2026-11-30
 
 Always give `--expect-from` and `--expect-to` (the first and last day you asked for, in the site's
 time zone). Without them the tool only knows the range the person who made the bundle *says* it
-covers, and prints `NOT AUTHENTICATED` next to it. Use an end date that is at least a day old: the
-bundle has to end at a signed head made after your range.
+covers: the tool then ends with `RANGE NOT AUTHENTICATED` (exit 11), never with `VALID`. Use an end date that is
+at least a day old: the bundle has to end at a signed head made after your range, so an expected range that ends
+today or later can never pass (a head cannot be signed after the end of today). Only if you really cannot give a
+range, add `--no-range-check`: the result is then printed as `VALID (range not checked)`.
 
 Result and exit code:
 
@@ -43,9 +45,11 @@ Result and exit code:
 | `UNSIGNED` | 5 | The chain has entries but no signed head at all. Nothing anchors it. |
 | `STALE` | 6 | There are entries after the newest signed head and that head is older than `--max-age` (default 26 hours). Usually the signer stopped. This is not proof of tampering; ask the vendor why. |
 | `UNSIGNED TAIL` | 7 | The last entries of the bundle come after the newest signed head, so no signature vouches for them. A bundle that was cut short looks exactly like this. Export again after the next signed head (they are made about hourly). **Not valid.** |
-| `UNVERIFIED RECORDS` | 8 | Some records are said to have changed again after the bundle, and the later entry is not in it, so their text cannot be checked. Export a range that includes the change. With `--allow-unverified-records` you accept this knowingly; the result then reads `VALID WITH UNVERIFIED RECORDS`. **Not valid.** |
+| `UNVERIFIED RECORDS` | 8 | Some records are said to have changed again after the bundle, and the later entry is not in it, so their text cannot be checked. Export a range that includes the change. `--allow-unverified-records` changes the answer to exit 12 (`UNVERIFIED RECORDS ACCEPTED`), which is **still not valid**: the output says how many entries, and what share, were not checked. |
 | `NO ENTRIES` | 9 | The bundle has no entry. It proves nothing about the range: a signature cannot show that a site had no entries. **Not valid.** |
 | `RANGE MISMATCH` | 10 | The bundle does not cover the range you gave with `--expect-from` / `--expect-to`: it was made for other dates, it starts from a head signed after your range began, or its newest signed head is older than the end of your range. **Not valid.** |
+| `RANGE NOT AUTHENTICATED` | 11 | The chain and the signatures hold, but you gave no `--expect-from` / `--expect-to`, so the range is only what the exporter says (a bundle cut at an older signed head, started late, or an old genuine one looks the same). Give the range, or accept it knowingly with `--no-range-check` (exit 0, printed as `VALID (range not checked)`). **Not valid.** |
+| `UNVERIFIED RECORDS ACCEPTED` | 12 | As 8, but you passed `--allow-unverified-records`. Not exit 0 on purpose: a flag added out of habit must not turn it into a pass. |
 
 Besides the result the tool prints when the newest signed head was signed and when the bundle was exported
 (by the exporter's clock), and warns when the bundle is older than `--max-age`: an old bundle is still
@@ -97,7 +101,9 @@ starts from the last signed head before your range, so a month is quick. If the 
 takes too long it answers `verify_too_large`: use the bundle and `garda-verify` instead. The online check trusts the
 server you ask; the offline check does not, which is why you should use it for anything serious. Without `pin` the
 answer is `"valid": null` with `"trust": "unverified_trust"` (the server vouches for itself), never `true`.
-A user can have one check running and a few per minute.
+A user can have one check running and a few per minute. **Read `status`, not `valid`**: `valid` is `false` for every result that is not
+a clean pass, which includes `unsigned_tail`, `unverified_records` and `no_entries` (not broken, but not proven), and `null` without a pin.
+Show `status` and `first_break` to people. The online check takes the requested dates as given, so it does not run the expected-range check.
 
 ## Bundle format (`garda-chain-bundle/v1`)
 

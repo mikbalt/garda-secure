@@ -99,7 +99,14 @@ func rechain(t *testing.T, b *Bundle, from int) {
 	b.Manifest.ChainTipHash = hexs(prev)
 }
 
+// verify opts out of the range check (most tests are not about the range);
+// verifyStrict does not, as a client who gave no flags.
 func (f *fixture) verify(opts Options) Result {
+	opts.NoRangeCheck = opts.NoRangeCheck || opts.ExpectFrom == ""
+	return f.verifyStrict(opts)
+}
+
+func (f *fixture) verifyStrict(opts Options) Result {
 	if opts.Pins == nil {
 		opts.Pins = []string{f.pin}
 	}
@@ -282,7 +289,11 @@ func TestCheckpointRangeEqualsFullVerify(t *testing.T) {
 func TestCheckpointAnchorMustBeSignedAndPresent(t *testing.T) {
 	f := newFixture(t, 12, 4, 8, 12).checkpoint(8)
 	sig := []byte(f.b.Heads[0].Signature)
-	sig[3] ^= 1
+	if sig[3] == '0' { // stay in the hex alphabet: a bit flip can leave it
+		sig[3] = '1'
+	} else {
+		sig[3] = '0'
+	}
 	f.b.Heads[0].Signature = string(sig)
 	wantStatus(t, f.verify(Options{}), StatusBroken, 4, 8, "signature does not verify")
 
@@ -307,7 +318,7 @@ func TestSupersededEntries(t *testing.T) {
 	// a later entry beyond the range cannot be checked: said so, not hidden
 	f.b.Entries[1].RecordState, f.b.Entries[1].Record, f.b.Entries[1].NextSeq = StateSuperseded, "", 50
 	wantStatus(t, f.verify(Options{}), StatusUnverified, 8, 2, "UNVERIFIED RECORDS")
-	if r := f.verify(Options{AllowUnverified: true}); r.Status != StatusValid || r.RecordsNotChecked != 1 || !hasWarning(r, "NOT checked") {
+	if r := f.verify(Options{AllowUnverified: true}); r.Status != StatusUnverifiedOK || r.Code() != 12 || r.RecordsNotChecked != 1 || !hasWarning(r, "NOT checked") {
 		t.Fatalf("%s, %d records not checked, %v", r.Status, r.RecordsNotChecked, r.Warnings)
 	}
 }
@@ -328,7 +339,7 @@ func TestBundleRoundTripAndFileTamper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r := Verify(got, Options{Pins: []string{f.pin}, Now: t0.Add(time.Hour)}); r.Status != StatusValid {
+	if r := Verify(got, Options{Pins: []string{f.pin}, Now: t0.Add(time.Hour), NoRangeCheck: true}); r.Status != StatusValid {
 		t.Fatalf("round trip: %+v", r.Break)
 	}
 	if got.ManifestSHA256 != f.b.ManifestSHA256 || got.ManifestSHA256 == "" {

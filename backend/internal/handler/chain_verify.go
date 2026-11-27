@@ -178,7 +178,7 @@ func (h *Handler) verifyChain(c *fiber.Ctx) error {
 	if err != nil {
 		return h.fail(c, err)
 	}
-	res := chainproof.Verify(b, chainproof.Options{Pins: pins, MaxAge: verifyMaxAge})
+	res := chainproof.Verify(b, chainproof.Options{Pins: pins, MaxAge: verifyMaxAge, NoRangeCheck: true /* the range is this request, read by the server itself */})
 	// Without a pin the keyring that vouches for the heads comes from the same
 	// server as the chain: a pass proves nothing to the caller, so it is not
 	// shown as true. Pass pin (the fingerprint you were given) for a real answer.
